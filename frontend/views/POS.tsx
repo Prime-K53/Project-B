@@ -7,6 +7,7 @@ import { ProductGrid } from './pos/components/ProductGrid';
 import { CartSidebar } from './pos/components/CartSidebar';
 import { PaymentModal } from './pos/components/PaymentModal';
 import { CustomerModal, HeldOrdersModal, ReturnsModal, ServiceCalculatorModal } from './pos/components/PosModals';
+import QuickPrintModal from '../components/QuickPrintModal';
 import { FileText, Printer, X, Plus, Clock as ClockIcon, User as UserIcon, Copy, TrendingUp, DollarSign, ShieldCheck, Landmark, RefreshCw, BookOpen, Eye, CheckCircle, FileDown } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { PrimeDocument } from './shared/components/PDF/PrimeDocument';
@@ -38,6 +39,10 @@ const POS: React.FC = () => {
   const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
   const [showZReport, setShowZReport] = useState(false);
   const [selectedServiceForCalculator, setSelectedServiceForCalculator] = useState<Item | null>(null);
+  const [quickPrintModal, setQuickPrintModal] = useState<{ open: boolean; type: 'photocopy' | 'printing' }>({
+    open: false,
+    type: 'photocopy'
+  });
   const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
 
   const [lastSale, setLastSale] = useState<Sale | null>(null);
@@ -85,15 +90,15 @@ const POS: React.FC = () => {
   }, []);
 
   const formatServiceDescription = (lineItem: any) => {
+    // If it already has a detailed description (like from Quick Print), use it
+    if (lineItem?.desc) return lineItem.desc;
+
     const service = lineItem?.serviceDetails;
     const name = lineItem?.name || lineItem?.productName || 'Service';
     if (!service) return name;
 
-    // For service items, only show name and pages x copies (hide Total Pages and Unit Price)
-    return [
-      name,
-      `${service.pages} pages x ${service.copies} copies`
-    ].join('\n');
+    // Use single line format for POS receipts to ensure visibility and follow OrderForm pattern
+    return `${name} (${service.pages || 0} pages x ${service.copies || 0} copies)`;
   };
 
   const calculateServicePricing = (service: Item, pages: number, copies: number) => {
@@ -369,38 +374,51 @@ const POS: React.FC = () => {
   };
 
   const handleQuickPhotocopy = () => {
-    const photocopyItem: Item = {
-      id: 'SVC-PHOTOCOPY',
-      name: 'Quick Photocopy (B&W)',
-      sku: 'PHOTO-BW',
-      price: companyConfig.transactionSettings?.pos?.photocopyPrice || 2.00,
-      cost: 0.10,
-      stock: 9999,
-      minStockLevel: 0,
-      category: 'Service',
-      type: 'Service',
-      unit: 'page',
-      pages: 0
-    };
-    setSelectedServiceForCalculator(photocopyItem);
+    setQuickPrintModal({ open: true, type: 'photocopy' });
   };
 
   const handleQuickTypePrinting = () => {
-    const printItem: Item = {
-      id: 'SVC-TYPE-PRINT',
-      name: 'Type & Printing',
-      sku: 'TYPE-PRINT',
-      price: companyConfig.transactionSettings?.pos?.typePrintingPrice || 5.00,
-      cost: 0.50,
-      stock: 9999,
-      minStockLevel: 0,
-      category: 'Service',
-      type: 'Service',
-      unit: 'page',
-      pages: 0
-    };
-    setSelectedServiceForCalculator(printItem);
+    setQuickPrintModal({ open: true, type: 'printing' });
   };
+
+const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: number, printType: 'photocopy' | 'printing') => {
+        const isPhotocopy = printType === 'photocopy';
+        const pricePerPage = isPhotocopy 
+          ? (companyConfig.transactionSettings?.pos?.photocopyPrice || 2.00)
+          : (companyConfig.transactionSettings?.pos?.typePrintingPrice || 5.00);
+
+        // For quick print, we set price to the TOTAL (total pages × price per page) and quantity to 1
+        // This ensures the cart calculation (price × quantity) matches the modal total
+        const totalPages = quantity * pagesPerCopy;
+        const finalPrice = totalPages * pricePerPage;
+
+        const quickItem: CartItem = {
+          id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}`,
+          itemId: isPhotocopy ? 'SVC-PHOTOCOPY' : 'SVC-TYPE-PRINT',
+          name: isPhotocopy ? 'Quick Photocopy' : 'Type & Printing',
+          sku: isPhotocopy ? 'QUICK-PHOTO' : 'QUICK-PRINT',
+          desc: isPhotocopy ? `Quick Photocopy (${pagesPerCopy} pages × ${quantity} copies)` : `Type & Printing (${pagesPerCopy} pages × ${quantity} copies)`,
+          price: finalPrice,
+          quantity: 1,
+          pagesOverride: pagesPerCopy,
+          category: 'Service',
+          type: 'Service',
+          unit: 'page',
+          pages: pagesPerCopy,
+          stock: 9999,
+          minStockLevel: 0,
+          adjustedPrice: finalPrice,
+          priceLocked: true,
+          lockedUnitPricePerCopy: finalPrice,
+          serviceDetails: {
+            pages: pagesPerCopy,
+            copies: quantity
+          }
+        };
+
+        setCart(prev => [...prev, quickItem]);
+        notify(`${quantity}x${pagesPerCopy} pages added to cart`, 'success');
+      };
 
   const updateQuantity = async (id: string, value: number, isAbsolute?: boolean) => {
     const itemInCart = cart.find(i => i.id === id);
@@ -588,36 +606,37 @@ const POS: React.FC = () => {
         return { ...item, adjustmentSnapshots: snapshots };
       });
 
-      const saleData: Sale = {
-        id: saleId,
-        date: new Date().toISOString(),
-        source: 'POS',
-        totalAmount: payableTotal,
-        discount: 0,
-        status: 'Paid',
-        items: processesedItemsWithSnapshots.map((item: any) => ({
-          ...item,
-          productId: item.productId || item.id,
-          productName: item.name,
-          unitPrice: item.price,
-          subtotal: item.price * item.quantity,
-          discount: 0,
-          productionCostSnapshot: item.productionCostSnapshot,
-          adjustmentSnapshots: item.adjustmentSnapshots
-        })) as any,
-        paymentMethod: payments.length === 1 ? payments[0].method : 'Split',
-        payments: payments,
-        cashierId: user?.id || 'unknown',
-        customerId: selectedCustomerName || 'walk-in',
-        customerName: selectedCustomerName || 'Walk-in',
-        subAccountName: selectedSubAccount,
-        total: payableTotal,
-        bill_total: payableTotal,
-        cash_tendered: totalPaid,
-        change_due: changeDue,
-        adjustmentTotal: totalAdjustment,
-        adjustmentSnapshots: aggregatedSnapshots
-      };
+       const saleData: Sale = {
+         id: saleId,
+         date: new Date().toISOString(),
+         source: 'POS',
+         totalAmount: payableTotal,
+         discount: 0,
+         status: 'Paid',
+         items: processesedItemsWithSnapshots.map((item: any) => ({
+           ...item,
+           productId: item.productId || item.id,
+           productName: item.name,
+           unitPrice: item.price,
+           subtotal: item.price * item.quantity,
+           discount: 0,
+           productionCostSnapshot: item.productionCostSnapshot,
+           adjustmentSnapshots: item.adjustmentSnapshots,
+           desc: item.desc
+         })) as any,
+         paymentMethod: payments.length === 1 ? payments[0].method : 'Split',
+         payments: payments,
+         cashierId: user?.id || 'unknown',
+         customerId: selectedCustomerName || 'walk-in',
+         customerName: selectedCustomerName || 'Walk-in',
+         subAccountName: selectedSubAccount,
+         total: payableTotal,
+         bill_total: payableTotal,
+         cash_tendered: totalPaid,
+         change_due: changeDue,
+         adjustmentTotal: totalAdjustment,
+         adjustmentSnapshots: aggregatedSnapshots
+       };
 
       await api.sales.createSale(saleData);
 
@@ -719,9 +738,9 @@ const POS: React.FC = () => {
               <button onClick={handleQuickPhotocopy} className="text-blue-600 hover:underline flex items-center gap-1.5 text-sm font-semibold">
                 <Copy size={16} /> Photocopy
               </button>
-              <button onClick={handleQuickTypePrinting} className="text-blue-600 hover:underline flex items-center gap-1.5 text-sm font-semibold">
-                <FileText size={16} /> Print
-              </button>
+<button onClick={handleQuickTypePrinting} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center gap-1.5 text-sm">
+  <FileText size={16} /> Type and Printing
+</button>
             </div>
           </div>
 
@@ -832,6 +851,21 @@ const POS: React.FC = () => {
             notify(`${selectedServiceForCalculator.name} added`, 'success');
           }}
           onClose={() => setSelectedServiceForCalculator(null)}
+        />
+      )}
+      {quickPrintModal.open && (
+        <QuickPrintModal
+          open={quickPrintModal.open}
+          type={quickPrintModal.type}
+          pricePerPage={quickPrintModal.type === 'photocopy'
+            ? (companyConfig.transactionSettings?.pos?.photocopyPrice || 2.00)
+            : (companyConfig.transactionSettings?.pos?.typePrintingPrice || 5.00)}
+          currency={currency}
+          onConfirm={(quantity, pagesPerCopy, total) => {
+            handleQuickPrintConfirm(quantity, pagesPerCopy, total, quickPrintModal.type);
+            setQuickPrintModal({ open: false, type: quickPrintModal.type });
+          }}
+          onClose={() => setQuickPrintModal({ open: false, type: quickPrintModal.type })}
         />
       )}
 
