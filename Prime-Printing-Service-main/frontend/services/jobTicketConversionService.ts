@@ -1,0 +1,469 @@
+import { dbService } from './db';
+import { generateNextId } from '../utils/helpers';
+import { workflowService } from './workflowService';
+import { JobTicket } from '../types';
+import { examinationBatchService } from './examinationBatchService';
+
+type SourceType = 'quotation' | 'examination_batch';
+
+type ConversionOptions = {
+  requestedBy?: string;
+  requesterRole?: string;
+  force?: boolean;
+};
+
+type ConversionResult = {
+  success: boolean;
+  sourceType: SourceType;
+  sourceId: string;
+  jobTicketId: string;
+  workOrderId?: string;
+  message: string;
+  workflowStarted: boolean;
+};
+
+const nowIso = () => new Date().toISOString();
+
+const toSafeString = (value: any) => String(value || '').trim();
+const toSafeNumber = (value: any, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const createAuditLog = (params: {
+  sourceType: SourceType;
+  sourceId: string;
+  jobTicketId: string;
+  requestedBy: string;
+  requesterRole: string;
+  details: string;
+}) => ({
+  id: `LOG-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+  date: nowIso(),
+  action: 'CREATE',
+  entityType: 'JobTicketConversion',
+  entityId: params.jobTicketId,
+  details: params.details,
+  userId: params.requestedBy,
+  userRole: params.requesterRole,
+  newValue: {
+    sourceType: params.sourceType,
+    sourceId: params.sourceId,
+    jobTicketId: params.jobTicketId
+  }
+});
+
+const getLockId = (sourceType: SourceType, sourceId: string) => `CONV-${sourceType}-${sourceId}`;
+
+const mergeBatchSnapshot = (storedBatch: any, hydratedBatch: any) => {
+  if (!storedBatch && !hydratedBatch) return null;
+
+  const merged = {
+    ...(storedBatch || {}),
+    ...(hydratedBatch || {})
+  };
+  const hydratedClasses = Array.isArray(hydratedBatch?.classes) && hydratedBatch.classes.length > 0
+    ? hydratedBatch.classes
+    : null;
+  const storedClasses = Array.isArray(storedBatch?.classes) ? storedBatch.classes : [];
+
+  return {
+    ...merged,
+    classes: hydratedClasses || storedClasses
+  };
+};
+
+const validateQuotationForConversion = (quotation: any) => {
+  const errors: string[] = [];
+  if (!toSafeString(quotation?.id)) errors.push('Quotation ID is required');
+  if (!toSafeString(quotation?.customerName)) errors.push('Customer name is required');
+  if (!Array.isArray(quotation?.items) || quotation.items.length === 0) errors.push('At least one quotation item is required');
+  const quotationType = toSafeString(quotation?.quotationType || 'General').toLowerCase();
+  if (quotationType !== 'general' && quotationType !== 'examination') errors.push('Unsupported quotation type for conversion flow. Expected General or Examination.');
+  if (toSafeString(quotation?.status).toLowerCase() === 'converted') errors.push('Quotation already converted');
+  if (toSafeString((quotation as any)?.convertedJobTicketId)) errors.push('Quotation already linked to a job ticket');
+  return errors;
+};
+
+const validateBatchForConversion = (batch: any) => {
+  const errors: string[] = [];
+  if (!toSafeString(batch?.id)) errors.push('Batch ID is required');
+  if (!toSafeString(batch?.name)) errors.push('Batch name is required');
+  if (!Array.isArray(batch?.classes) || batch.classes.length === 0) errors.push('At least one class is required');
+  if (toSafeString(batch?.status).toLowerCase() === 'cancelled') errors.push('Cancelled batch cannot be converted');
+  if (toSafeString((batch as any)?.convertedJobTicketId)) errors.push('Batch already linked to a job ticket');
+  return errors;
+};
+
+const inferJobTicketType = (...values: any[]): JobTicket['type'] => {
+  const haystack = values
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ');
+
+  if (haystack.includes('photocopy') || haystack.includes('copy')) return 'Photocopy';
+  if (haystack.includes('binding')) return 'Binding';
+  if (haystack.includes('scan')) return 'Scan';
+  if (haystack.includes('lamination')) return 'Lamination';
+  return 'Printing';
+};
+
+const mapQuotationToWorkOrder = (quotation: any, workOrderId: string) => {
+  const firstItem = Array.isArray(quotation.items) && quotation.items.length > 0 ? quotation.items[0] : {};
+  const totalQuantity = (quotation.items || []).reduce((sum: number, item: any) => sum + toSafeNumber(item.quantity, 0), 0) || 1;
+  return {
+    id: workOrderId,
+    status: 'Scheduled',
+    sourceType: 'quotation',
+    sourceId: quotation.id,
+    customerId: quotation.customerId || undefined,
+    customerName: quotation.customerName,
+    productId: firstItem?.id || firstItem?.productId || '',
+    productName: firstItem?.name || firstItem?.description || `Quotation ${quotation.id}`,
+    quantityPlanned: totalQuantity,
+    quantityCompleted: 0,
+    dueDate: quotation.validUntil || nowIso(),
+    startDate: nowIso(),
+    notes: `Generated from quotation ${quotation.id}`,
+    logs: [],
+    priority: 'Normal',
+    items: (quotation.items || []).map((item: any) => ({
+      id: item.id || item.productId || `ITEM-${Math.random().toString(36).slice(2, 8)}`,
+      desc: item.name || item.description || 'Item',
+      qty: toSafeNumber(item.quantity, 1),
+      price: toSafeNumber(item.price, 0),
+      total: toSafeNumber(item.quantity, 1) * toSafeNumber(item.price, 0)
+    }))
+  };
+};
+
+const mapQuotationToTicket = (quotation: any, jobTicketId: string, linkedWorkOrderId?: string): JobTicket => {
+  const items = Array.isArray(quotation.items) ? quotation.items : [];
+  const firstItem = items[0] || {};
+  const totalQuantity = items.reduce((sum: number, item: any) => sum + toSafeNumber(item.quantity, 0), 0) || 1;
+  const totalAmount = toSafeNumber(quotation.totalAmount ?? quotation.total, 0);
+  const unitPrice = totalQuantity > 0 ? totalAmount / totalQuantity : toSafeNumber(firstItem.price, 0);
+
+  return {
+    id: jobTicketId,
+    ticketNumber: jobTicketId,
+    type: inferJobTicketType(firstItem?.name, firstItem?.description, firstItem?.serviceDetails?.serviceType),
+    customerId: quotation.customerId || undefined,
+    customerName: quotation.customerName,
+    customerPhone: quotation.customerPhone || quotation.phone || undefined,
+    customerEmail: quotation.customerEmail || quotation.email || undefined,
+    description: items.map((item: any) => item.name || item.description || 'Item').join(', ') || `Quotation ${quotation.id}`,
+    quantity: Math.max(1, totalQuantity),
+    priority: 'Normal',
+    status: 'Received',
+    paperSize: firstItem?.serviceDetails?.paperSize || firstItem?.paperSize || 'A4',
+    paperType: firstItem?.serviceDetails?.paperType || firstItem?.paperType,
+    colorMode: firstItem?.serviceDetails?.colorMode || firstItem?.colorMode || 'BlackWhite',
+    sides: firstItem?.serviceDetails?.sides || firstItem?.sides || 'Single',
+    finishing: firstItem?.serviceDetails?.finishing || firstItem?.finishing || {},
+    unitPrice,
+    rushFee: 0,
+    finishingCost: 0,
+    discount: toSafeNumber(quotation.discount, 0),
+    subtotal: totalAmount,
+    tax: toSafeNumber(quotation.tax, 0),
+    total: totalAmount,
+    dateReceived: nowIso(),
+    dueDate: quotation.validUntil || quotation.dueDate || undefined,
+    progressPercent: 0,
+    notes: `Converted from quotation ${quotation.id}`,
+    sourceType: 'quotation',
+    sourceId: quotation.id,
+    linkedWorkOrderId,
+    createdBy: quotation.createdBy || 'System User',
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  };
+};
+
+const mapBatchToWorkOrder = (batch: any, workOrderId: string) => {
+  const classes = Array.isArray(batch.classes) ? batch.classes : [];
+  const totalLearners = classes.reduce((sum: number, cls: any) => {
+    const learners = toSafeNumber(cls.learners ?? cls.student_count ?? cls.number_of_learners, 0);
+    return sum + learners;
+  }, 0);
+
+  return {
+    id: workOrderId,
+    status: 'Scheduled',
+    sourceType: 'examination_batch',
+    sourceId: batch.id,
+    customerId: batch.school_id || batch.customer_id || undefined,
+    customerName: batch.school_name || batch.customer_name || batch.name,
+    productId: batch.id,
+    productName: batch.name,
+    quantityPlanned: Math.max(1, totalLearners || classes.length),
+    quantityCompleted: 0,
+    dueDate: batch.examination_date || batch.due_date || nowIso(),
+    startDate: nowIso(),
+    priority: batch.priority || 'Normal',
+    notes: `Generated from examination batch ${batch.id}`,
+    logs: [],
+    examinationMeta: {
+      academicYear: batch.academic_year,
+      term: batch.term,
+      examType: batch.exam_type,
+      classCount: classes.length
+    },
+    items: classes.map((cls: any, index: number) => ({
+      id: cls.id || `CLS-${index + 1}`,
+      desc: cls.class_name || cls.name || `Class ${index + 1}`,
+      qty: toSafeNumber(cls.learners ?? cls.student_count ?? cls.number_of_learners, 0) || 1,
+      price: toSafeNumber(cls.fee_per_learner ?? cls.price_per_learner ?? 0, 0),
+      total: (toSafeNumber(cls.learners ?? cls.student_count ?? cls.number_of_learners, 0) || 1) * toSafeNumber(cls.fee_per_learner ?? cls.price_per_learner ?? 0, 0)
+    }))
+  };
+};
+
+const mapBatchToTicket = (batch: any, jobTicketId: string, linkedWorkOrderId?: string): JobTicket => {
+  const classes = Array.isArray(batch.classes) ? batch.classes : [];
+  const totalLearners = classes.reduce((sum: number, cls: any) => {
+    const learners = toSafeNumber(cls.learners ?? cls.student_count ?? cls.number_of_learners, 0);
+    return sum + learners;
+  }, 0);
+  const totalAmount = toSafeNumber(batch.total_amount ?? batch.totalAmount ?? batch.total, 0);
+  const unitPrice = totalLearners > 0 ? totalAmount / totalLearners : 0;
+
+  return {
+    id: jobTicketId,
+    ticketNumber: jobTicketId,
+    type: 'Printing',
+    customerId: batch.school_id || batch.customer_id || undefined,
+    customerName: batch.school_name || batch.customer_name || batch.name,
+    customerPhone: batch.school_phone || batch.customer_phone || undefined,
+    customerEmail: batch.school_email || batch.customer_email || undefined,
+    description: `Examination batch ${batch.name}`,
+    quantity: Math.max(1, totalLearners || classes.length),
+    priority: 'Normal',
+    status: 'Received',
+    paperSize: 'A4',
+    colorMode: 'BlackWhite',
+    sides: 'Single',
+    finishing: {},
+    unitPrice,
+    rushFee: 0,
+    finishingCost: 0,
+    discount: 0,
+    subtotal: totalAmount,
+    tax: 0,
+    total: totalAmount,
+    dateReceived: nowIso(),
+    dueDate: batch.examination_date || batch.due_date || undefined,
+    progressPercent: 0,
+    notes: `Converted from examination batch ${batch.id}`,
+    sourceType: 'examination_batch',
+    sourceId: batch.id,
+    linkedWorkOrderId,
+    createdBy: 'System User',
+    createdAt: nowIso(),
+    updatedAt: nowIso()
+  };
+};
+
+const startWorkflowForTicket = async (workflowEntityId: string, requestedBy: string, sourceType: SourceType, sourceId: string) => {
+  try {
+    await workflowService.initialize();
+    const definitions = workflowService.getActiveDefinitions('work_order');
+    if (!definitions.length) return false;
+    await workflowService.startWorkflow(
+      definitions[0].id,
+      'work_order',
+      workflowEntityId,
+      requestedBy,
+      {
+        reference: workflowEntityId,
+        sourceType,
+        sourceId,
+        requesterName: requestedBy
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const convertQuotationToJobTicket = async (quotationId: string, options: ConversionOptions = {}): Promise<ConversionResult> => {
+  const requestedBy = toSafeString(options.requestedBy) || 'system';
+  const requesterRole = toSafeString(options.requesterRole) || 'System';
+  const force = Boolean(options.force);
+
+  const conversion = await dbService.executeAtomicOperation(
+    ['quotations', 'jobTickets', 'workOrders', 'auditLogs', 'idempotencyKeys'],
+    async (tx) => {
+      const quotationStore = tx.objectStore('quotations');
+      const jobTicketStore = tx.objectStore('jobTickets');
+      const workOrderStore = tx.objectStore('workOrders');
+      const auditLogStore = tx.objectStore('auditLogs');
+      const idempotencyStore = tx.objectStore('idempotencyKeys');
+
+      const quotation = await quotationStore.get(quotationId);
+      if (!quotation) {
+        throw new Error('Quotation not found');
+      }
+
+      const validationErrors = validateQuotationForConversion(quotation);
+      if (!force && validationErrors.length > 0) {
+        throw new Error(validationErrors.join('; '));
+      }
+
+      const lockId = getLockId('quotation', quotationId);
+      const existingLock = await idempotencyStore.get(lockId);
+      if (existingLock && !force) {
+        throw new Error('Conversion already in progress or completed for this quotation');
+      }
+
+      await idempotencyStore.put({
+        id: lockId,
+        scope: 'job_ticket_conversion',
+        sourceId: quotationId,
+        createdAt: nowIso(),
+        metadata: { sourceType: 'quotation', requestedBy }
+      });
+
+      const existingJobTickets = await jobTicketStore.getAll();
+      const existingWorkOrders = await workOrderStore.getAll();
+      const jobTicketId = generateNextId('TKT', existingJobTickets || []);
+      const workOrderId = generateNextId('WO', existingWorkOrders || []);
+      const workOrder = mapQuotationToWorkOrder(quotation, workOrderId);
+      const jobTicket = mapQuotationToTicket(quotation, jobTicketId, workOrderId);
+
+      const updatedQuotation = {
+        ...quotation,
+        status: 'Converted',
+        conversionStatus: 'Converted',
+        convertedJobTicketId: jobTicketId,
+        linkedWorkOrderId: workOrderId,
+        convertedAt: nowIso()
+      };
+
+      await jobTicketStore.put(jobTicket);
+      await workOrderStore.put(workOrder);
+      await quotationStore.put(updatedQuotation);
+
+      const auditEntry = createAuditLog({
+        sourceType: 'quotation',
+        sourceId: quotationId,
+        jobTicketId,
+        requestedBy,
+        requesterRole,
+        details: `Quotation ${quotationId} converted to job ticket ${jobTicketId} and work order ${workOrderId}`
+      });
+      await auditLogStore.put(auditEntry);
+
+      return { jobTicketId, workOrderId, sourceId: quotationId, sourceType: 'quotation' as const };
+    }
+  );
+
+  const workflowStarted = conversion.workOrderId
+    ? await startWorkflowForTicket(conversion.workOrderId, requestedBy, 'quotation', quotationId)
+    : false;
+  return {
+    success: true,
+    sourceType: 'quotation',
+    sourceId: conversion.sourceId,
+    jobTicketId: conversion.jobTicketId,
+    workOrderId: conversion.workOrderId,
+    message: `Quotation ${quotationId} converted successfully`,
+    workflowStarted
+  };
+};
+
+const convertExaminationBatchToJobTicket = async (batchId: string, options: ConversionOptions = {}): Promise<ConversionResult> => {
+  const requestedBy = toSafeString(options.requestedBy) || 'system';
+  const requesterRole = toSafeString(options.requesterRole) || 'System';
+  const force = Boolean(options.force);
+  const hydratedBatchPromise = examinationBatchService.getBatch(batchId).catch(() => null);
+
+  const conversion = await dbService.executeAtomicOperation(
+    ['examinationBatches', 'jobTickets', 'workOrders', 'auditLogs', 'idempotencyKeys'],
+    async (tx) => {
+      const batchStore = tx.objectStore('examinationBatches');
+      const jobTicketStore = tx.objectStore('jobTickets');
+      const workOrderStore = tx.objectStore('workOrders');
+      const auditLogStore = tx.objectStore('auditLogs');
+      const idempotencyStore = tx.objectStore('idempotencyKeys');
+
+      const storedBatch = await batchStore.get(batchId);
+      const hydratedBatch = await hydratedBatchPromise;
+      const batch = mergeBatchSnapshot(storedBatch, hydratedBatch);
+      if (!batch) {
+        throw new Error('Examination batch not found');
+      }
+
+      const validationErrors = validateBatchForConversion(batch);
+      if (!force && validationErrors.length > 0) {
+        throw new Error(validationErrors.join('; '));
+      }
+
+      const lockId = getLockId('examination_batch', batchId);
+      const existingLock = await idempotencyStore.get(lockId);
+      if (existingLock && !force) {
+        throw new Error('Conversion already in progress or completed for this batch');
+      }
+
+      await idempotencyStore.put({
+        id: lockId,
+        scope: 'job_ticket_conversion',
+        sourceId: batchId,
+        createdAt: nowIso(),
+        metadata: { sourceType: 'examination_batch', requestedBy }
+      });
+
+      const existingJobTickets = await jobTicketStore.getAll();
+      const existingWorkOrders = await workOrderStore.getAll();
+      const jobTicketId = generateNextId('TKT', existingJobTickets || []);
+      const workOrderId = generateNextId('WO', existingWorkOrders || []);
+      const workOrder = mapBatchToWorkOrder(batch, workOrderId);
+      const jobTicket = mapBatchToTicket(batch, jobTicketId, workOrderId);
+
+      const updatedBatch = {
+        ...batch,
+        conversionStatus: 'Converted',
+        convertedJobTicketId: jobTicketId,
+        linkedWorkOrderId: workOrderId,
+        convertedAt: nowIso()
+      };
+
+      await jobTicketStore.put(jobTicket);
+      await workOrderStore.put(workOrder);
+      await batchStore.put(updatedBatch);
+
+      const auditEntry = createAuditLog({
+        sourceType: 'examination_batch',
+        sourceId: batchId,
+        jobTicketId,
+        requestedBy,
+        requesterRole,
+        details: `Examination batch ${batchId} converted to job ticket ${jobTicketId} and work order ${workOrderId}`
+      });
+      await auditLogStore.put(auditEntry);
+
+      return { jobTicketId, workOrderId, sourceId: batchId, sourceType: 'examination_batch' as const };
+    }
+  );
+
+  const workflowStarted = conversion.workOrderId
+    ? await startWorkflowForTicket(conversion.workOrderId, requestedBy, 'examination_batch', batchId)
+    : false;
+  return {
+    success: true,
+    sourceType: 'examination_batch',
+    sourceId: conversion.sourceId,
+    jobTicketId: conversion.jobTicketId,
+    workOrderId: conversion.workOrderId,
+    message: `Examination batch ${batchId} converted successfully`,
+    workflowStarted
+  };
+};
+
+export const jobTicketConversionService = {
+  convertQuotationToJobTicket,
+  convertExaminationBatchToJobTicket
+};
+
+export type { ConversionOptions, ConversionResult, SourceType };
