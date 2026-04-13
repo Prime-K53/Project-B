@@ -1,0 +1,4 @@
+- [x] Acknowledge greeting
+- [ ] Clarify user's intent for Prime-ERP assistance
+- [ ] Provide options for ERP-related tasks (e.g., code editing, project setup, documentation)
+- [ ] Execute first step based on clarification
