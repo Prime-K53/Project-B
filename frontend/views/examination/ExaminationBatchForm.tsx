@@ -161,7 +161,7 @@ const ExaminationBatchForm: React.FC = () => {
       
       // Additional user guidance based on common errors
       if (errorMessage.includes('School ID') || errorMessage.includes('required')) {
-        toast.info('Please ensure a valid school is selected.');
+        toast.error('Please ensure a valid school is selected.');
       }
     } finally {
       setLoading(false);
