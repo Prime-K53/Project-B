@@ -259,49 +259,75 @@ export const JobTickets: React.FC = () => {
     }
   };
 
+  const companyName = companyConfig?.companyName || 'Prime ERP';
+  
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Printer className="text-blue-600" />
-            Job Tickets
-          </h1>
-          <p className="text-slate-500 mt-1">Manage print jobs and photocopy orders</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 p-6">
+      {/* Header Section */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20">
+              <Printer className="text-white" size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Job Tickets</h1>
+              <p className="text-sm text-slate-500 font-medium">Manage print jobs and service orders</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold flex items-center gap-2 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-600/25 transition-all transform hover:scale-[1.02]"
+          >
+            <Plus size={18} />
+            New Job Ticket
+          </button>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700"
-        >
-          <Plus size={18} />
-          New Job Ticket
-        </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <p className="text-xs font-bold text-slate-400 uppercase">Total</p>
-          <p className="text-2xl font-black text-slate-800">{stats.total}</p>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-slate-500"></div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total</p>
+          </div>
+          <p className="text-3xl font-black text-slate-800">{stats.total}</p>
         </div>
-        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-          <p className="text-xs font-bold text-blue-500 uppercase">Received</p>
-          <p className="text-2xl font-black text-blue-700">{stats.received}</p>
+        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-blue-200/60 shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Received</p>
+          </div>
+          <p className="text-3xl font-black text-blue-700">{stats.received}</p>
         </div>
-        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
-          <p className="text-xs font-bold text-amber-600 uppercase">Processing</p>
-          <p className="text-2xl font-black text-amber-700">{stats.processing}</p>
+        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-amber-200/60 shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+            <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Processing</p>
+          </div>
+          <p className="text-3xl font-black text-amber-700">{stats.processing}</p>
         </div>
-        <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-          <p className="text-xs font-bold text-emerald-600 uppercase">Ready</p>
-          <p className="text-2xl font-black text-emerald-700">{stats.ready}</p>
+        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-emerald-200/60 shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+            <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Ready</p>
+          </div>
+          <p className="text-3xl font-black text-emerald-700">{stats.ready}</p>
         </div>
-        <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-          <p className="text-xs font-bold text-red-600 uppercase">Overdue</p>
-          <p className="text-2xl font-black text-red-700">{stats.overdue}</p>
+        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-red-200/60 shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Overdue</p>
+          </div>
+          <p className="text-3xl font-black text-red-700">{stats.overdue}</p>
         </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <p className="text-xs font-bold text-slate-500 uppercase">Today</p>
-          <p className="text-2xl font-black text-slate-700">{stats.today}</p>
+        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-all">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-violet-500"></div>
+            <p className="text-xs font-bold text-violet-600 uppercase tracking-wider">Today</p>
+          </div>
+          <p className="text-3xl font-black text-violet-700">{stats.today}</p>
         </div>
       </div>
 
@@ -356,76 +382,78 @@ export const JobTickets: React.FC = () => {
               <div
                 key={ticket.id}
                 id={`ticket-card-${ticket.id}`}
-                className={`bg-white rounded-2xl border-2 overflow-hidden hover:shadow-xl transition-all transform hover:-translate-y-1 ${
-                  isOverdue ? 'border-red-300' : 'border-slate-200'
-                }`}
+                className={`bg-white rounded-2xl border border-slate-200/60 overflow-hidden hover:border-blue-300 hover:shadow-xl hover:shadow-blue-600/10 transition-all duration-300 group cursor-pointer`}
+                onClick={() => setSelectedTicket(ticket)}
               >
-                {/* Card Header with Gradient */}
-                <div className={`p-4 ${
-                  ticket.priority === 'Urgent' ? 'bg-gradient-to-r from-red-500 to-red-600' :
-                  ticket.priority === 'Express' ? 'bg-gradient-to-r from-orange-500 to-orange-600' :
-                  ticket.priority === 'Rush' ? 'bg-gradient-to-r from-amber-500 to-amber-600' :
-                  'bg-gradient-to-r from-blue-500 to-blue-600'
+                {/* Card Header */}
+                <div className={`px-5 py-4 border-b border-slate-100 ${
+                  ticket.priority === 'Urgent' ? 'bg-gradient-to-r from-red-50 to-red-100/50' :
+                  ticket.priority === 'Express' ? 'bg-gradient-to-r from-orange-50 to-orange-100/50' :
+                  ticket.priority === 'Rush' ? 'bg-gradient-to-r from-amber-50 to-amber-100/50' :
+                  'bg-gradient-to-r from-slate-50 to-white'
                 }`}>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="bg-white/20 p-1.5 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl ${
+                        ticket.priority === 'Urgent' ? 'bg-red-500 text-white' :
+                        ticket.priority === 'Express' ? 'bg-orange-500 text-white' :
+                        ticket.priority === 'Rush' ? 'bg-amber-500 text-white' :
+                        'bg-blue-600 text-white'
+                      }`}>
                         {typeConfig[ticket.type].icon}
                       </div>
                       <div>
-                        <p className="text-white font-bold text-sm">{ticket.ticketNumber}</p>
-                        <p className="text-white/80 text-xs">{typeConfig[ticket.type].label}</p>
+                        <p className="font-black text-slate-800 text-base">{ticket.ticketNumber}</p>
+                        <p className="text-xs font-medium text-slate-500">{typeConfig[ticket.type].label}</p>
                       </div>
                     </div>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleExportCard(ticket);
                         }}
-                        className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
-                        title="Export as image"
+                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                        title="Export"
                       >
-                        <ImageIcon size={14} className="text-white" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleShareCard(ticket);
-                        }}
-                        className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
-                        title="Share"
-                      >
-                        <Share2 size={14} className="text-white" />
+                        <ImageIcon size={14} className="text-slate-600" />
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Card Body */}
-                <div className="p-4 cursor-pointer" onClick={() => setSelectedTicket(ticket)}>
-                  {/* Status Badge */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusConfig[ticket.status].color} flex items-center gap-1`}>
+                <div className="p-5">
+                  {/* Status & Priority */}
+                  <div className="flex items-center flex-wrap gap-2 mb-4">
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${statusConfig[ticket.status].color} flex items-center gap-1`}>
                       {statusConfig[ticket.status].icon}
                       {statusConfig[ticket.status].label}
                     </span>
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${priorityConfig[ticket.priority].color}`}>
+                      {priorityConfig[ticket.priority].label}
+                    </span>
                     {isOverdue && (
-                      <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 flex items-center gap-1">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-700 flex items-center gap-1">
                         <AlertTriangle size={12} />
                         Overdue
                       </span>
                     )}
                   </div>
 
-                  {/* Customer Info */}
-                  <div className="mb-3">
+                  {/* Customer */}
+                  <div className="mb-4">
                     <div className="flex items-center gap-2 mb-1">
-                      <User size={14} className="text-slate-400" />
-                      <p className="font-bold text-slate-800 text-sm">{ticket.customerName}</p>
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                        <User size={14} className="text-white" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{ticket.customerName}</p>
+                        <p className="text-xs text-slate-500">{companyName}</p>
+                      </div>
                     </div>
                     {ticket.customerPhone && (
-                      <div className="flex items-center gap-2 text-slate-500 text-xs">
+                      <div className="flex items-center gap-2 text-slate-500 text-xs ml-10">
                         <Phone size={12} />
                         <span>{ticket.customerPhone}</span>
                       </div>
@@ -433,45 +461,45 @@ export const JobTickets: React.FC = () => {
                   </div>
 
                   {/* Description */}
-                  <p className="text-slate-600 text-sm mb-3 line-clamp-2">{ticket.description}</p>
+                  <p className="text-slate-600 text-sm mb-4 line-clamp-2 leading-relaxed">{ticket.description}</p>
 
-                  {/* Specs Row */}
-                  <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
-                    <span className="flex items-center gap-1">
+                  {/* Specs */}
+                  <div className="flex items-center flex-wrap gap-2 text-xs mb-4">
+                    <span className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 rounded-lg text-slate-600 font-medium">
                       <Printer size={12} />
                       {ticket.quantity} {ticket.paperSize}
                     </span>
-                    <span className={`px-2 py-0.5 rounded-full ${ticket.colorMode === 'Color' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {ticket.colorMode === 'Color' ? 'Color' : 'B/W'}
+                    <span className={`px-2.5 py-1.5 rounded-lg font-medium ${ticket.colorMode === 'Color' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {ticket.colorMode === 'Color' ? 'Full Color' : 'Black & White'}
                     </span>
                     {ticket.dueDate && (
-                      <span className={`flex items-center gap-1 ${timeRemaining?.className || ''}`}>
+                      <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-medium ${timeRemaining?.className || 'bg-slate-100 text-slate-600'}`}>
                         <Clock size={12} />
-                        {timeRemaining?.text || 'N/A'}
+                        {timeRemaining?.text || 'Due'}
                       </span>
                     )}
                   </div>
 
-                  {/* Progress Bar (if Processing) */}
+                  {/* Progress */}
                   {ticket.status === 'Processing' && (
-                    <div className="mb-3">
-                      <div className="flex justify-between text-xs text-slate-500 mb-1">
-                        <span>Progress</span>
-                        <span className="font-bold">{ticket.progressPercent}%</span>
+                    <div className="mb-4">
+                      <div className="flex justify-between text-xs text-slate-500 mb-1.5">
+                        <span className="font-medium">Progress</span>
+                        <span className="font-black text-blue-600">{ticket.progressPercent}%</span>
                       </div>
                       <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all" 
+                          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500" 
                           style={{ width: `${ticket.progressPercent}%` }} 
                         />
                       </div>
                     </div>
                   )}
 
-                  {/* Price */}
-                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                    <span className="text-xs text-slate-500">Total</span>
-                    <span className="text-lg font-black text-slate-800">{currency}{ticket.total.toLocaleString()}</span>
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                    <span className="text-xs font-medium text-slate-500">Total Amount</span>
+                    <span className="text-xl font-black text-slate-800">{currency}{ticket.total.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -516,6 +544,7 @@ interface JobTicketFormProps {
 const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave, onClose }) => {
   const { companyConfig } = useData();
   const currency = companyConfig.currencySymbol;
+  const companyName = companyConfig?.companyName || 'Prime ERP';
   
   const [formData, setFormData] = useState({
     type: ticket?.type || 'Printing' as JobTicketType,
@@ -597,19 +626,34 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-slate-800">{ticket ? 'Edit Job Ticket' : 'New Job Ticket'}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-3xl w-full max-w-3xl max-h-[92vh] overflow-hidden shadow-2xl">
+        {/* Modal Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+              <Printer className="text-white" size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white">{ticket ? 'Edit Job Ticket' : 'New Job Ticket'}</h2>
+              <p className="text-xs text-blue-100">{companyName}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
+            <X size={20} className="text-white" />
+          </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="space-y-3">
-            <h3 className="text-sm font-bold text-slate-600 uppercase">Customer</h3>
+        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(92vh-80px)]">
+          {/* Customer Section */}
+          <div className="bg-slate-50 rounded-2xl p-5 mb-5 border border-slate-200">
+            <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2">
+              <User size={16} className="text-blue-600" />
+              Customer Information
+            </h3>
             <div className="grid grid-cols-2 gap-4">
               <div ref={customerDropdownRef} className="relative">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Customer Name</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Customer Name</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -625,19 +669,19 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
                       setShowCustomerDropdown(true);
                       setCustomerSearchTerm(formData.customerName === 'Walk-in' ? '' : formData.customerName);
                     }}
-                    className="w-full p-2 pr-8 border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                    className="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none bg-white"
                     placeholder="Search customer or type name..."
                   />
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                 </div>
                 
                 {showCustomerDropdown && (
-                  <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                     <div
                       onClick={() => handleCustomerSelect({ id: '', name: 'Walk-in', phone: '' })}
-                      className="px-3 py-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between border-b border-slate-100"
+                      className="px-4 py-3 hover:bg-blue-50 cursor-pointer flex items-center justify-between border-b border-slate-100"
                     >
-                      <span className="font-medium text-slate-600">Walk-in Customer</span>
+                      <span className="font-medium text-slate-700">Walk-in Customer</span>
                       {formData.customerName === 'Walk-in' && <Check size={16} className="text-blue-600" />}
                     </div>
                     {filteredCustomers.map((customer) => (
@@ -842,9 +886,9 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-bold hover:bg-slate-50">Cancel</button>
-            <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">{ticket ? 'Update Ticket' : 'Create Ticket'}</button>
+          <div className="flex gap-3 pt-4 border-t border-slate-200">
+            <button type="button" onClick={onClose} className="flex-1 px-5 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+            <button type="submit" className="flex-1 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-600/25 transition-all transform hover:scale-[1.02]">{ticket ? 'Update Ticket' : 'Create Ticket'}</button>
           </div>
         </form>
       </div>
