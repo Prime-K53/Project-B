@@ -134,6 +134,15 @@ const generateLocalId = () => {
 
 const toIso = () => new Date().toISOString();
 const isLocalBatchId = (id: string) => String(id || '').startsWith('local-');
+const isUuidFormat = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+const resolveBatchId = async (id: string): Promise<string> => {
+  if (isLocalBatchId(id)) return id;
+  if (isUuidFormat(id)) return id;
+  const byNumber = await examinationBatchService.getBatchByNumber(id);
+  if (!byNumber) throw new Error(`Batch not found: ${id}`);
+  return byNumber.id;
+};
 
 const normalizeBatchForStorage = (
   batch: Partial<ExaminationBatch> & Record<string, any>,
@@ -504,7 +513,8 @@ const createBatchRemote = async (payload: Partial<ExaminationBatch>) => {
 };
 
 const updateBatchRemote = async (id: string, payload: Partial<ExaminationBatch>) => {
-  const response = await fetchWithTimeout(`/batches/${id}`, {
+  const resolvedId = await resolveBatchId(id);
+  const response = await fetchWithTimeout(`/batches/${resolvedId}`, {
     method: 'PUT',
     headers: getHeaders(),
     body: JSON.stringify(payload),
@@ -514,7 +524,8 @@ const updateBatchRemote = async (id: string, payload: Partial<ExaminationBatch>)
 };
 
 const deleteBatchRemote = async (id: string) => {
-  const response = await fetchWithTimeout(`/batches/${id}`, {
+  const resolvedId = await resolveBatchId(id);
+  const response = await fetchWithTimeout(`/batches/${resolvedId}`, {
     method: 'DELETE',
     headers: getHeaders()
   }, REQUEST_TIMEOUT_MS);
@@ -623,12 +634,19 @@ export const examinationBatchService = {
 
   async getBatch(id: string): Promise<ExaminationBatch> {
     console.log('[DEBUG] examinationBatchService.getBatch - Fetching batch:', { id, isLocal: isLocalBatchId(id) });
-    
+
     if (isLocalBatchId(id)) {
       const local = await getLocalBatches();
       const fallback = local.find(batch => String(batch.id) === String(id));
       if (fallback) return fallback as ExaminationBatch;
       throw new Error('Local batch not found');
+    }
+
+    if (!isUuidFormat(id)) {
+      console.log('[DEBUG] examinationBatchService.getBatch - ID appears to be batch number, using lookup:', { id });
+      const byNumber = await this.getBatchByNumber(id);
+      if (byNumber) return byNumber;
+      throw new Error(`Batch not found: ${id}`);
     }
 
     try {
@@ -923,7 +941,8 @@ export const examinationBatchService = {
       adjustments?: MarketAdjustment[];
     }
   ): Promise<ExaminationBatch> {
-    const response = await fetchWithTimeout(`/batches/${id}/calculate`, {
+    const resolvedId = await resolveBatchId(id);
+    const response = await fetchWithTimeout(`/batches/${resolvedId}/calculate`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(options || {})
@@ -933,7 +952,8 @@ export const examinationBatchService = {
   },
 
   async approveBatch(id: string): Promise<ExaminationBatch> {
-    const response = await fetchWithTimeout(`/batches/${id}/approve`, {
+    const resolvedId = await resolveBatchId(id);
+    const response = await fetchWithTimeout(`/batches/${resolvedId}/approve`, {
       method: 'POST',
       headers: getHeaders()
     }, HEAVY_REQUEST_TIMEOUT_MS);
@@ -942,7 +962,8 @@ export const examinationBatchService = {
   },
 
   async getCostBreakdown(id: string): Promise<any[]> {
-    const response = await fetchWithTimeout(`/batches/${id}/cost-breakdown`, {
+    const resolvedId = await resolveBatchId(id);
+    const response = await fetchWithTimeout(`/batches/${resolvedId}/cost-breakdown`, {
       headers: getHeaders()
     }, MEDIUM_REQUEST_TIMEOUT_MS);
     if (!response.ok) throw new Error(await toServiceError(response, 'Failed to fetch cost breakdown'));
@@ -950,10 +971,11 @@ export const examinationBatchService = {
   },
 
   async getBOM(id: string): Promise<any[]> {
+    const resolvedId = await resolveBatchId(id);
     try {
-      return await this.getCostBreakdown(id);
+      return await this.getCostBreakdown(resolvedId);
     } catch {
-      const response = await fetchWithTimeout(`/batches/${id}/bom`, {
+      const response = await fetchWithTimeout(`/batches/${resolvedId}/bom`, {
         headers: getHeaders()
       }, MEDIUM_REQUEST_TIMEOUT_MS);
       if (!response.ok) throw new Error(await toServiceError(response, 'Failed to fetch BOM'));
@@ -1072,9 +1094,10 @@ export const examinationBatchService = {
     invoice?: ExaminationGeneratedInvoicePayload;
   }> {
     const headers = getHeaders();
-    const idempotencyKey = payload?.idempotencyKey || `EXAM-BATCH-${id}`;
+    const resolvedId = await resolveBatchId(id);
+    const idempotencyKey = payload?.idempotencyKey || `EXAM-BATCH-${resolvedId}`;
 
-    const response = await fetchWithTimeout(`/batches/${id}/invoice`, {
+    const response = await fetchWithTimeout(`/batches/${resolvedId}/invoice`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ idempotencyKey })
