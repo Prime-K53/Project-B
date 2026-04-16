@@ -432,11 +432,26 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
         roundingMethod: companyConfig?.pricingSettings?.defaultMethod,
         roundingValue: Number(companyConfig?.pricingSettings?.customStep || 50)
       });
-      setBatches(prev => prev.map(b => b.id === id ? result : b));
+      
+      // Enrich the calculated result with the full batch details safely
+      // Calculation endpoints often drop joined relation IDs or fields natively, leading to "Unknown" fields downstream.
+      let enrichedResult = result;
+      try {
+          const freshBatchDetails = await examinationBatchService.getBatch(id);
+          enrichedResult = { 
+              ...freshBatchDetails, 
+              ...result, 
+              school_id: result.school_id || freshBatchDetails.school_id 
+          };
+      } catch (err) {
+          console.warn('[Examination] Failed to load full batch details for calculated result enrichment.');
+      }
+
+      setBatches(prev => prev.map(b => b.id === id ? enrichedResult : b));
 
       // Create notification for batch calculation
       try {
-        await sendBatchCalculatedNotification(result, user?.id);
+        await sendBatchCalculatedNotification(enrichedResult, user?.id);
       } catch (notificationError) {
         console.error('[Examination] Failed to create batch notification:', notificationError);
         // Non-blocking: continue even if notification fails
@@ -444,17 +459,17 @@ export const ExaminationProvider: React.FC<ExaminationProviderProps> = ({ childr
 
       // Send batch to production queue
       try {
-        await sendBatchToProduction(result);
+        await sendBatchToProduction(enrichedResult);
       } catch (productionError) {
         console.error('[Examination] Failed to send batch to production:', productionError);
         // Non-blocking: continue even if production sync fails
       }
 
-      return result;
+      return enrichedResult;
     } finally {
       setLoading(false);
     }
-  }, [companyConfig?.pricingSettings?.customStep, companyConfig?.pricingSettings?.defaultMethod, user?.id]);
+  }, [companyConfig?.pricingSettings?.customStep, companyConfig?.pricingSettings?.defaultMethod, user?.id, sendBatchToProduction]);
 
   const approveBatch = useCallback(async (id: string) => {
     setLoading(true);
