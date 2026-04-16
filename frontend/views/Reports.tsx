@@ -228,7 +228,7 @@ const Reports: React.FC = () => {
 
     const renderOverview = () => <RevenueDashboard />;
     const renderRoundingAnalytics = () => <RoundingAnalytics />;
-    const renderBusinessIntel = () => <RevenueDashboard />;
+    const renderBusinessIntel = () => <InternalAuditor />;
 
     const NAV_ITEMS = [
         { id: 'Overview', label: 'Dashboard', icon: Activity },
