@@ -11,6 +11,16 @@ import {
   getTopProductsByRoundingProfit
 } from '../../services/roundingAnalyticsService';
 import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  AreaChart, Area, Cell, PieChart, Pie, ResponsiveContainer, Legend
+} from 'recharts';
+import {
+  TrendingUp, Coins, Target, ArrowUpRight, ArrowDownRight, 
+  Info, Activity, PieChart as PieChartIcon, BarChart3, 
+  AlertCircle, CheckCircle2, HelpCircle, History
+} from 'lucide-react';
+import { format } from 'date-fns';
+import {
   RoundingDashboardData,
   RoundingInsight,
   RoundingMethodPerformanceRow,
@@ -22,6 +32,8 @@ import {
   RoundingTopProductRow
 } from '../../types';
 import { useData } from '../../context/DataContext';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 const buildHistoryKey = (productId: string, variantId?: string) => `${productId}::${variantId || ''}`;
 
@@ -133,260 +145,360 @@ const RoundingAnalytics: React.FC = () => {
     }));
   }, [productRows]);
 
+  const formatValue = (val: number) => {
+    return `${currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  };
+
   if (loading) {
     return (
-      <div className="p-4">
-        <p className="text-sm text-slate-500">Loading rounding analytics...</p>
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin" />
+        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Analyzing Rounding DNA...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <section className="bg-white border border-slate-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Dashboard Widgets</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-          <div>
-            <p className="text-slate-500">Rounding Profit Today</p>
-            <p className="font-semibold">{currency}{Number(dashboard?.rounding_profit_today || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div>
-            <p className="text-slate-500">Rounding Profit This Month</p>
-            <p className="font-semibold">{currency}{Number(dashboard?.rounding_profit_this_month || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div>
-            <p className="text-slate-500">Top Product</p>
-            <p className="font-semibold">{dashboard?.top_product_name || 'N/A'}</p>
-            <p className="text-xs text-slate-500">{currency}{Number(dashboard?.top_product_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div>
-            <p className="text-slate-500">Avg Rounding Gain / Unit</p>
-            <p className="font-semibold">{currency}{Number(dashboard?.avg_rounding_gain_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+    <div className="space-y-8 animate-fadeIn pb-20">
+      {/* Top Level KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
+          <div className="relative z-10">
+            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 mb-4">
+              <Coins size={20} />
+            </div>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Realized Profit (Today)</p>
+            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
+              {formatValue(dashboard?.rounding_profit_today || 0)}
+            </h3>
           </div>
         </div>
-      </section>
 
-      <section className="bg-white border border-slate-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Total Rounding Profit</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-          <div>
-            <p className="text-slate-500">Potential Rounding Profit</p>
-            <p className="font-semibold">{currency}{Number(summary?.potential_rounding_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div>
-            <p className="text-slate-500">Realized Rounding Profit</p>
-            <p className="font-semibold">{currency}{Number(summary?.realized_rounding_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div>
-            <p className="text-slate-500">Rounding Impact %</p>
-            <p className="font-semibold">{Number(summary?.rounding_profit_percentage || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}%</p>
-          </div>
-          <div>
-            <p className="text-slate-500">Products with Rounding</p>
-            <p className="font-semibold">{Number(summary?.products_with_rounding || 0).toLocaleString()}</p>
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
+          <div className="relative z-10">
+            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 mb-4">
+              <TrendingUp size={20} />
+            </div>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Profit (This Month)</p>
+            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
+              {formatValue(dashboard?.rounding_profit_this_month || 0)}
+            </h3>
           </div>
         </div>
-      </section>
 
-      <section className="bg-white border border-slate-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Product Performance</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="py-2">Product</th>
-                <th className="py-2">Rounded Diff / Unit</th>
-                <th className="py-2">Qty Sold</th>
-                <th className="py-2">Profit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {productRows.map((row) => (
-                <tr key={buildHistoryKey(row.product_id, row.variant_id)} className="border-b border-slate-100">
-                  <td className="py-2">{row.product_name}</td>
-                  <td className="py-2">{currency}{Number(row.rounded_diff_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td className="py-2">{Number(row.qty_sold || 0).toLocaleString()}</td>
-                  <td className="py-2">{currency}{Number(row.realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                </tr>
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
+          <div className="relative z-10">
+            <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 mb-4">
+              <Target size={20} />
+            </div>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Avg Gain per Unit</p>
+            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
+              {formatValue(dashboard?.avg_rounding_gain_per_unit || 0)}
+            </h3>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
+          <div className="relative z-10">
+            <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 mb-4">
+              <Activity size={20} />
+            </div>
+            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Impact Percentage</p>
+            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
+              {(summary?.rounding_profit_percentage || 0).toFixed(2)}%
+            </h3>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Charts Area */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Profit Trend Chart */}
+        <div className="bg-white p-8 rounded-[2rem] border border-slate-200/60 shadow-sm">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h3 className="text-lg font-black text-slate-800 tracking-tight">Realized vs Potential Profit</h3>
+              <p className="text-slate-400 text-sm font-medium mt-1">Daily rounding performance trend</p>
+            </div>
+          </div>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dailyRows}>
+                <defs>
+                  <linearGradient id="colorRealized" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorPotential" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.05}/>
+                    <stop offset="95%" stopColor="#94a3b8" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="period" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 600}} 
+                  dy={10}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 600}}
+                  tickFormatter={(val) => `${currency}${val}`}
+                />
+                <Tooltip 
+                  contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
+                  formatter={(val: number) => [formatValue(val), '']}
+                />
+                <Area type="monotone" dataKey="realized_profit" name="Realized Profit" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorRealized)" />
+                <Area type="monotone" dataKey="potential_profit" name="Potential Profit" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorPotential)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Method Distribution & Top Products */}
+        <div className="grid grid-cols-1 gap-6">
+          <div className="bg-white p-8 rounded-[2rem] border border-slate-200/60 shadow-sm flex flex-col md:flex-row gap-8">
+            <div className="flex-1">
+              <h3 className="text-lg font-black text-slate-800 tracking-tight mb-2">Method Yield</h3>
+              <p className="text-slate-400 text-xs font-medium mb-6">Profit by rounding algorithm</p>
+              <div className="h-[180px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={methodRows}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={70}
+                      paddingAngle={5}
+                      dataKey="realized_profit"
+                      nameKey="method"
+                    >
+                      {methodRows.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '11px'}}
+                      formatter={(val: number) => formatValue(val)}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="flex-1 space-y-3">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Profit Breakdown</h4>
+              {methodRows.map((method, idx) => (
+                <div key={method.method} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100/50">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                    <span className="text-[12px] font-bold text-slate-700">{method.method}</span>
+                  </div>
+                  <span className="text-[12px] font-black text-slate-900">{formatValue(method.realized_profit)}</span>
+                </div>
               ))}
-              {productRows.length === 0 && (
-                <tr>
-                  <td className="py-2 text-slate-500" colSpan={4}>No rounding product performance data available.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">Daily Report</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
-                  <th className="py-2">Date</th>
-                  <th className="py-2">Products Updated</th>
-                  <th className="py-2">Potential Profit</th>
-                  <th className="py-2">Realized Profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dailyRows.map((row) => (
-                  <tr key={row.period} className="border-b border-slate-100">
-                    <td className="py-2">{row.period}</td>
-                    <td className="py-2">{Number(row.products_updated || 0).toLocaleString()}</td>
-                    <td className="py-2">{currency}{Number(row.potential_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2">{currency}{Number(row.realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">Monthly Report</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
-                  <th className="py-2">Month</th>
-                  <th className="py-2">Products Updated</th>
-                  <th className="py-2">Potential Profit</th>
-                  <th className="py-2">Realized Profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlyRows.map((row) => (
-                  <tr key={row.period} className="border-b border-slate-100">
-                    <td className="py-2">{row.period}</td>
-                    <td className="py-2">{Number(row.products_updated || 0).toLocaleString()}</td>
-                    <td className="py-2">{currency}{Number(row.potential_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2">{currency}{Number(row.realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">Method Performance</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
-                  <th className="py-2">Method</th>
-                  <th className="py-2">Potential Profit</th>
-                  <th className="py-2">Realized Profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {methodRows.map((row) => (
-                  <tr key={row.method} className="border-b border-slate-100">
-                    <td className="py-2">{row.method}</td>
-                    <td className="py-2">{currency}{Number(row.potential_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2">{currency}{Number(row.realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">Top Products by Rounding Profit</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
-                  <th className="py-2">Product</th>
-                  <th className="py-2">Qty Sold</th>
-                  <th className="py-2">Profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topProducts.map((row) => (
-                  <tr key={buildHistoryKey(row.product_id, row.variant_id)} className="border-b border-slate-100">
-                    <td className="py-2">{row.product_name}</td>
-                    <td className="py-2">{Number(row.qty_sold || 0).toLocaleString()}</td>
-                    <td className="py-2">{currency}{Number(row.realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white border border-slate-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Profit Projection and Smart Insights</h3>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-slate-600">Lookback: {projection?.lookback_days || 0} days</p>
-            <p className="text-sm text-slate-600">Average Daily Realized Profit: {currency}{Number(projection?.average_daily_realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-            <p className="text-sm font-semibold">Projected {projection?.projected_days || 0} day profit: {currency}{Number(projection?.projected_realized_profit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div>
-            <ul className="list-disc ml-5 space-y-2 text-sm">
-              {insights.map((insight) => (
-                <li key={insight.id}>
-                  <span className="font-semibold">{insight.title}:</span> {insight.message}
-                </li>
+          <div className="bg-white p-8 rounded-[2rem] border border-slate-200/60 shadow-sm">
+            <h3 className="text-lg font-black text-slate-800 tracking-tight mb-6">Top Rounding Drivers</h3>
+            <div className="space-y-4">
+              {topProducts.slice(0, 3).map((product, idx) => (
+                <div key={idx} className="relative">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[13px] font-bold text-slate-700">{product.product_name}</span>
+                    <span className="text-[13px] font-black text-blue-600">{formatValue(product.realized_profit)}</span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-blue-500 rounded-full" 
+                      style={{ width: `${(product.realized_profit / (topProducts[0]?.realized_profit || 1)) * 100}%` }} 
+                    />
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section className="bg-white border border-slate-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">Price History</h3>
-        <div className="mb-3">
-          <select
-            value={selectedHistoryKey}
-            onChange={(event) => setSelectedHistoryKey(event.target.value)}
-            className="border border-slate-300 rounded px-2 py-1 text-sm"
-          >
-            {historyOptions.map((option) => (
-              <option key={option.key} value={option.key}>{option.label}</option>
+      {/* Projection & Insights */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 bg-slate-900 p-8 rounded-[2rem] text-white shadow-xl relative overflow-hidden group">
+          <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
+             <TrendingUp size={160} />
+          </div>
+          <h3 className="text-xl font-bold mb-2">30-Day Projection</h3>
+          <p className="text-slate-400 text-sm mb-8">Based on last {projection?.lookback_days} days of performance</p>
+          
+          <div className="space-y-6 relative z-10">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Daily Velocity</p>
+              <p className="text-2xl font-black">{formatValue(projection?.average_daily_realized_profit || 0)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Projected {projection?.projected_days}d Gain</p>
+              <p className="text-4xl font-black text-emerald-400 tracking-tight">{formatValue(projection?.projected_realized_profit || 0)}</p>
+            </div>
+            <div className="pt-4 border-t border-slate-800 flex items-center gap-2 text-emerald-400 text-[11px] font-bold">
+              <ArrowUpRight size={14} />
+              Positive outlook based on volume
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200/60 shadow-sm">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+              <HelpCircle size={18} />
+            </div>
+            <h3 className="text-lg font-black text-slate-800 tracking-tight">Smart Rounding Insights</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {insights.map((insight) => (
+              <div 
+                key={insight.id} 
+                className={`p-5 rounded-3xl border ${
+                  insight.severity === 'warning' 
+                    ? 'bg-rose-50 border-rose-100 text-rose-900' 
+                    : insight.severity === 'success'
+                    ? 'bg-emerald-50 border-emerald-100 text-emerald-900'
+                    : 'bg-blue-50 border-blue-100 text-blue-900'
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <div className={`mt-1 ${
+                    insight.severity === 'warning' ? 'text-rose-500' : insight.severity === 'success' ? 'text-emerald-500' : 'text-blue-500'
+                  }`}>
+                    {insight.severity === 'warning' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-[14px] leading-tight mb-1">{insight.title}</h4>
+                    <p className={`text-[12px] font-medium leading-relaxed ${
+                      insight.severity === 'warning' ? 'text-rose-700/80' : insight.severity === 'success' ? 'text-emerald-700/80' : 'text-blue-700/80'
+                    }`}>
+                      {insight.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
             ))}
-            {historyOptions.length === 0 && <option value="">No products</option>}
-          </select>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 border-b border-slate-200">
-                <th className="py-2">Date</th>
-                <th className="py-2">Version</th>
-                <th className="py-2">Previous Price</th>
-                <th className="py-2">New Price</th>
-                <th className="py-2">Rounding Difference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {priceHistory.map((entry) => (
-                <tr key={entry.id} className="border-b border-slate-100">
-                  <td className="py-2">{entry.date.slice(0, 10)}</td>
-                  <td className="py-2">{entry.version}</td>
-                  <td className="py-2">{entry.previous_rounded_price === null ? '-' : `${currency}${Number(entry.previous_rounded_price).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}</td>
-                  <td className="py-2">{currency}{Number(entry.rounded_price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  <td className="py-2">{currency}{Number(entry.rounding_difference).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+      </div>
+
+      {/* Tables Section */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="bg-white rounded-[2rem] p-8 border border-slate-200/60 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-slate-900 text-white rounded-lg">
+                <BarChart3 size={18} />
+              </div>
+              <h3 className="font-black text-slate-800 text-[14px] tracking-widest uppercase">Product Rounding Matrix</h3>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[13px]">
+              <thead>
+                <tr className="text-slate-400 font-bold text-[10px] tracking-widest border-b border-slate-100">
+                  <th className="px-6 py-4">PRODUCT / VARIANT</th>
+                  <th className="px-6 py-4 text-right">UNIT ROUNDING DIFF</th>
+                  <th className="px-6 py-4 text-right">VOLUME SOLD</th>
+                  <th className="px-6 py-4 text-right">METHOD</th>
+                  <th className="px-6 py-4 text-right uppercase">Total Realized Profit</th>
                 </tr>
-              ))}
-              {priceHistory.length === 0 && (
-                <tr>
-                  <td className="py-2 text-slate-500" colSpan={5}>No price history found for the selected product.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {productRows.map((row) => (
+                  <tr key={buildHistoryKey(row.product_id, row.variant_id)} className="hover:bg-slate-50 transition-colors group">
+                    <td className="px-6 py-5">
+                      <div className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{row.product_name}</div>
+                      {row.variant_id && <div className="text-[10px] text-slate-400 font-black tracking-wider uppercase mt-0.5">{row.variant_id}</div>}
+                    </td>
+                    <td className="px-6 py-5 text-right font-mono text-slate-500 font-medium">{formatValue(row.rounded_diff_per_unit)}</td>
+                    <td className="px-6 py-5 text-right">
+                      <span className="bg-slate-100 px-3 py-1 rounded-full font-bold text-slate-600">{row.qty_sold.toLocaleString()}</span>
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <span className="text-[11px] font-black text-indigo-500 uppercase tracking-widest">{row.rounding_method}</span>
+                    </td>
+                    <td className="px-6 py-5 text-right">
+                      <div className="font-black text-[14px] text-slate-900">{formatValue(row.realized_profit)}</div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </section>
+
+        <div className="bg-white rounded-[2rem] p-8 border border-slate-200/60 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-slate-900 text-white rounded-lg">
+                <History size={18} />
+              </div>
+              <h3 className="font-black text-slate-800 text-[14px] tracking-widest uppercase">Price Revision History</h3>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 flex items-center gap-3">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Select Product:</span>
+              <select
+                value={selectedHistoryKey}
+                onChange={(event) => setSelectedHistoryKey(event.target.value)}
+                className="bg-transparent border-none text-[12px] font-bold text-slate-700 outline-none cursor-pointer"
+              >
+                {historyOptions.map((option) => (
+                  <option key={option.key} value={option.key}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[13px]">
+              <thead>
+                <tr className="text-slate-400 font-bold text-[10px] tracking-widest border-b border-slate-100">
+                  <th className="px-6 py-4 uppercase">Revision Date</th>
+                  <th className="px-6 py-4 uppercase">Version</th>
+                  <th className="px-6 py-4 text-right uppercase">Historical Price</th>
+                  <th className="px-6 py-4 text-right uppercase">Revised Price</th>
+                  <th className="px-6 py-4 text-right uppercase">Rounding Delta</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {priceHistory.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-50 transition-colors group">
+                    <td className="px-6 py-5">
+                      <div className="font-bold text-slate-800">{format(new Date(entry.date), 'MMM dd, yyyy')}</div>
+                      <div className="text-[10px] text-slate-400 font-black tracking-widest">{format(new Date(entry.date), 'HH:mm')}</div>
+                    </td>
+                    <td className="px-6 py-5">
+                      <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-black text-[10px]">v{entry.version}</span>
+                    </td>
+                    <td className="px-6 py-5 text-right font-mono text-slate-400">
+                      {entry.previous_rounded_price === null ? <span className="text-[10px] font-black italic">ORIGIN</span> : formatValue(entry.previous_rounded_price)}
+                    </td>
+                    <td className="px-6 py-5 text-right font-black text-slate-800">{formatValue(entry.rounded_price)}</td>
+                    <td className="px-6 py-5 text-right font-mono">
+                      <span className={`font-black ${entry.rounding_difference >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {entry.rounding_difference > 0 ? '+' : ''}{formatValue(entry.rounding_difference)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

@@ -92,6 +92,7 @@ const Forecasting = lazyWithRetry('./views/Forecasting', () => import('./views/F
 const SupplyChainHub = lazyWithRetry('./views/SupplyChainHub', () => import('./views/SupplyChainHub'));
 const IndustrialHub = lazyWithRetry('./views/IndustrialHub', () => import('./views/IndustrialHub'));
 const RevenueHub = lazyWithRetry('./views/RevenueHub', () => import('./views/RevenueHub'));
+const RevenueDashboard = lazyWithRetry('./views/reports/RevenueDashboard', () => import('./views/reports/RevenueDashboard'));
 const SalesFlowHub = lazyWithRetry('./views/SalesFlowHub', () => import('./views/SalesFlowHub'));
 const SalesExchanges = lazyWithRetry('./views/sales/SalesExchanges', () => import('./views/sales/SalesExchanges'));
 const LeadBoard = lazyWithRetry('./views/sales/LeadBoard', () => import('./views/sales/LeadBoard'));
@@ -474,7 +475,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/supply-chain" element={<SupplyChainHub />} />
                 <Route path="/supply-chain/inventory" element={<Inventory />} />
                 <Route path="/industrial" element={<IndustrialHub />} />
-                <Route path="/revenue" element={<RevenueHub />} />
+                <Route path="/revenue" element={<RevenueDashboard />} />
                 <Route path="/customers" element={<CustomersHub />} />
                 <Route path="/sales-flow" element={<SalesFlowHub />} />
                 <Route path="/procurement" element={<ProcurementHub />} />

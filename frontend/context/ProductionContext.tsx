@@ -82,11 +82,21 @@ const handleExaminationBatchToProduction = async (event: CustomEvent) => {
                 try {
                     await storeAddWorkOrder(workOrder);
                     
-                    // Clean up product name: replace "Unknown School" with actual customer name from batch
+                    // Clean up product name: replace "Unknown School" or "Unknown Customer" with actual customer name
                     let productName = workOrder.productName;
-                    const customerName = batch?.schoolName || workOrder.customerName;
-                    if (customerName && productName.includes('Unknown School')) {
-                        productName = productName.replace('Unknown School', customerName);
+                    const customerName = batch?.schoolName 
+                        || batch?.school_name 
+                        || batch?.customer_name 
+                        || batch?.customerName 
+                        || workOrder.customerName;
+                        
+                    if (customerName) {
+                        if (productName.includes('Unknown School')) {
+                            productName = productName.replace('Unknown School', customerName);
+                        }
+                        if (productName.includes('Unknown Customer')) {
+                            productName = productName.replace('Unknown Customer', customerName);
+                        }
                     }
                     
                     notify(`Examination work order created: ${productName}`, 'success');
