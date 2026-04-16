@@ -378,6 +378,7 @@ export interface JobTicket {
   sourceType?: 'quotation' | 'examination_batch' | 'manual';
   sourceId?: string;
   linkedWorkOrderId?: string;
+  batchReference?: string;
   createdBy?: string;
   createdAt: string;
   updatedBy?: string;
@@ -430,6 +431,16 @@ export interface Item {
   pricingConfig?: PricingConfig;
   variants?: ProductVariant[];
   adjustmentSnapshots?: any[];
+  // Stationery Pack-to-Piece Conversion
+  isStationeryPack?: boolean;
+  costPerPack?: number;
+  unitsPerPack?: number;
+  sellingPricePerPiece?: number;
+  costPerPiece?: number;
+  profitPerPiece?: number;
+  roundingMethod?: 'none' | 'nearest' | 'up' | 'down';
+  roundingStrategy?: 'adjustLastUnit' | 'spreadAcrossAll';
+  totalRoundingAdjustment?: number;
   [key: string]: any;
 }
 export type User = any; // TIER 2: Added as any due to missing definitions

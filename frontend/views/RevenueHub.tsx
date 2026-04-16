@@ -8,7 +8,7 @@ const RevenueHub: React.FC = () => {
     {
       label: 'Dashboard',
       description: 'Overview of revenue streams, trends, and financial performance.',
-      path: '/revenue',
+      path: '/revenue/dashboard',
       icon: <Activity />,
       color: 'bg-blue-50 text-blue-500'
     },
@@ -17,14 +17,14 @@ const RevenueHub: React.FC = () => {
       description: 'Comprehensive history of all sales transactions and audit trails.',
       path: '/revenue/sales-audit',
       icon: <FileText />,
-      color: 'bg-blue-50 text-blue-500'
+      color: 'bg-indigo-50 text-indigo-500'
     },
     {
       label: 'Margin Performance',
       description: 'Snapshot-based margin audit and adjustment performance analysis.',
       path: '/revenue/margin-performance',
       icon: <BarChart3 />,
-      color: 'bg-amber-50 text-amber-500'
+      color: 'bg-emerald-50 text-emerald-500'
     },
     {
       label: 'Rounding Analytics',
@@ -38,7 +38,21 @@ const RevenueHub: React.FC = () => {
       description: 'Manage customer accounts, outstanding balances, and credit limits.',
       path: '/revenue/contacts',
       icon: <Users />,
-      color: 'bg-emerald-50 text-emerald-500'
+      color: 'bg-blue-50 text-blue-500'
+    },
+    {
+      label: 'Business Intel',
+      description: 'Visual reports and analytics for sales performance and revenue trends.',
+      path: '/revenue/intel',
+      icon: <PieChart />,
+      color: 'bg-purple-50 text-purple-500'
+    },
+    {
+      label: 'Health Diagnostic',
+      description: 'AI-powered deep analysis of your business health and strategic steps.',
+      path: '/revenue/health',
+      icon: <Sparkles />,
+      color: 'bg-rose-50 text-rose-500'
     },
     {
       label: 'Internal Auditor',
@@ -46,21 +60,8 @@ const RevenueHub: React.FC = () => {
       path: '/revenue/auditor',
       icon: <ShieldCheck />,
       color: 'bg-slate-50 text-slate-600'
-    },
-    {
-      label: 'Business Intel',
-      description: 'Visual reports and analytics for sales performance and revenue trends.',
-      path: '/revenue/intel',
-      icon: <PieChart />,
-      color: 'bg-indigo-50 text-indigo-500'
-    },
-    {
-      label: 'Health Diagnostic',
-      description: 'AI-powered deep analysis of your business health and strategic steps.',
-      path: '/revenue/health',
-      icon: <Sparkles />,
-      color: 'bg-purple-50 text-purple-500'
     }
+
   ];
 
   return (

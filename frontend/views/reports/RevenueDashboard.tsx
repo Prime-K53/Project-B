@@ -5,8 +5,11 @@ import { format, parseISO, startOfWeek, startOfMonth, isWithinInterval, subDays,
 import {
     DollarSign, TrendingUp, TrendingDown, CreditCard, Wallet, Users,
     ShoppingCart, Building2, ArrowUpRight, ArrowDownRight, Activity,
-    BarChart3, PieChart, Calendar, RefreshCw
+    BarChart3, PieChart, Calendar, RefreshCw,
+    Receipt, Users as UsersIcon, PieChart as PieChartIcon, Sparkles, ShieldCheck, Activity as ActivityIcon
 } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 type DateRange = 'week' | 'month' | 'quarter' | 'year' | 'all';
@@ -20,8 +23,22 @@ const RevenueDashboard: React.FC = () => {
 
     // 5-minute poll + focus refresh
     useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
+    const navigate = useNavigate();
+    const location = useLocation();
     const currency = companyConfig?.currencySymbol || '$';
     const [dateRange, setDateRange] = useState<DateRange>('month');
+
+    const NAV_ITEMS = [
+        { id: 'Overview', label: 'Dashboard', icon: ActivityIcon, path: '/revenue' },
+        { id: 'Sales Audit', label: 'Sales Audit', icon: Receipt, path: '/revenue/sales-audit' },
+        { id: 'Margin Performance', label: 'Margin Performance', icon: BarChart3, path: '/revenue/margin-performance' },
+        { id: 'Rounding Analytics', label: 'Rounding Analytics', icon: ActivityIcon, path: '/revenue/rounding-analytics' },
+        { id: 'Client Ledger', label: 'Client Ledger', icon: UsersIcon, path: '/revenue/contacts' },
+        { id: 'Business Intel', label: 'Business Intel', icon: PieChartIcon, path: '/revenue/intel' },
+        { id: 'Health Diagnostic', label: 'Health Diagnostic', icon: Sparkles, path: '/revenue/health' },
+        { id: 'Auditor', label: 'Internal Auditor', icon: ShieldCheck, path: '/revenue/auditor' },
+    ];
+
 
     const formatCurrency = (val: number) => {
         if (val === undefined || val === null || isNaN(val)) return `${currency}0.00`;
@@ -151,24 +168,30 @@ const RevenueDashboard: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fadeIn">
-            {/* Date Range Filter */}
-            <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-800 tracking-tight">Revenue Dashboard</h2>
-                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
-                    {(['week', 'month', 'quarter', 'year', 'all'] as const).map(range => (
-                        <button
-                            key={range}
-                            onClick={() => setDateRange(range)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dateRange === range
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                            }`}
-                        >
-                            {range.charAt(0).toUpperCase() + range.slice(1)}
-                        </button>
-                    ))}
+             {/* Date Range Filter */}
+            <div className="flex flex-col gap-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Revenue Analysis</h2>
+                        <p className="text-slate-500 text-sm font-medium">Financial insights and performance metrics</p>
+                    </div>
+                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                        {(['week', 'month', 'quarter', 'year', 'all'] as const).map(range => (
+                            <button
+                                key={range}
+                                onClick={() => setDateRange(range)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dateRange === range
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                                }`}
+                            >
+                                {range.charAt(0).toUpperCase() + range.slice(1)}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
+
 
             {/* Primary KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 tablet-auto-fit-250 gap-4">

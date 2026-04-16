@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     AreaChart, Area, Cell, PieChart, Pie, ResponsiveContainer, Legend
@@ -10,7 +11,8 @@ import {
     TrendingUp, Coins, Target, ArrowUpRight, ArrowDownRight, Info
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+
 import { format, differenceInDays } from 'date-fns';
 import { calculateMarginAnalysis, calculateAdjustmentStatistics } from '../services/reportService';
 import SalesAudit from './reports/SalesAudit';
@@ -36,7 +38,9 @@ type ReportCategory =
 const Reports: React.FC = () => {
     const { sales = [], companyConfig, invoices = [], customers = [] } = useData();
     const location = useLocation();
+    const navigate = useNavigate();
     const currency = companyConfig?.currencySymbol || '$';
+
 
     const [activeCategory, setActiveCategory] = useState<ReportCategory>(() => {
         if (location.pathname.includes('sales-audit')) return 'Sales Audit';
@@ -53,6 +57,39 @@ const Reports: React.FC = () => {
     const [selectedSubAccountNames, setSelectedSubAccountNames] = useState<string[]>([]);
     const [isCustomerFilterOpen, setIsCustomerFilterOpen] = useState(false);
     const [selectedDateRange, setSelectedDateRange] = useState<'all' | 'week' | 'month' | 'quarter' | 'year'>('all');
+
+    // Sync active category with URL
+    useEffect(() => {
+        if (location.pathname.includes('sales-audit')) setActiveCategory('Sales Audit');
+        else if (location.pathname.includes('margin-performance')) setActiveCategory('Margin Performance');
+        else if (location.pathname.includes('rounding-analytics')) setActiveCategory('Rounding Analytics');
+        else if (location.pathname.includes('financials')) setActiveCategory('Financials');
+        else if (location.pathname.includes('contacts')) setActiveCategory('Client Ledger');
+        else if (location.pathname.includes('auditor')) setActiveCategory('Auditor');
+        else if (location.pathname.includes('intel')) setActiveCategory('Business Intel');
+        else if (location.pathname.includes('health')) setActiveCategory('Health Diagnostic');
+        else if (location.pathname.endsWith('/revenue') || location.pathname.endsWith('/reports')) setActiveCategory('Overview');
+    }, [location.pathname]);
+
+    const handleTabClick = (id: string) => {
+        setActiveCategory(id as ReportCategory);
+        // Map ID to route
+        const routeMap: Record<string, string> = {
+            'Overview': '/revenue',
+            'Sales Audit': '/revenue/sales-audit',
+            'Margin Performance': '/revenue/margin-performance',
+            'Rounding Analytics': '/revenue/rounding-analytics',
+            'Client Ledger': '/revenue/contacts',
+            'Auditor': '/revenue/auditor',
+            'Business Intel': '/revenue/intel',
+            'Health Diagnostic': '/revenue/health',
+            'Financials': '/fiscal-reports/financials'
+        };
+        if (routeMap[id]) {
+            navigate(routeMap[id]);
+        }
+    };
+
 
     const formatCurrency = (val: number) => {
         if (val === undefined || val === null || isNaN(val)) return `${currency}0.00`;
@@ -512,10 +549,10 @@ const Reports: React.FC = () => {
                         </div>
                     </div>
                 </div>
-
             </div>
 
             <div id="report-content" className="flex-1 min-h-0 overflow-y-auto p-6 custom-scrollbar bg-slate-50/50">
+
                 <div className="max-w-[1600px] mx-auto">
                     {activeCategory === 'Overview' && renderOverview()}
                     {activeCategory === 'Sales Audit' && <SalesAudit />}
@@ -526,9 +563,9 @@ const Reports: React.FC = () => {
                     {activeCategory === 'Health Diagnostic' && <BusinessHealthReport />}
                     {activeCategory === 'Auditor' && renderAuditor()}
                 </div>
-            </div>
         </div>
-    );
+    </div>
+);
 };
 
 export default Reports;

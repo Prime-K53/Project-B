@@ -262,7 +262,8 @@ export const JobTickets: React.FC = () => {
   const companyName = companyConfig?.companyName || 'Prime ERP';
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 p-6">
+    <div className="min-h-screen bg-slate-50 font-['Inter',_sans-serif] text-[13.5px] leading-relaxed text-slate-800">
+
       {/* Header Section */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
@@ -271,13 +272,13 @@ export const JobTickets: React.FC = () => {
               <Printer className="text-white" size={28} />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Job Tickets</h1>
-              <p className="text-sm text-slate-500 font-medium">Manage print jobs and service orders</p>
+              <h1 className="text-2xl font-semibold text-slate-900 tracking-tight leading-[1.4]">Job Tickets</h1>
+              <p className="text-[13px] text-slate-500 font-medium">Manage print jobs and service orders</p>
             </div>
           </div>
           <button
             onClick={() => setShowForm(true)}
-            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold flex items-center gap-2 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-600/25 transition-all transform hover:scale-[1.02]"
+            className="px-[12px] py-[7px] bg-blue-600 text-white rounded-lg font-semibold flex items-center gap-2 hover:bg-blue-700 shadow-sm transition-all shadow-blue-600/10"
           >
             <Plus size={18} />
             New Job Ticket
@@ -331,7 +332,8 @@ export const JobTickets: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-center">
+      <div className="flex flex-wrap gap-4 items-center mb-8">
+
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
@@ -382,125 +384,133 @@ export const JobTickets: React.FC = () => {
               <div
                 key={ticket.id}
                 id={`ticket-card-${ticket.id}`}
-                className={`bg-white rounded-2xl border border-slate-200/60 overflow-hidden hover:border-blue-300 hover:shadow-xl hover:shadow-blue-600/10 transition-all duration-300 group cursor-pointer`}
+                className={`bg-white rounded-2xl border border-slate-200/60 overflow-hidden hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-600/10 transition-all duration-500 group cursor-pointer relative flex flex-col`}
                 onClick={() => setSelectedTicket(ticket)}
               >
-                {/* Card Header */}
-                <div className={`px-5 py-4 border-b border-slate-100 ${
-                  ticket.priority === 'Urgent' ? 'bg-gradient-to-r from-red-50 to-red-100/50' :
-                  ticket.priority === 'Express' ? 'bg-gradient-to-r from-orange-50 to-orange-100/50' :
-                  ticket.priority === 'Rush' ? 'bg-gradient-to-r from-amber-50 to-amber-100/50' :
-                  'bg-gradient-to-r from-slate-50 to-white'
-                }`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2.5 rounded-xl ${
-                        ticket.priority === 'Urgent' ? 'bg-red-500 text-white' :
-                        ticket.priority === 'Express' ? 'bg-orange-500 text-white' :
-                        ticket.priority === 'Rush' ? 'bg-amber-500 text-white' :
-                        'bg-blue-600 text-white'
-                      }`}>
-                        {typeConfig[ticket.type].icon}
-                      </div>
-                      <div>
-                        <p className="font-black text-slate-800 text-base">{ticket.ticketNumber}</p>
-                        <p className="text-xs font-medium text-slate-500">{typeConfig[ticket.type].label}</p>
-                      </div>
+                {/* Priority Indicator Strip */}
+                <div className={`h-1.5 w-full ${
+                  ticket.priority === 'Urgent' ? 'bg-red-500' :
+                  ticket.priority === 'Express' ? 'bg-orange-500' :
+                  ticket.priority === 'Rush' ? 'bg-amber-500' :
+                  'bg-blue-500'
+                }`} />
+
+                {/* Card Header - Company & ID */}
+                <div className="px-5 py-4 bg-slate-50/50 border-b border-slate-100 flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-blue-600 uppercase tracking-widest mb-1 truncate">
+                      {companyName}
+                    </p>
+                    <div className="flex items-center gap-2">
+                       <h3 className="font-semibold text-slate-800 text-[18px] leading-[1.4] tracking-tight">{ticket.ticketNumber}</h3>
+                       {ticket.batchReference && (
+                         <span className="px-[6px] py-[1px] bg-blue-50 text-blue-700 text-[12px] font-semibold rounded border border-blue-100/50">
+                           Batch: {ticket.batchReference}
+                         </span>
+                       )}
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5">
+                     <span className={`px-[8px] py-[2px] rounded-full text-[12px] font-semibold uppercase tracking-wider ${statusConfig[ticket.status].color} border`}>
+                      {statusConfig[ticket.status].label}
+                    </span>
+                    <div className="flex gap-1">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleExportCard(ticket);
                         }}
-                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                        title="Export"
+                        className="p-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-all shadow-sm"
+                        title="Export as Image"
                       >
-                        <ImageIcon size={14} className="text-slate-600" />
+                        <ImageIcon size={12} className="text-slate-600" />
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Card Body */}
-                <div className="p-5">
-                  {/* Status & Priority */}
-                  <div className="flex items-center flex-wrap gap-2 mb-4">
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${statusConfig[ticket.status].color} flex items-center gap-1`}>
-                      {statusConfig[ticket.status].icon}
-                      {statusConfig[ticket.status].label}
-                    </span>
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${priorityConfig[ticket.priority].color}`}>
-                      {priorityConfig[ticket.priority].label}
-                    </span>
-                    {isOverdue && (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-700 flex items-center gap-1">
-                        <AlertTriangle size={12} />
-                        Overdue
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Customer */}
-                  <div className="mb-4">
-                    <div className="flex items-center gap-2 mb-1">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                        <User size={14} className="text-white" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{ticket.customerName}</p>
-                        <p className="text-xs text-slate-500">{companyName}</p>
-                      </div>
+                <div className="p-5 flex-1 flex flex-col">
+                  {/* Customer Information */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-500 border border-slate-200">
+                      <User size={18} />
                     </div>
-                    {ticket.customerPhone && (
-                      <div className="flex items-center gap-2 text-slate-500 text-xs ml-10">
-                        <Phone size={12} />
-                        <span>{ticket.customerPhone}</span>
-                      </div>
-                    )}
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-slate-400 uppercase tracking-wide leading-none mb-1">Customer</p>
+                      <p className="font-semibold text-slate-800 text-[14px] truncate leading-tight">
+                        {ticket.customerName}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Description */}
-                  <p className="text-slate-600 text-sm mb-4 line-clamp-2 leading-relaxed">{ticket.description}</p>
+                  <div className="mb-4">
+                    <p className="text-[12px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Job Description</p>
+                    <p className="text-slate-600 text-[13.5px] line-clamp-2 leading-[1.5] font-normal">
+                      {ticket.description}
+                    </p>
+                  </div>
 
-                  {/* Specs */}
-                  <div className="flex items-center flex-wrap gap-2 text-xs mb-4">
-                    <span className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 rounded-lg text-slate-600 font-medium">
-                      <Printer size={12} />
-                      {ticket.quantity} {ticket.paperSize}
-                    </span>
-                    <span className={`px-2.5 py-1.5 rounded-lg font-medium ${ticket.colorMode === 'Color' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {ticket.colorMode === 'Color' ? 'Full Color' : 'Black & White'}
-                    </span>
+                  {/* Technical Specs Grid */}
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-slate-100 rounded-lg text-slate-500">
+                        {typeConfig[ticket.type].icon}
+                      </div>
+                      <div>
+                        <p className="text-[12px] font-semibold text-slate-400 uppercase leading-none mb-1">Job Type</p>
+                        <p className="text-[13px] font-semibold text-slate-700">{typeConfig[ticket.type].label}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-slate-100 rounded-lg text-slate-500">
+                        <Package size={12} />
+                      </div>
+                      <div>
+                        <p className="text-[12px] font-semibold text-slate-400 uppercase leading-none mb-1">Quantity</p>
+                        <p className="text-[13px] font-semibold text-slate-700">{ticket.quantity} {ticket.paperSize}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Time Remaining / Priority */}
+                  <div className="mt-auto flex items-center justify-between py-3 border-t border-slate-100/60">
+                    <div className="flex items-center gap-2">
+                       <div className={`w-2 h-2 rounded-full ${
+                         ticket.priority === 'Normal' ? 'bg-slate-300' :
+                         ticket.priority === 'Rush' ? 'bg-amber-400' :
+                         'bg-red-500 animate-pulse'
+                       }`} />
+                       <span className="text-[10px] font-bold text-slate-500">{ticket.priority} Priority</span>
+                    </div>
                     {ticket.dueDate && (
-                      <span className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-medium ${timeRemaining?.className || 'bg-slate-100 text-slate-600'}`}>
+                      <div className={`flex items-center gap-1.5 text-[10px] font-black ${timeRemaining?.className || 'text-slate-500'}`}>
                         <Clock size={12} />
-                        {timeRemaining?.text || 'Due'}
-                      </span>
+                        {timeRemaining?.text || 'DUE'}
+                      </div>
                     )}
                   </div>
 
-                  {/* Progress */}
+                  {/* Progress Bar (if processing) */}
                   {ticket.status === 'Processing' && (
-                    <div className="mb-4">
-                      <div className="flex justify-between text-xs text-slate-500 mb-1.5">
-                        <span className="font-medium">Progress</span>
-                        <span className="font-black text-blue-600">{ticket.progressPercent}%</span>
-                      </div>
-                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="mt-2">
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-500" 
+                          className="h-full bg-blue-600 rounded-full transition-all duration-700 ease-out" 
                           style={{ width: `${ticket.progressPercent}%` }} 
                         />
                       </div>
                     </div>
                   )}
+                </div>
 
-                  {/* Footer */}
-                  <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                    <span className="text-xs font-medium text-slate-500">Total Amount</span>
-                    <span className="text-xl font-black text-slate-800">{currency}{ticket.total.toLocaleString()}</span>
-                  </div>
+                {/* Footer - Final Total */}
+                <div className="px-5 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Grand Total</span>
+                  <span className="text-[18px] font-semibold text-slate-900 leading-none tabular-nums">
+                    {currency}{ticket.total.toLocaleString()}
+                  </span>
                 </div>
               </div>
             );
@@ -635,8 +645,8 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
               <Printer className="text-white" size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white">{ticket ? 'Edit Job Ticket' : 'New Job Ticket'}</h2>
-              <p className="text-xs text-blue-100">{companyName}</p>
+              <h2 className="text-[20px] font-semibold text-white leading-tight">{ticket ? 'Edit Job Ticket' : 'New Job Ticket'}</h2>
+              <p className="text-[12px] text-blue-100 font-medium">{companyName}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors">
@@ -1063,10 +1073,10 @@ const JobTicketDetail: React.FC<JobTicketDetailProps> = ({ ticket, currency, onE
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
+        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-[12px] flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">{ticket.ticketNumber}</h2>
-            <p className="text-sm text-slate-500">{ticket.customerName}</p>
+            <h2 className="text-[20px] font-semibold text-slate-900 leading-tight">{ticket.ticketNumber}</h2>
+            <p className="text-[13px] text-slate-500 font-medium">{ticket.customerName}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
@@ -1122,13 +1132,13 @@ const JobTicketDetail: React.FC<JobTicketDetailProps> = ({ ticket, currency, onE
                 </div>
               )}
 
-              <div className="bg-slate-50 p-4 rounded-xl space-y-2">
-                <div className="flex justify-between text-sm"><span>Unit Price</span><span>{currency}{ticket.unitPrice.toFixed(2)}</span></div>
-                {ticket.rushFee > 0 && <div className="flex justify-between text-sm"><span>Rush Fee</span><span>+{currency}{ticket.rushFee.toFixed(2)}</span></div>}
-                {ticket.finishingCost > 0 && <div className="flex justify-between text-sm"><span>Finishing</span><span>+{currency}{ticket.finishingCost.toFixed(2)}</span></div>}
-                {ticket.discount > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Discount</span><span>-{currency}{ticket.discount.toFixed(2)}</span></div>}
-                <div className="flex justify-between text-sm"><span>Tax</span><span>{currency}{ticket.tax.toFixed(2)}</span></div>
-                <div className="flex justify-between font-bold text-lg pt-2 border-t border-slate-200"><span>Total</span><span className="text-blue-600">{currency}{ticket.total.toFixed(2)}</span></div>
+              <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-2.5">
+                <div className="flex justify-between text-[13px] font-medium text-slate-600"><span>Unit Price</span><span className="tabular-nums">{currency}{ticket.unitPrice.toFixed(2)}</span></div>
+                {ticket.rushFee > 0 && <div className="flex justify-between text-[13px] font-medium text-amber-600"><span>Rush Fee</span><span className="tabular-nums">+{currency}{ticket.rushFee.toFixed(2)}</span></div>}
+                {ticket.finishingCost > 0 && <div className="flex justify-between text-[13px] font-medium text-slate-600"><span>Finishing</span><span className="tabular-nums">+{currency}{ticket.finishingCost.toFixed(2)}</span></div>}
+                {ticket.discount > 0 && <div className="flex justify-between text-[13px] font-medium text-emerald-600"><span>Discount</span><span className="tabular-nums">-{currency}{ticket.discount.toFixed(2)}</span></div>}
+                <div className="flex justify-between text-[13px] font-medium text-slate-600"><span>Tax</span><span className="tabular-nums">{currency}{ticket.tax.toFixed(2)}</span></div>
+                <div className="flex justify-between font-semibold text-[18px] pt-3 border-t border-slate-200 text-slate-900"><span>Total</span><span className="tabular-nums text-blue-600">{currency}{ticket.total.toFixed(2)}</span></div>
               </div>
 
               {ticket.notes && <div><p className="text-xs font-bold text-slate-400 uppercase mb-1">Notes</p><p className="text-slate-700">{ticket.notes}</p></div>}

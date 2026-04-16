@@ -163,12 +163,179 @@ const SecurityFooter = ({
   );
 };
 
+const CleanInvoiceTemplate = ({
+  data,
+  config,
+  templateSettings
+}: {
+  data: PrimeDocData;
+  config: CompanyConfig | null;
+  templateSettings: ReturnType<typeof resolvePrimeTemplateSettings>;
+}) => {
+  const dataAny = data as any;
+  const companyName = config?.companyName || 'Company Name';
+  const companyAddress = config?.addressLine1 || 'Address';
+  const companyPhone = config?.phone || 'Phone';
+  const companyEmail = config?.email || 'email@example.com';
+  const currency = config?.currencySymbol || 'K';
+
+  const invoiceNumber = dataAny.invoiceNumber || dataAny.number || 'INV-001';
+  const invoiceDate = dataAny.date || new Date().toLocaleDateString();
+  const clientName = dataAny.clientName || 'Client Name';
+  const clientAddress = dataAny.address || 'Client Address';
+  const clientEmail = dataAny.phone || 'client@email.com';
+  const items = dataAny.items || [];
+  const subtotal = dataAny.subtotal || 0;
+  const amountPaid = dataAny.amountPaid || 0;
+  const totalAmount = dataAny.totalAmount || subtotal;
+  const tax = dataAny.tax || 100;
+  const grandTotal = totalAmount + tax;
+
+  const renderRow = (item: any, i: number) => (
+    <View key={i} style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#e0e0e0' }}>
+      <Text style={{ flex: 2, padding: 8, fontSize: 11 }}>{item.desc || item.name}</Text>
+      <Text style={{ width: 60, padding: 8, fontSize: 11, textAlign: 'right' }}>{item.qty}</Text>
+      <Text style={{ width: 80, padding: 8, fontSize: 11, textAlign: 'right' }}>{currency} {(item.price || item.total / item.qty).toFixed(2)}</Text>
+      <Text style={{ width: 80, padding: 8, fontSize: 11, textAlign: 'right' }}>{currency} {item.total.toFixed(2)}</Text>
+    </View>
+  );
+
+  return (
+    <Document title={`Invoice ${invoiceNumber}`} author={companyName}>
+      <Page size="A4" style={{ padding: 40, fontFamily: 'Helvetica' }}>
+        <View style={{ alignItems: 'center', marginBottom: 30 }}>
+          <View style={{ 
+            width: 48, 
+            height: 48, 
+            borderRadius: 24, 
+            backgroundColor: '#333', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            marginBottom: 8
+          }}>
+            <Text style={{ color: '#fff', fontSize: 20, fontWeight: 'bold' }}>F</Text>
+          </View>
+          <Text style={{ fontSize: 14, fontWeight: '600', letterSpacing: 2, color: '#666' }}>
+            FOX NETWORK
+          </Text>
+          <Text style={{ fontSize: 11, color: '#777', marginTop: 4, textAlign: 'center' }}>
+            {companyAddress}, {companyPhone}{'\n'}
+            {companyEmail}
+          </Text>
+        </View>
+
+        <View style={{ alignItems: 'center', marginBottom: 30 }}>
+          <Text style={{ fontSize: 36, fontWeight: '300', color: '#1a1a1a' }}>
+            Invoice <Text style={{ fontStyle: 'italic' }}>Service</Text>
+          </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 30, gap: 40 }}>
+          <Text style={{ fontSize: 12, color: '#555' }}>
+            <Text style={{ fontWeight: '600', color: '#1a1a1a' }}>Invoice Number:</Text> {invoiceNumber}
+          </Text>
+          <Text style={{ fontSize: 12, color: '#555' }}>
+            <Text style={{ fontWeight: '600', color: '#1a1a1a' }}>Invoice Date:</Text> {invoiceDate}
+          </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', marginBottom: 30, gap: 30 }}>
+          <View style={{ flex: 1 }}>
+            <View style={{ 
+              backgroundColor: templateSettings.accentColor || '#5a9e96', 
+              padding: 5, 
+              borderRadius: 3,
+              alignSelf: 'flex-start',
+              marginBottom: 8
+            }}>
+              <Text style={{ fontSize: 10, fontWeight: '500', letterSpacing: 1.5, color: '#fff' }}>
+                PAYMENT INFO
+              </Text>
+            </View>
+            <Text style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>Bank Transfer</Text>
+            <Text style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>David Joe</Text>
+            <Text style={{ fontSize: 12, color: '#555' }}>0129 9847 3829</Text>
+          </View>
+          <View style={{ flex: 1, alignItems: 'flex-end' }}>
+            <View style={{ 
+              backgroundColor: templateSettings.accentColor || '#5a9e96', 
+              padding: 5, 
+              borderRadius: 3,
+              alignSelf: 'flex-end',
+              marginBottom: 8
+            }}>
+              <Text style={{ fontSize: 10, fontWeight: '500', letterSpacing: 1.5, color: '#fff' }}>
+                BILL TO
+              </Text>
+            </View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#1a1a1a', marginBottom: 2 }}>{clientName}</Text>
+            <Text style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>{clientEmail}</Text>
+            <Text style={{ fontSize: 12, color: '#555' }}>{clientAddress}</Text>
+          </View>
+        </View>
+
+        <View style={{ marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', backgroundColor: templateSettings.accentColor || '#5a9e96', borderRadius: 3 }}>
+            <Text style={{ flex: 2, padding: 8, fontSize: 11, fontWeight: '500', color: '#fff' }}>Item Description</Text>
+            <Text style={{ width: 60, padding: 8, fontSize: 11, fontWeight: '500', color: '#fff', textAlign: 'right' }}>Qty.</Text>
+            <Text style={{ width: 80, padding: 8, fontSize: 11, fontWeight: '500', color: '#fff', textAlign: 'right' }}>Unit Price</Text>
+            <Text style={{ width: 80, padding: 8, fontSize: 11, fontWeight: '500', color: '#fff', textAlign: 'right' }}>Amount</Text>
+          </View>
+          {items.map(renderRow)}
+          <View style={{ flexDirection: 'row', backgroundColor: '#f0f0ee', borderRadius: 3 }}>
+            <Text style={{ flex: 2, padding: 8, fontSize: 12, fontWeight: '600' }}>Total Payment</Text>
+            <Text style={{ width: 60, padding: 8, fontSize: 12, textAlign: 'right' }}>-</Text>
+            <Text style={{ width: 80, padding: 8, fontSize: 12, textAlign: 'right' }}>-</Text>
+            <Text style={{ width: 80, padding: 8, fontSize: 12, fontWeight: '600', textAlign: 'right' }}>{currency} {subtotal.toFixed(2)}</Text>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 30 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '600', fontSize: 12, color: '#1a1a1a', marginBottom: 4 }}>Notes:</Text>
+            <Text style={{ fontSize: 12, color: '#555', lineHeight: 1.6 }}>
+              Payment is due within 30 days of project completion.
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={{ width: '100%' }}>
+              <View style={{ flexDirection: 'row' }}>
+                <Text style={{ padding: 5, flex: 1, fontSize: 12, color: '#555' }}>Tax</Text>
+                <Text style={{ padding: 5, flex: 1, fontSize: 12, textAlign: 'right' }}>{currency} {tax.toFixed(2)}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', backgroundColor: templateSettings.accentColor || '#5a9e96', borderRadius: 3 }}>
+                <Text style={{ padding: 6, flex: 1, fontSize: 12, fontWeight: '600', color: '#fff' }}>Grand Total</Text>
+                <Text style={{ padding: 6, flex: 1, fontSize: 12, fontWeight: '600', color: '#fff', textAlign: 'right' }}>{currency} {grandTotal.toFixed(2)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ flexDirection: 'row', marginTop: 40, paddingTop: 20, borderTopWidth: 0.5, borderTopColor: '#e0e0e0', gap: 20 }}>
+          <View style={{ width: 56, height: 56, backgroundColor: '#f5f5f5', borderWidth: 0.5, borderColor: '#ddd', borderRadius: 4, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 10, color: '#aaa' }}>QR</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: '#1a1a1a', marginBottom: 2 }}>More Info:</Text>
+            <Text style={{ fontSize: 11, color: '#555' }}>{companyPhone}{'\n'}{companyEmail}</Text>
+          </View>
+        </View>
+      </Page>
+    </Document>
+  );
+};
+
 export const PrimeDocument = ({ type, data, configOverride = null }: DocProps) => {
   ensurePrimePdfFontsRegistered();
   const isFinancial = type === 'INVOICE' || type === 'PO' || type === 'QUOTATION' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION';
   const dataAny = data as any;
   const config = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);
+
+  if (type === 'INVOICE' && templateSettings.engine === 'Clean') {
+    return <CleanInvoiceTemplate data={data as PrimeDocData} config={config} templateSettings={templateSettings} />;
+  }
+
   const fontScale = templateSettings.bodyFontSize / 12;
   const showDueDate = templateSettings.showDueDate;
   const showPaymentTerms = templateSettings.showPaymentTerms;

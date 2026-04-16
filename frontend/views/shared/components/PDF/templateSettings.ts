@@ -10,8 +10,10 @@ export const PRIME_PDF_FONT_OPTIONS = [
 
 export type PrimePdfFontFamily = typeof PRIME_PDF_FONT_OPTIONS[number]['value'];
 
+export type TemplateEngine = 'Classic' | 'Modern' | 'Professional' | 'Clean';
+
 export interface PrimeTemplateSettings {
-  engine: CompanyConfig['invoiceTemplates']['engine'];
+  engine: TemplateEngine;
   accentColor: string;
   companyNameFontSize: number;
   bodyFontSize: number;
@@ -24,7 +26,7 @@ export interface PrimeTemplateSettings {
 }
 
 export const DEFAULT_PRIME_TEMPLATE_SETTINGS: PrimeTemplateSettings = {
-  engine: 'Standard',
+  engine: 'Classic',
   accentColor: '#3b82f6',
   companyNameFontSize: 18,
   bodyFontSize: 12,

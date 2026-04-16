@@ -449,12 +449,14 @@ const AppLayout: React.FC = () => {
                 <Route path="/sales-flow/sms" element={<Navigate to="/internal-tools/chat" replace />} />
                 <Route path="/reports/statements" element={<Navigate to="/revenue/contacts" replace />} />
                 <Route path="/accounts/chart" element={<Navigate to="/accounts/chart-of-accounts" replace />} />
+                <Route path="/revenue/dashboard" element={<ProtectedRoute permission="reports.view"><RevenueDashboard /></ProtectedRoute>} />
                 <Route path="/revenue/sales-audit" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                 <Route path="/revenue/margin-performance" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                 <Route path="/revenue/rounding-analytics" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                 <Route path="/revenue/contacts" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                 <Route path="/revenue/auditor" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
                 <Route path="/revenue/intel" element={<ProtectedRoute permission="reports.view"><Reports /></ProtectedRoute>} />
+
                 <Route path="/revenue/health" element={<ProtectedRoute permission="reports.view"><BusinessHealthReport /></ProtectedRoute>} />
                 <Route path="/production/work-orders" element={<Navigate to="/industrial/work-orders" replace />} />
                 <Route path="/production/scheduler" element={<Navigate to="/industrial/scheduler" replace />} />
@@ -475,7 +477,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/supply-chain" element={<SupplyChainHub />} />
                 <Route path="/supply-chain/inventory" element={<Inventory />} />
                 <Route path="/industrial" element={<IndustrialHub />} />
-                <Route path="/revenue" element={<RevenueDashboard />} />
+                <Route path="/revenue" element={<RevenueHub />} />
                 <Route path="/customers" element={<CustomersHub />} />
                 <Route path="/sales-flow" element={<SalesFlowHub />} />
                 <Route path="/procurement" element={<ProcurementHub />} />

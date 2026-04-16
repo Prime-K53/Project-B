@@ -108,6 +108,59 @@ const ItemModal: React.FC<ItemModalProps> = ({
     const [showInternalPricing, setShowInternalPricing] = useState(true);
     const [isRecalculating, setIsRecalculating] = useState(false);
 
+    // Stationery Pack Conversion State
+    const [stationeryMode, setStationeryMode] = useState<'normal' | 'stationery'>('normal');
+    const [usePackConversion, setUsePackConversion] = useState<boolean>(false);
+    const [costPerPack, setCostPerPack] = useState<number>(0);
+    const [unitsPerPack, setUnitsPerPack] = useState<number>(1);
+    const [sellingPricePerPiece, setSellingPricePerPiece] = useState<number>(0);
+
+    // Computed values for stationery conversion
+    const computedValues = useMemo(() => {
+        if (stationeryMode !== 'stationery' || unitsPerPack <= 0) {
+            return {
+                costPerPiece: 0,
+                profitPerPiece: 0,
+                marginPercent: 0,
+                warning: null as string | null
+            };
+        }
+
+        const costPerPiece = costPerPack / unitsPerPack;
+        const profitPerPiece = sellingPricePerPiece - costPerPiece;
+        const marginPercent = sellingPricePerPiece > 0 ? ((profitPerPiece / sellingPricePerPiece) * 100) : 0;
+
+        let warning: string | null = null;
+        if (sellingPricePerPiece < costPerPiece && sellingPricePerPiece > 0) {
+            warning = 'Selling price is below cost price - this will result in a loss';
+        }
+
+        return {
+            costPerPiece,
+            profitPerPiece,
+            marginPercent,
+            warning
+        };
+    }, [stationeryMode, costPerPack, unitsPerPack, sellingPricePerPiece]);
+
+    // Auto-sync stationery values to formData cost/price when pack conversion is enabled
+    useEffect(() => {
+        if (stationeryMode !== 'stationery' || !usePackConversion) return;
+
+        // Set cost from pack, price from piece selling price, but let market adjustments calculate final
+        setFormData(prev => ({
+            ...prev,
+            cost: computedValues.costPerPiece,
+            pricingConfig: {
+                ...prev.pricingConfig,
+                manualOverride: false // Allow market adjustments to calculate final price
+            }
+        }));
+    }, [stationeryMode, usePackConversion, computedValues.costPerPiece]);
+
+    // Check if item has stock (for validation)
+    const hasExistingStock = formData.stock && formData.stock > 0;
+
     const isServiceType = formData.type === 'Service';
 
     useEffect(() => {
@@ -187,11 +240,37 @@ const ItemModal: React.FC<ItemModalProps> = ({
                     manualOverride: shouldBeManual
                 }
             });
+
+            // Load stationery conversion fields if this is a stationery pack item
+            if (item.type === 'Stationery' && item.isStationeryPack) {
+                setStationeryMode('stationery');
+                setUsePackConversion(true);
+                setCostPerPack(item.costPerPack || item.cost * (item.unitsPerPack || 1) || 0);
+                setUnitsPerPack(item.unitsPerPack || 1);
+                setSellingPricePerPiece(item.sellingPricePerPiece || item.price || 0);
+            } else if (item.type === 'Stationery') {
+                setStationeryMode('stationery');
+                setUsePackConversion(false);
+                setCostPerPack(0);
+                setUnitsPerPack(1);
+                setSellingPricePerPiece(0);
+            } else {
+                setStationeryMode('normal');
+                setUsePackConversion(false);
+                setCostPerPack(0);
+                setUnitsPerPack(1);
+                setSellingPricePerPiece(0);
+            }
         } else {
             setFormData({
                 ...defaultItem,
                 sku: generateSKU()
             });
+            setStationeryMode('normal');
+            setUsePackConversion(false);
+            setCostPerPack(0);
+            setUnitsPerPack(1);
+            setSellingPricePerPiece(0);
         }
         setErrors({});
         setActiveTab('basic');
@@ -526,9 +605,9 @@ const ItemModal: React.FC<ItemModalProps> = ({
                 name: formData.name!.trim(),
                 sku: formData.sku!.trim(),
                 description: formData.description?.trim() || '',
-                price: roundedPricing.sellingPrice,
-                cost: Number(formData.cost) || 0,
-                cost_price: Number(formData.cost) || 0,
+                price: stationeryMode === 'stationery' ? (formData.price || sellingPricePerPiece) : roundedPricing.sellingPrice,
+                cost: stationeryMode === 'stationery' ? computedValues.costPerPiece : Number(formData.cost) || 0,
+                cost_price: stationeryMode === 'stationery' ? computedValues.costPerPiece : Number(formData.cost) || 0,
                 calculated_price: roundedPricing.calculatedPrice,
                 selling_price: roundedPricing.sellingPrice,
                 rounding_difference: roundedPricing.roundingDifference,
@@ -536,7 +615,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                 stock: Number(formData.stock) || 0,
                 category: formData.category!.trim(),
                 type: formData.type as Item['type'],
-                unit: formData.unit!.trim(),
+                unit: stationeryMode === 'stationery' ? 'pcs' : formData.unit!.trim(),
                 minStockLevel: Number(formData.minStockLevel) || 0,
                 preferredSupplierId: formData.preferredSupplierId || undefined,
                 binLocation: formData.binLocation?.trim() || undefined,
@@ -557,7 +636,14 @@ const ItemModal: React.FC<ItemModalProps> = ({
                 reserved: formData.reserved || 0,
                 adjustmentSnapshots: formData.adjustmentSnapshots || [],
                 pricingConfig: normalizedPricingConfig,
-                smartPricing: formData.smartPricing
+                smartPricing: formData.smartPricing,
+                // Stationery Pack-to-Piece Conversion
+                isStationeryPack: stationeryMode === 'stationery',
+                costPerPack: stationeryMode === 'stationery' ? costPerPack : undefined,
+                unitsPerPack: stationeryMode === 'stationery' ? unitsPerPack : undefined,
+                sellingPricePerPiece: stationeryMode === 'stationery' ? sellingPricePerPiece : undefined,
+                costPerPiece: stationeryMode === 'stationery' ? computedValues.costPerPiece : undefined,
+                profitPerPiece: stationeryMode === 'stationery' ? computedValues.profitPerPiece : undefined
             };
 
             // Ensure variants also have rounded prices
@@ -1014,7 +1100,11 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                             <span className="text-sm font-medium text-slate-700">Item Type</span>
                                             <select
                                                 value={formData.type || 'Product'}
-                                                onChange={(e) => setFormData({ ...formData, type: e.target.value as Item['type'] })}
+                                                onChange={(e) => {
+                                                    const newType = e.target.value as Item['type'];
+                                                    setFormData({ ...formData, type: newType });
+                                                    setStationeryMode(newType === 'Stationery' ? 'stationery' : 'normal');
+                                                }}
                                                 className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.type ? 'border-red-300 bg-red-50' : 'border-slate-200'
                                                     }`}
                                             >
@@ -1116,229 +1206,10 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 />
                                             </div>
                                         </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Pricing Tab */}
-                            {!isServiceType && activeTab === 'pricing' && (
-                                <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {/* Cost Price */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                                                Cost Price <span className="text-red-500">*</span>
-                                            </label>
-                                            <div className="relative">
-                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{currency}</span>
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    value={formData.cost || ''}
-                                                    onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
-                                                    className={`w-full pl-8 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.cost ? 'border-red-300 bg-red-50' : 'border-slate-200'
-                                                        }`}
-                                                    placeholder="e.g. 10.00"
-                                                />
-                                            </div>
-                                            {errors.cost && (
-                                                <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-                                                    <AlertCircle className="w-3 h-3" /> {errors.cost}
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        {/* Selling Price - Hidden for Materials */}
-                                        {formData.type !== 'Material' && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">
-                                                    Selling Price <span className="text-red-500">*</span>
-                                                </label>
-                                                <div className="relative">
-                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{currency}</span>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        min="0"
-                                                        value={formData.price || ''}
-                                                        onChange={(e) => {
-                                                            const nextPrice = Number(e.target.value);
-                                                            setFormData({ 
-                                                                ...formData, 
-                                                                price: nextPrice, 
-                                                                calculated_price: nextPrice,
-                                                                pricingConfig: {
-                                                                    ...formData.pricingConfig!,
-                                                                    manualOverride: true // Auto-set override if manually changed
-                                                                }
-                                                            });
-                                                        }}
-                                                        className={`w-full pl-8 pr-12 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.price ? 'border-red-300 bg-red-50' : 'border-slate-200'
-                                                            }`}
-                                                        placeholder="e.g. 25.00"
-                                                    />
-                                                    {!formData.pricingConfig?.manualOverride && formData.type === 'Stationery' && (
-                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                                            <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                                                                <RefreshCw className="w-2.5 h-2.5 animate-spin-slow" /> AUTO
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {errors.price && (
-                                                    <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
-                                                        <AlertCircle className="w-3 h-3" /> {errors.price}
-                                                    </p>
-                                                )}
+)}
                                             </div>
                                         )}
-
-                                    {/* Margin Display - Hidden for Materials */}
-                                    {formData.type !== 'Material' && (
-                                        <div className="md:col-span-2 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-sm text-slate-600">Profit Margin</span>
-                                                <span className={`text-lg font-bold ${formData.cost && formData.price && formData.price > formData.cost
-                                                    ? 'text-green-600'
-                                                    : 'text-red-600'
-                                                    }`}>
-                                                    {formData.cost && formData.price
-                                                        ? `${(((formData.price - formData.cost) / formData.cost) * 100).toFixed(1)}%`
-                                                        : '0%'
-                                                    }
-                                                </span>
-                                            </div>
-                                        </div>
                                     )}
-
-                                    {/* Internal Pricing Toggle Section - Hidden for Materials */}
-                                    {formData.type !== 'Material' && formData.type !== 'Stationery' && (
-                                        <div className="md:col-span-2 border-t border-slate-200 pt-4">
-                                            <div className="flex items-center justify-between">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowInternalPricing(!showInternalPricing)}
-                                                    className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-blue-600 transition-colors"
-                                                >
-                                                    {showInternalPricing ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                                    {showInternalPricing ? 'Hide Internal Pricing' : 'Show Internal Pricing'}
-                                                </button>
-                                                
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setIsRecalculating(true);
-                                                        const roundingResult = applyRoundingToPrice(resolveRoundingBasePrice(), item || undefined);
-                                                        setFormData(prev => ({
-                                                            ...prev,
-                                                            price: roundingResult.sellingPrice
-                                                        }));
-                                                        setTimeout(() => setIsRecalculating(false), 500);
-                                                    }}
-                                                    disabled={isRecalculating}
-                                                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                                                >
-                                                    <RefreshCw className={`w-4 h-4 ${isRecalculating ? 'animate-spin' : ''}`} />
-                                                    Recalculate Price
-                                                </button>
-                                            </div>
-
-                                            {/* Internal Pricing Details */}
-                                            {showInternalPricing && (
-                                                <div className="mt-4 p-4 bg-slate-800 rounded-lg text-white space-y-3">
-                                                    {(() => {
-                                                        const roundingResult = applyRoundingToPrice(resolveRoundingBasePrice(), item || undefined);
-                                                        return (
-                                                            <>
-                                                                <div className="flex justify-between items-center">
-                                                                    <span className="text-sm text-slate-400">Calculated Price (Raw)</span>
-                                                                    <span className="font-mono">{currency}{roundingResult.calculatedPrice.toFixed(2)}</span>
-                                                                </div>
-                                                                <div className="flex justify-between items-center">
-                                                                    <span className="text-sm text-slate-400">Rounding Difference</span>
-                                                                    <span className={`font-mono ${roundingResult.roundingDifference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                                                                        {roundingResult.roundingDifference > 0 ? '+' : ''}{currency}{roundingResult.roundingDifference.toFixed(2)}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex justify-between items-center">
-                                                                    <span className="text-sm text-slate-400">Rounding Method</span>
-                                                                    <span className="font-mono text-blue-300">{roundingResult.roundingMethod || 'None'}</span>
-                                                                </div>
-                                                                <div className="border-t border-slate-600 pt-3 flex justify-between items-center">
-                                                                    <span className="text-sm font-medium">Selling Price (Rounded)</span>
-                                                                    <span className="text-xl font-bold text-green-400">{currency}{roundingResult.sellingPrice.toFixed(2)}</span>
-                                                                </div>
-                                                            </>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                        {/* Pages - Hidden for Materials & Stationery */}
-                                        {formData.type !== 'Material' && formData.type !== 'Stationery' && (
-                                            <div>
-                                                <label className="block text-sm font-medium text-slate-700 mb-1">
-                                                    Pages
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={formData.pages || 1}
-                                                    onChange={(e) => setFormData({ ...formData, pages: Number(e.target.value) })}
-                                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Conversion Unit Section for Materials */}
-                                    {formData.type === 'Material' && (
-                                        <div className="border-t border-slate-200 pt-6">
-                                            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                                                <Scale className="w-5 h-5 text-indigo-600" /> Material Conversion Units
-                                            </h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                                                <div>
-                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Purchase Unit (e.g., Ream/Kg)</label>
-                                                    <input
-                                                        type="text"
-                                                        value={formData.purchaseUnit || ''}
-                                                        onChange={(e) => setFormData({ ...formData, purchaseUnit: e.target.value })}
-                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                                        placeholder="e.g. Ream"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Usage Unit (e.g., Sheet/Gram)</label>
-                                                    <input
-                                                        type="text"
-                                                        value={formData.usageUnit || ''}
-                                                        onChange={(e) => setFormData({ ...formData, usageUnit: e.target.value })}
-                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                                        placeholder="e.g. Sheet"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Conversion Rate (Qty per Purchase Unit)</label>
-                                                    <input
-                                                        type="number"
-                                                        value={formData.conversionRate || 1}
-                                                        onChange={(e) => setFormData({ ...formData, conversionRate: Number(e.target.value) })}
-                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                                        placeholder="e.g. 500"
-                                                    />
-                                                </div>
-                                            </div>
-                                            <p className="mt-2 text-[10px] text-slate-500 italic">
-                                                Example: 1 Ream (Purchase) = 500 Sheets (Usage). Conversion Rate = 500.
-                                            </p>
-                                        </div>
-                                    )}
-
-
 
                                     {/* Market Adjustments Toggle/Select for Stationery */}
                                     {formData.type === 'Stationery' && (
