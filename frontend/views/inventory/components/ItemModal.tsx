@@ -1207,9 +1207,6 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                             </div>
                                         </div>
 )}
-                                            </div>
-                                        )}
-                                    )}
 
                                     {/* Market Adjustments Toggle/Select for Stationery */}
                                     {formData.type === 'Stationery' && (
@@ -1971,9 +1968,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
                         </form>
                     </div>
                 </div>
-
-            </div >
-        </div >
+            </div>
+        </div>
     );
 };
 
