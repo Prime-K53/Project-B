@@ -618,24 +618,24 @@ const ExaminationHub: React.FC = () => {
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-left text-[13px]">
                 <thead className="bg-slate-50/80 backdrop-blur text-slate-500 sticky top-0 z-10 shadow-sm">
-                  <tr>
-                    <th className="table-header w-10 px-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedBatchIds.size === filteredBatches.length && filteredBatches.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                    </th>
-                    <th className="table-header">Batch</th>
-                    <th className="table-header">School</th>
-                    <th className="table-header">Exam Type</th>
-                    <th className="table-header">Academic</th>
-                    <th className="table-header text-right">Classes</th>
-                    <th className="table-header text-right">Amount</th>
-                    <th className="table-header">Status</th>
-                    <th className="table-header text-right">Action</th>
-                  </tr>
+                   <tr>
+                     <th className="table-header w-12 px-2 text-center">
+                       <input
+                         type="checkbox"
+                         checked={selectedBatchIds.size === filteredBatches.length && filteredBatches.length > 0}
+                         onChange={toggleSelectAll}
+                         className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                       />
+                     </th>
+                     <th className="table-header w-32">Batch #</th>
+                     <th className="table-header">School</th>
+                     <th className="table-header w-28">Exam Type</th>
+                     <th className="table-header w-32">Academic</th>
+                     <th className="table-header w-20 text-right">Classes</th>
+                     <th className="table-header w-32 text-right">Amount</th>
+                     <th className="table-header w-24">Status</th>
+                     <th className="table-header w-12 text-right">Action</th>
+                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100/50">
                   {filteredBatches.map((batch) => {
@@ -661,10 +661,7 @@ const ExaminationHub: React.FC = () => {
                           />
                         </td>
                         <td className="table-body-cell">
-                          <div className="font-semibold text-slate-900">{batch.name}</div>
-                          {batchReference && (
-                            <div className="text-[11px] font-mono text-slate-500 mt-0.5">{batchReference}</div>
-                          )}
+                          <div className="font-semibold text-slate-900 font-mono">{batchReference || batch.id}</div>
                           {batch.type === 'Patch' && (
                             <span className="inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-semibold bg-orange-50 text-orange-700 border border-orange-100 mt-1">
                               Patch
