@@ -21,6 +21,17 @@ export const INITIAL_INVENTORY: Item[] = [
   { id: 'FG-BC-001', name: 'Business Cards (Box 250)', sku: 'FG-BC-001', price: 25.00, cost: 5.00, stock: 0, category: 'Stationery', type: 'Product', unit: 'box', minStockLevel: 20, pages: 0 },
 ];
 
+export const ACCOUNT_IDS = {
+  CASH_DRAWER: '1000',
+  BANK: '1050',
+  MOBILE_MONEY: '1060',
+  RECEIVABLE: '1100',
+  PAYABLE: '2000',
+  EQUITY: '3000',
+  SALES: '4000',
+  COGS: '5000'
+};
+
 export const DEFAULT_ACCOUNTS: Account[] = [
   // --- Assets (1000-1999) ---
   { id: '1000', code: '1000', name: 'Cash Account', type: 'Asset' },

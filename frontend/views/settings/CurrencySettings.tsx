@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { currencyService } from '../../services/currencyService';
-import { Currency, ExchangeRate, CurrencySettings, DEFAULT_CURRENCIES } from '../../types/currency';
+import { Currency, ExchangeRate, CurrencySettings as CurrencySettingsData, DEFAULT_CURRENCIES } from '../../types/currency';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Card } from '../../components/Card';
 import { logger } from '../../services/logger';
 
 export const CurrencySettings: React.FC = () => {
-  const [settings, setSettings] = useState<CurrencySettings | null>(null);
+  const [settings, setSettings] = useState<CurrencySettingsData | null>(null);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,7 +214,7 @@ export const CurrencySettings: React.FC = () => {
                 value={settings.roundingMethod}
                 onChange={(e) => setSettings({ 
                   ...settings, 
-                  roundingMethod: e.target.value as CurrencySettings['roundingMethod']
+                  roundingMethod: e.target.value as CurrencySettingsData['roundingMethod']
                 })}
                 className="w-full border rounded-md p-2"
               >
@@ -230,7 +230,7 @@ export const CurrencySettings: React.FC = () => {
                 value={settings.apiProvider}
                 onChange={(e) => setSettings({ 
                   ...settings, 
-                  apiProvider: e.target.value as CurrencySettings['apiProvider']
+                  apiProvider: e.target.value as CurrencySettingsData['apiProvider']
                 })}
                 className="w-full border rounded-md p-2"
               >
@@ -257,7 +257,7 @@ export const CurrencySettings: React.FC = () => {
                 value={settings.rateUpdateFrequency}
                 onChange={(e) => setSettings({ 
                   ...settings, 
-                  rateUpdateFrequency: e.target.value as CurrencySettings['rateUpdateFrequency']
+                  rateUpdateFrequency: e.target.value as CurrencySettingsData['rateUpdateFrequency']
                 })}
                 className="w-full border rounded-md p-2"
               >

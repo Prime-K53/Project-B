@@ -3,7 +3,7 @@ import {
   MessageCircle, Send, Users, Clock, CheckCircle, XCircle, Plus, Search, Filter,
   ArrowLeft, Archive, Star, Trash2, Download, Settings, Zap, Tag, MessageSquare,
   BarChart3, UserPlus, Volume2, Calendar, Repeat, ChevronRight, PhoneCall, Bot, GitBranch, 
-  Play, Pause, Save, Copy, ExternalLink, Link, FileText, Image, Video, Phone, SendForward,
+  Play, Pause, Save, Copy, ExternalLink, Link, FileText, Image, Video, Phone, Check,
   CheckCheck, MoreVertical, Smile, MapPin, Mic, QrCode, GripVertical, X, RefreshCw,
   AlertCircle, TrendingUp, DollarSign, Package, Ticket, FileCheck, Truck, CreditCard
 } from 'lucide-react';

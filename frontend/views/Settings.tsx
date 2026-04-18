@@ -574,7 +574,7 @@ const Settings: React.FC = () => {
                             <Gauge className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B6C6F]" size={16} />
                             <input
                                 type="text"
-                                placeholder="Search..."
+                                placeholder="Search settings..."
                                 className="w-full pl-10 pr-4 py-2 bg-[#F4F5F8] border border-[#D4D7DC] rounded-md text-sm outline-none focus:ring-2 focus:ring-[#2CA01C]/20 focus:border-[#2CA01C] transition-all font-medium text-[#393A3D]"
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
@@ -1768,7 +1768,8 @@ const Settings: React.FC = () => {
                                                     <div className="grid grid-cols-4 gap-3">
                                                         <input
                                                             type="text"
-                                                            placeholder="Bank Name (e.g. Standard Bank)"
+                                                            placeholder="e.g. Standard Bank"
+                                                            aria-label="Bank Name"
                                                             className="settings-input"
                                                             value={bank.bankName}
                                                             onChange={e => {
@@ -1779,7 +1780,8 @@ const Settings: React.FC = () => {
                                                         />
                                                         <input
                                                             type="text"
-                                                            placeholder="Account Name"
+                                                            placeholder="e.g. Operating Account"
+                                                            aria-label="Account Name"
                                                             className="settings-input"
                                                             value={bank.accountName}
                                                             onChange={e => {
@@ -1790,7 +1792,8 @@ const Settings: React.FC = () => {
                                                         />
                                                         <input
                                                             type="text"
-                                                            placeholder="Account Number"
+                                                            placeholder="e.g. 10100223344"
+                                                            aria-label="Account Number"
                                                             className="settings-input"
                                                             value={bank.accountNumber}
                                                             onChange={e => {
@@ -1802,7 +1805,8 @@ const Settings: React.FC = () => {
                                                         <div className="flex items-center gap-2">
                                                             <input
                                                                 type="text"
-                                                                placeholder="Branch Code"
+                                                                placeholder="e.g. 012345"
+                                                                aria-label="Branch Code"
                                                                 className="settings-input"
                                                                 value={bank.branchCode || ''}
                                                                 onChange={e => {
@@ -1880,7 +1884,8 @@ const Settings: React.FC = () => {
                                                         </select>
                                                         <input
                                                             type="text"
-                                                            placeholder="Account Name"
+                                                            placeholder="e.g. Business Wallet"
+                                                            aria-label="Account Name"
                                                             className="settings-input"
                                                             value={mm.accountName}
                                                             onChange={e => {
@@ -1892,7 +1897,8 @@ const Settings: React.FC = () => {
                                                         <div className="flex items-center gap-2">
                                                             <input
                                                                 type="text"
-                                                                placeholder="Phone Number"
+                                                                placeholder="e.g. 0888123456"
+                                                                aria-label="Phone Number"
                                                                 className="settings-input"
                                                                 value={mm.phoneNumber}
                                                                 onChange={e => {
@@ -1975,6 +1981,7 @@ const Settings: React.FC = () => {
                                                             <label className="text-[9px] font-black text-slate-400 uppercase block mb-3 px-1">Prefix</label>
                                                             <input
                                                                 type="text"
+                                                                placeholder="e.g. INV"
                                                                 className="w-full p-3 bg-[#F4F5F8] border border-[#D4D7DC] rounded-md text-center font-bold text-sm outline-none focus:ring-2 focus:ring-[#2CA01C]/10 focus:border-[#2CA01C] transition-all"
                                                                 value={(config.transactionSettings?.numbering as any)?.[rule.key]?.prefix || ''}
                                                                 onChange={e => setConfig({ ...config, transactionSettings: { ...config.transactionSettings, numbering: { ...config.transactionSettings?.numbering, [rule.key]: { ...(config.transactionSettings?.numbering as any)?.[rule.key], prefix: e.target.value.toUpperCase() } } } as any })}
@@ -1984,6 +1991,7 @@ const Settings: React.FC = () => {
                                                             <label className="text-[9px] font-black text-slate-400 uppercase block mb-3 px-1">Padding</label>
                                                             <input
                                                                 type="number"
+                                                                placeholder="e.g. 4"
                                                                 className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl text-center font-bold text-sm outline-none focus:ring-4 focus:ring-amber-500/5 focus:border-amber-500 transition-all"
                                                                 value={(config.transactionSettings?.numbering as any)?.[rule.key]?.padding || 4}
                                                                 onChange={e => setConfig({ ...config, transactionSettings: { ...config.transactionSettings, numbering: { ...config.transactionSettings?.numbering, [rule.key]: { ...(config.transactionSettings?.numbering as any)?.[rule.key], padding: parseInt(e.target.value) || 0 } } } as any })}
@@ -1993,6 +2001,7 @@ const Settings: React.FC = () => {
                                                             <label className="text-[9px] font-black text-slate-400 uppercase block mb-3 px-1">Start At</label>
                                                             <input
                                                                 type="number"
+                                                                placeholder="e.g. 1"
                                                                 className="w-full p-3 bg-[#F4F5F8] border border-[#D4D7DC] rounded-md text-center font-bold text-sm outline-none focus:ring-2 focus:ring-[#2CA01C]/10 focus:border-[#2CA01C] transition-all"
                                                                 value={(config.transactionSettings?.numbering as any)?.[rule.key]?.startNumber || 0}
                                                                 onChange={e => setConfig({ ...config, transactionSettings: { ...config.transactionSettings, numbering: { ...config.transactionSettings?.numbering, [rule.key]: { ...(config.transactionSettings?.numbering as any)?.[rule.key], startNumber: parseInt(e.target.value) || 0 } } } as any })}
@@ -3123,7 +3132,7 @@ const Settings: React.FC = () => {
                                                         <input
                                                             type="email"
                                                             className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm"
-                                                            placeholder="report@company.com"
+                                                            placeholder="e.g. report@company.com"
                                                             value={config.notificationSettings?.dailySummaryEmail || ''}
                                                             onChange={e => setConfig({
                                                                 ...config,
@@ -3209,14 +3218,14 @@ const Settings: React.FC = () => {
                                                                 type="password"
                                                                 value={accessPassword}
                                                                 onChange={e => setAccessPassword(e.target.value)}
-                                                                placeholder={primaryAdminUser?.password ? 'Leave blank to keep the current password' : 'Enter new password'}
+                                                                placeholder={primaryAdminUser?.password ? 'Leave blank to keep' : 'e.g. Secret123!'}
                                                                 className="w-full px-5 py-4 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-4 focus:ring-rose-500/5 focus:border-rose-500 transition-all"
                                                             />
                                                             <input
                                                                 type="password"
                                                                 value={confirmAccessPassword}
                                                                 onChange={e => setConfirmAccessPassword(e.target.value)}
-                                                                placeholder="Confirm access password"
+                                                                placeholder="Repeat password"
                                                                 className="w-full px-5 py-4 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-4 focus:ring-rose-500/5 focus:border-rose-500 transition-all"
                                                             />
                                                         </div>
@@ -3285,6 +3294,7 @@ const Settings: React.FC = () => {
                                                         <input
                                                             type="number"
                                                             className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-4 focus:ring-rose-500/5 focus:border-rose-500 transition-all"
+                                                            placeholder="e.g. 30"
                                                             value={normalizedSecuritySettings.sessionTimeoutMinutes || 30}
                                                             onChange={e => setConfig({ ...config, securitySettings: { ...normalizedSecuritySettings, sessionTimeoutMinutes: parseInt(e.target.value) || 0 } as any })}
                                                         />
@@ -3294,6 +3304,7 @@ const Settings: React.FC = () => {
                                                         <input
                                                             type="number"
                                                             className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-4 focus:ring-rose-500/5 focus:border-rose-500 transition-all"
+                                                            placeholder="e.g. 90"
                                                             value={normalizedSecuritySettings.forcePasswordChangeDays || 90}
                                                             onChange={e => setConfig({ ...config, securitySettings: { ...normalizedSecuritySettings, forcePasswordChangeDays: parseInt(e.target.value) || 0 } as any })}
                                                         />
@@ -3303,6 +3314,7 @@ const Settings: React.FC = () => {
                                                         <input
                                                             type="number"
                                                             className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-xl font-bold text-sm outline-none focus:ring-4 focus:ring-rose-500/5 focus:border-rose-500 transition-all"
+                                                            placeholder="e.g. 5"
                                                             value={normalizedSecuritySettings.lockoutAttempts || 5}
                                                             onChange={e => setConfig({ ...config, securitySettings: { ...normalizedSecuritySettings, lockoutAttempts: parseInt(e.target.value) || 0 } as any })}
                                                         />
@@ -3648,7 +3660,7 @@ const Settings: React.FC = () => {
                                                                     try {
                                                                         const content = await file.text();
                                                                         // Send license to server for validation/activation
-                                                                        const result = await api.activateLicense(content);
+                                                                        const result = await api.system.activateLicense(content);
                                                                         if (result.success) {
                                                                             notify('License activated successfully!', 'success');
                                                                             // Reload system info to reflect new license status

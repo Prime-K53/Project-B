@@ -143,7 +143,7 @@ export interface SecuritySettingsConfig {
   sessionTimeoutMinutes: number;
   forcePasswordChangeDays: number;
   requireTwoFactor: boolean;
-  auditLogLevel: 'Minimal' | 'Standard' | 'Detailed';
+  auditLogLevel: 'Minimal' | 'Standard' | 'Detailed' | 'Full';
   lockoutAttempts: number;
   passwordProtectionEnabled?: boolean;
   enforcePasswordComplexity?: boolean;
@@ -151,7 +151,7 @@ export interface SecuritySettingsConfig {
 
 export interface VATConfig {
   enabled: boolean;
-  taxRate: number;
+  rate: number;
   registrationNumber?: string;
   defaultTaxCategory?: string;
   outputTaxAccount?: string;
@@ -198,12 +198,18 @@ export interface CompanyConfig {
   vat: VATConfig;
   roundingRules: RoundingRulesConfig;
   notificationSettings: {
-    customerActivityNotifications: boolean;
-    smsGatewayEnabled: boolean;
-    emailGatewayEnabled: boolean;
-    dailySummaryEnabled: boolean;
-    dailySummaryTime: string;
-    dailySummaryEmail: string;
+    customerActivityNotifications?: boolean;
+    smsGatewayEnabled?: boolean;
+    emailGatewayEnabled?: boolean;
+    dailySummaryEnabled?: boolean;
+    dailySummaryTime?: string;
+    dailySummaryEmail?: string;
+    emailEnabled?: boolean;
+    smsEnabled?: boolean;
+    systemAlertsEnabled?: boolean;
+    lowStockThreshold?: number;
+    largeTransactionThreshold?: number;
+    [key: string]: any;
   };
   lateFeePolicy: LateFeePolicy;
   registrationNumber?: string;
@@ -646,7 +652,12 @@ export type LandingCostItem = any; // TIER 2: Added as any due to missing defini
 export type InvoiceAllocation = any; // TIER 2: Added as any due to missing definitions
 export type Attachment = any; // TIER 2: Added as any due to missing definitions
 export type CRMTask = any; // TIER 2: Added as any due to missing definitions
-export type SmartPricingConfig = any; // TIER 2: Added as any due to missing definitions
+export interface SmartPricingConfig {
+  hiddenBOMId?: string;
+  bomTemplateId?: string;
+  adjustmentPercentage?: number;
+  [key: string]: any;
+}
 export type SidebarStyle = any;
 export type AVCOValuationMethod = any;
 export type RequireCustomerToPOS = any;

@@ -5,7 +5,7 @@ import { useData } from '../../context/DataContext';
 import { useFinance } from '../../context/FinanceContext';
 import { useBankingStore } from '../../context/BankingContext';
 import { Income } from '../../types';
-import { DEFAULT_ACCOUNTS } from '../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
 
 const IncomeView: React.FC = () => {
   const { income, addIncome, updateIncome, deleteIncome } = useFinance();
@@ -28,7 +28,7 @@ const IncomeView: React.FC = () => {
     description: '',
     paymentMethod: 'Cash',
     recordedBy: user?.username || 'System',
-    accountId: DEFAULT_ACCOUNTS.CASH_DRAWER
+    accountId: ACCOUNT_IDS.CASH_DRAWER
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -71,7 +71,7 @@ const IncomeView: React.FC = () => {
         description: '',
         paymentMethod: 'Cash',
         recordedBy: user?.username || 'System',
-        accountId: DEFAULT_ACCOUNTS.CASH_DRAWER
+        accountId: ACCOUNT_IDS.CASH_DRAWER
       });
       setEditingId(null);
   };
@@ -138,9 +138,9 @@ const IncomeView: React.FC = () => {
                                     onChange={e => setFormData({...formData, accountId: e.target.value})}
                                 >
                                     <optgroup label="Default Accounts">
-                                        <option value={DEFAULT_ACCOUNTS.CASH_DRAWER}>Cash Drawer (1000)</option>
-                                        <option value={DEFAULT_ACCOUNTS.BANK}>Main Bank Account (1050)</option>
-                                        <option value={DEFAULT_ACCOUNTS.MOBILE_MONEY}>Mobile Money (1060)</option>
+                                        <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (1000)</option>
+                                        <option value={ACCOUNT_IDS.BANK}>Main Bank Account (1050)</option>
+                                        <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (1060)</option>
                                     </optgroup>
                                     {(bankAccounts || []).length > 0 && (
                                         <optgroup label="Specific Bank Accounts">

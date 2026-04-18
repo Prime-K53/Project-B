@@ -1610,6 +1610,7 @@ const Banking: React.FC = () => {
                   value={accountForm.name}
                   onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="e.g. Main Operating Account"
                   required
                 />
               </div>
@@ -1620,6 +1621,7 @@ const Banking: React.FC = () => {
                   value={accountForm.accountNumber}
                   onChange={(e) => setAccountForm({ ...accountForm, accountNumber: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="e.g. 1234567890"
                   required
                 />
               </div>
@@ -1630,6 +1632,7 @@ const Banking: React.FC = () => {
                   value={accountForm.bankName}
                   onChange={(e) => setAccountForm({ ...accountForm, bankName: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="e.g. Stanbic Bank"
                   required
                 />
               </div>
@@ -1652,6 +1655,7 @@ const Banking: React.FC = () => {
                     value={accountForm.currency}
                     onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value.toUpperCase() })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. USD"
                     maxLength={3}
                     required
                   />
@@ -1763,6 +1767,7 @@ const Banking: React.FC = () => {
                   value={transactionForm.amount}
                   onChange={(e) => setTransactionForm({ ...transactionForm, amount: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="0.00"
                   required
                 />
               </div>
@@ -1773,6 +1778,7 @@ const Banking: React.FC = () => {
                   value={transactionForm.description}
                   onChange={(e) => setTransactionForm({ ...transactionForm, description: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="e.g. Office rent payment"
                   required
                 />
               </div>
@@ -1784,6 +1790,7 @@ const Banking: React.FC = () => {
                     value={transactionForm.reference}
                     onChange={(e) => setTransactionForm({ ...transactionForm, reference: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. INV-2024-001"
                   />
                 </div>
                 <div>
@@ -1881,6 +1888,7 @@ const Banking: React.FC = () => {
                   value={scheduledPaymentForm.name}
                   onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, name: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="e.g. Monthly Rent"
                   required
                 />
               </div>
@@ -1891,6 +1899,7 @@ const Banking: React.FC = () => {
                   value={scheduledPaymentForm.description}
                   onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, description: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  placeholder="e.g. Recurring payment for office space"
                 />
               </div>
               <div>
@@ -1918,6 +1927,7 @@ const Banking: React.FC = () => {
                     value={scheduledPaymentForm.amount}
                     onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, amount: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="0.00"
                     required
                   />
                 </div>
@@ -1994,6 +2004,7 @@ const Banking: React.FC = () => {
                     value={scheduledPaymentForm.counterpartyName}
                     onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, counterpartyName: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. John Doe"
                   />
                 </div>
                 <div>
@@ -2003,6 +2014,7 @@ const Banking: React.FC = () => {
                     value={scheduledPaymentForm.counterpartyAccountNumber}
                     onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, counterpartyAccountNumber: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. 10987654321"
                   />
                 </div>
               </div>
@@ -2014,6 +2026,7 @@ const Banking: React.FC = () => {
                     value={scheduledPaymentForm.counterpartyBankName}
                     onChange={(e) => setScheduledPaymentForm({ ...scheduledPaymentForm, counterpartyBankName: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. Equity Bank"
                   />
                 </div>
                 <div>
@@ -2110,6 +2123,7 @@ const Banking: React.FC = () => {
                     value={reconciliationForm.endingBalance}
                     onChange={(e) => setReconciliationForm({ ...reconciliationForm, endingBalance: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="0.00"
                     required
                   />
                 </div>
@@ -2120,6 +2134,7 @@ const Banking: React.FC = () => {
                     value={reconciliationForm.statementId}
                     onChange={(e) => setReconciliationForm({ ...reconciliationForm, statementId: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. STMT-2024-04"
                   />
                 </div>
               </div>
@@ -2129,6 +2144,7 @@ const Banking: React.FC = () => {
                   value={reconciliationForm.notes}
                   onChange={(e) => setReconciliationForm({ ...reconciliationForm, notes: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm min-h-[80px]"
+                  placeholder="e.g. Adjustments for pending checks"
                 />
               </div>
               {reconciliationPreview && (
@@ -2218,6 +2234,7 @@ const Banking: React.FC = () => {
                     value={forecastForm.notes}
                     onChange={(e) => setForecastForm({ ...forecastForm, notes: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    placeholder="e.g. Q4 growth assumptions"
                   />
                 </div>
               </div>

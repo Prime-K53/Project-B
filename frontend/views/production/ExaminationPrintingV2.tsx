@@ -998,7 +998,7 @@ const ExaminationPrintingV2: React.FC = () => {
                     value={newJobForm.class_name}
                     onChange={e => setNewJobField('class_name', e.target.value)}
                     className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                    placeholder="Class Name"
+                    placeholder="e.g. Grade 12A"
                   />
                 </label>
                 <label className="text-sm font-medium text-slate-700">Learners
@@ -1008,6 +1008,7 @@ const ExaminationPrintingV2: React.FC = () => {
                     value={newJobForm.number_of_learners}
                     onChange={e => setNewJobField('number_of_learners', Math.max(0, Number(e.target.value || 0)))}
                     className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                    placeholder="e.g. 50"
                   />
                 </label>
                 <label className="text-sm font-medium text-slate-700">BOM
@@ -1067,6 +1068,7 @@ const ExaminationPrintingV2: React.FC = () => {
                       value={newJobForm.adjustment_value}
                       onChange={e => setNewJobField('adjustment_value', Number(e.target.value || 0))}
                       className="border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      placeholder="0.00"
                     />
                   </div>
                 </label>
@@ -1089,6 +1091,7 @@ const ExaminationPrintingV2: React.FC = () => {
                       value={newJobForm.rounding_value}
                       onChange={e => setNewJobField('rounding_value', Number(e.target.value || 0))}
                       className="border border-slate-200 rounded-xl px-3 py-2 text-sm disabled:bg-slate-100"
+                      placeholder="0.00"
                     />
                   </div>
                 </label>
@@ -1102,7 +1105,7 @@ const ExaminationPrintingV2: React.FC = () => {
                       value={newJobForm.subject_name}
                       onChange={e => setNewJobField('subject_name', e.target.value)}
                       className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                      placeholder="Subject"
+                      placeholder="e.g. Mathematics"
                     />
                   </label>
                   <label className="text-sm font-medium text-slate-700">Pages Per Paper
@@ -1112,6 +1115,7 @@ const ExaminationPrintingV2: React.FC = () => {
                       value={newJobForm.pages_per_paper}
                       onChange={e => setNewJobField('pages_per_paper', Math.max(0, Number(e.target.value || 0)))}
                       className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      placeholder="e.g. 4"
                     />
                   </label>
                   <label className="text-sm font-medium text-slate-700">Extra Copies
@@ -1121,6 +1125,7 @@ const ExaminationPrintingV2: React.FC = () => {
                       value={newJobForm.extra_copies}
                       onChange={e => setNewJobField('extra_copies', Math.max(0, Number(e.target.value || 0)))}
                       className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
+                      placeholder="e.g. 2"
                     />
                   </label>
                 </div>
@@ -1253,7 +1258,7 @@ const ExaminationPrintingV2: React.FC = () => {
                   <div className="divide-y divide-slate-100">
                     {subjectRowsPreview.map((subject, index) => (
                       <div key={subject.id || `new-${index}`} className="grid grid-cols-12 gap-2 px-4 py-3 items-center">
-                        <input disabled={isReadOnly} value={subject.subject_name} onChange={e => setSubjectField(index, 'subject_name', e.target.value)} className="col-span-4 border border-slate-200 rounded-lg px-2 py-1 text-sm" placeholder="Subject" />
+                        <input disabled={isReadOnly} value={subject.subject_name} onChange={e => setSubjectField(index, 'subject_name', e.target.value)} className="col-span-4 border border-slate-200 rounded-lg px-2 py-1 text-sm" placeholder="e.g. Mathematics" />
                         <input disabled={isReadOnly} type="number" min={1} value={subject.pages_per_paper} onChange={e => setSubjectField(index, 'pages_per_paper', e.target.value)} className="col-span-2 border border-slate-200 rounded-lg px-2 py-1 text-sm" />
                         <input disabled={isReadOnly} type="number" min={0} value={subject.extra_copies} onChange={e => setSubjectField(index, 'extra_copies', e.target.value)} className="col-span-2 border border-slate-200 rounded-lg px-2 py-1 text-sm" />
                         <div className="col-span-3 text-sm font-semibold text-slate-700">{subject.total_pages.toLocaleString()} pages</div>
@@ -1366,7 +1371,7 @@ const ExaminationPrintingV2: React.FC = () => {
                     <button onClick={handleRecalculate} className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold flex items-center gap-2 justify-center"><Calculator size={14} /> Recalculate</button>
                     <button disabled={isReadOnly} onClick={() => setJobField('override_enabled', !editingJob.override_enabled)} className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold">Override Price</button>
                     {editingJob.override_enabled && !isReadOnly && (
-                      <input type="number" value={editingJob.manual_price_per_learner || 0} onChange={e => setJobField('manual_price_per_learner', Number(e.target.value || 0))} className="px-3 py-2 rounded-xl border border-slate-200 text-sm" placeholder="Manual price/learner" />
+                      <input type="number" value={editingJob.manual_price_per_learner || 0} onChange={e => setJobField('manual_price_per_learner', Number(e.target.value || 0))} className="px-3 py-2 rounded-xl border border-slate-200 text-sm" placeholder="e.g. 5.50" />
                     )}
                     <button onClick={handleApprove} className="px-3 py-2 rounded-xl border border-emerald-200 text-emerald-700 text-sm font-bold flex items-center gap-2 justify-center"><CheckCircle size={14} /> Approve</button>
                     <button onClick={handleAddToInvoiceGroup} className="px-3 py-2 rounded-xl border border-blue-200 text-blue-700 text-sm font-bold flex items-center gap-2 justify-center"><Layers size={14} /> Add to Group</button>
@@ -1381,7 +1386,7 @@ const ExaminationPrintingV2: React.FC = () => {
                         value={editingJob.override_reason || ''}
                         onChange={e => setJobField('override_reason', e.target.value)}
                         className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                        placeholder="Reason for manual override"
+                        placeholder="e.g. Bulk discount for partner school"
                       />
                     </label>
                   )}

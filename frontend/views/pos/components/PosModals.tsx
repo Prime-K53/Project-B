@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, CheckCircle, Printer, Usb, Wallet, UserPlus, Save, ArrowRight, Calculator, DollarSign, Tag, ShieldCheck, Plus, Search, Building2, FileText, Clock } from 'lucide-react';
 import { HeldOrder, Sale, Invoice, Item, ProductVariant, BillOfMaterial, WorkOrder, BOMTemplate } from '../../../types';
 import { useData } from '../../../context/DataContext';
-import { DEFAULT_ACCOUNTS } from '../../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
 import { hardwareService } from '../../../services/hardwareService';
 import { generateAccountNumber, roundFinancial, formatNumber, roundToCurrency } from '../../../utils/helpers';
 import { bomService } from '../../../services/bomService';
@@ -60,7 +60,7 @@ export const PrintingVariantModal: React.FC<{
 
     useEffect(() => {
         // Check if parent has Hidden BOM for dynamic pricing
-        const hasHiddenBOM = product.smartPricing?.hiddenBOMId || product.smartPricing?.bomTemplateId;
+        const hasHiddenBOM = (product as any).smartPricing?.hiddenBOMId || (product as any).smartPricing?.bomTemplateId;
 
         if (hasHiddenBOM) {
             // Use dynamic variant pricing from pricingService
@@ -860,10 +860,10 @@ export const ReturnsModal: React.FC<{
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
     const [returnItems, setReturnItems] = useState<{ itemId: string, qty: number }[]>([]);
-    const [refundAccountId, setRefundAccountId] = useState('1000'); // Default to Cash Account
+    const [refundAccountId, setRefundAccountId] = useState(ACCOUNT_IDS.CASH_DRAWER); // Default to Cash Account
 
     const cashBankAccounts = useMemo(() =>
-        DEFAULT_ACCOUNTS.filter(acc => ['1000', '1050', '1060'].includes(acc.id)),
+        DEFAULT_ACCOUNTS.filter(acc => [ACCOUNT_IDS.CASH_DRAWER, ACCOUNT_IDS.BANK, ACCOUNT_IDS.MOBILE_MONEY].includes(acc.id)),
         []);
 
     const handleSearch = () => {

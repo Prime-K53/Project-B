@@ -1439,6 +1439,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     value={formData.pages || 1}
                                                     onChange={(e) => setFormData({ ...formData, pages: Number(e.target.value) })}
                                                     className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    placeholder="e.g. 100"
                                                 />
                                             </div>
                                         )}
@@ -1708,6 +1709,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                                     className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
                                                                     value={option.quantity}
                                                                     onChange={(e) => updateFinishingOption(option.id, 'quantity', Number(e.target.value))}
+                                                                    placeholder="e.g. 1.0"
                                                                 />
                                                             </div>
                                                         </div>
@@ -1793,6 +1795,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${errors.stock ? 'border-red-300 bg-red-50' : 'border-slate-200'
                                                     }`}
                                                 disabled={mode === 'edit'}
+                                                placeholder="e.g. 100"
                                             />
                                             {mode === 'edit' && (
                                                 <p className="mt-1 text-xs text-slate-500">Stock is managed through adjustments</p>
@@ -1815,6 +1818,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 value={formData.minStockLevel || 0}
                                                 onChange={(e) => setFormData({ ...formData, minStockLevel: Number(e.target.value) })}
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                placeholder="e.g. 10"
                                             />
                                         </div>
 
@@ -1829,6 +1833,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 value={formData.reorderPoint || 0}
                                                 onChange={(e) => setFormData({ ...formData, reorderPoint: Number(e.target.value) })}
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                placeholder="e.g. 20"
                                             />
                                         </div>
 
@@ -1843,6 +1848,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 value={formData.minOrderQty || 1}
                                                 onChange={(e) => setFormData({ ...formData, minOrderQty: Number(e.target.value) })}
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                placeholder="e.g. 5"
                                             />
                                         </div>
 
@@ -1857,6 +1863,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 value={formData.leadTimeDays || 0}
                                                 onChange={(e) => setFormData({ ...formData, leadTimeDays: Number(e.target.value) })}
                                                 className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                placeholder="e.g. 7"
                                             />
                                         </div>
 
@@ -2092,6 +2099,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                             }
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                        placeholder="e.g. 5.00"
                                                     />
                                                 </div>
                                                 <div>
@@ -2115,6 +2123,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                             }
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                        placeholder="e.g. 15.0"
                                                     />
                                                 </div>
                                                 <div>
@@ -2155,6 +2164,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                         value={newVariant.price || 0}
                                                         onChange={(e) => setNewVariant({ ...newVariant, price: Number(e.target.value), calculated_price: Number(e.target.value) })}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                        placeholder="e.g. 12.50"
                                                     />
                                                 </div>
                                                 <div>
@@ -2164,6 +2174,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                         value={newVariant.stock || 0}
                                                         onChange={(e) => setNewVariant({ ...newVariant, stock: Number(e.target.value) })}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                        placeholder="e.g. 50"
                                                     />
                                                 </div>
                                                 {formData.type !== 'Stationery' && (
@@ -2174,6 +2185,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                             value={newVariant.pages || 1}
                                                             onChange={(e) => setNewVariant({ ...newVariant, pages: Number(e.target.value) })}
                                                             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                            placeholder="e.g. 40"
                                                         />
                                                     </div>
                                                 )}

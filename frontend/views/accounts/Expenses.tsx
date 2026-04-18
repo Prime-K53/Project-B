@@ -12,7 +12,7 @@ import { useData } from '../../context/DataContext';
 import { useBankingStore } from '../../context/BankingContext';
 import { Expense } from '../../types';
 import { exportToCSV } from '../../services/excelService';
-import { DEFAULT_ACCOUNTS } from '../../constants';
+import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../constants';
 import { localFileStorage } from '../../services/localFileStorage';
 import { OfflineImage } from '../../components/OfflineImage';
 import { extractPaymentProofData, analyzeExpenses } from '../../services/geminiService';
@@ -44,7 +44,7 @@ const Expenses: React.FC = () => {
   const handleAiAudit = async () => {
     setIsAiLoading(true);
     try {
-        const result = await analyzeExpenses(expenses);
+        const result = await analyzeExpenses(expenses as any[]);
         setAiAnalysis(result);
     } catch (error) {
         notify("AI Audit failed", "error");
@@ -60,7 +60,7 @@ const Expenses: React.FC = () => {
     category: 'General',
     description: '',
     date: new Date().toISOString().split('T')[0],
-    accountId: DEFAULT_ACCOUNTS.CASH_DRAWER
+    accountId: ACCOUNT_IDS.CASH_DRAWER
   });
 
   const predefinedCategories = [
@@ -140,7 +140,7 @@ const Expenses: React.FC = () => {
       accountId: formData.accountId
     });
 
-    setFormData({ amount: '', category: 'General', description: '', date: new Date().toISOString().split('T')[0], accountId: DEFAULT_ACCOUNTS.CASH_DRAWER });
+    setFormData({ amount: '', category: 'General', description: '', date: new Date().toISOString().split('T')[0], accountId: ACCOUNT_IDS.CASH_DRAWER });
     setAttachedFileId(null); 
     setIsAddModalOpen(false);
   };
@@ -217,8 +217,8 @@ const Expenses: React.FC = () => {
                  </div>
                  <div className="flex justify-between">
                    <span className="text-emerald-300 pl-4">
-                     CR {selectedExpense.accountId === DEFAULT_ACCOUNTS.BANK ? 'Main Bank Account' : 
-                         selectedExpense.accountId === DEFAULT_ACCOUNTS.MOBILE_MONEY ? 'Mobile Money' : 
+                     CR {selectedExpense.accountId === ACCOUNT_IDS.BANK ? 'Main Bank Account' : 
+                         selectedExpense.accountId === ACCOUNT_IDS.MOBILE_MONEY ? 'Mobile Money' : 
                          'Cash Drawer'}
                    </span>
                    <span>{currency}{selectedExpense.amount.toFixed(2)}</span>
@@ -274,9 +274,9 @@ const Expenses: React.FC = () => {
                      value={formData.accountId} 
                      onChange={e => setFormData({...formData, accountId: e.target.value})}
                    >
-                     <option value={DEFAULT_ACCOUNTS.CASH_DRAWER}>Cash Drawer (1000)</option>
-                     <option value={DEFAULT_ACCOUNTS.BANK}>Main Bank Account (1050)</option>
-                     <option value={DEFAULT_ACCOUNTS.MOBILE_MONEY}>Mobile Money (1060)</option>
+                     <option value={ACCOUNT_IDS.CASH_DRAWER}>Cash Drawer (1000)</option>
+                     <option value={ACCOUNT_IDS.BANK}>Main Bank Account (1050)</option>
+                     <option value={ACCOUNT_IDS.MOBILE_MONEY}>Mobile Money (1060)</option>
                    </select>
                  </div>
                  <div><label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Description</label><textarea className="w-full p-2 border border-slate-200 rounded-xl h-24 resize-none text-sm outline-none focus:ring-2 focus:ring-blue-500" required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="What was this for?" /></div>
