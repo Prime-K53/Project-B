@@ -2,6 +2,9 @@
   command = "npm run build"
   publish = "frontend/dist"
 
+[build.environment]
+  NODE_VERSION = "20"
+
 [[redirects]]
   from = "/api/*"
   to = "https://prime-erp-system.onrender.com/api/:splat"

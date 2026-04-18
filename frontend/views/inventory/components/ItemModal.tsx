@@ -1194,63 +1194,64 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                             
                                             {/* Pack Conversion Fields */}
                                             {usePackConversion && (
-                                                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-indigo-800 mb-1">Cost per Pack</label>
-                                                        <div className="relative">
-                                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400">{currency}</span>
+                                                <div className="mt-4">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-indigo-800 mb-1">Cost per Pack</label>
+                                                            <div className="relative">
+                                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400">{currency}</span>
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    min="0"
+                                                                    value={formData.costPerPack || ''}
+                                                                    onChange={(e) => setFormData({ 
+                                                                        ...formData, 
+                                                                        costPerPack: Number(e.target.value),
+                                                                        cost: derivedCostPerPiece
+                                                                    })}
+                                                                    className="w-full pl-8 pr-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                                                    placeholder="e.g. 500.00"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs font-medium text-indigo-800 mb-1">Units per Pack</label>
                                                             <input
                                                                 type="number"
-                                                                step="0.01"
-                                                                min="0"
-                                                                value={formData.costPerPack || ''}
+                                                                min="1"
+                                                                value={formData.unitsPerPack || ''}
                                                                 onChange={(e) => setFormData({ 
                                                                     ...formData, 
-                                                                    costPerPack: Number(e.target.value),
+                                                                    unitsPerPack: Number(e.target.value),
                                                                     cost: derivedCostPerPiece
                                                                 })}
-                                                                className="w-full pl-8 pr-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                                                placeholder="e.g. 500.00"
+                                                                className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                                                placeholder="e.g. 50"
                                                             />
                                                         </div>
                                                     </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-indigo-800 mb-1">Units per Pack</label>
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            value={formData.unitsPerPack || ''}
-                                                            onChange={(e) => setFormData({ 
-                                                                ...formData, 
-                                                                unitsPerPack: Number(e.target.value),
-                                                                cost: derivedCostPerPiece
-                                                            })}
-                                                            className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                                            placeholder="e.g. 50"
-                                                        />
-                                                    </div>
-                                                </div>
-                                                
-                                                {/* Markup Field */}
-                                                <div className="mt-4">
-                                                    <label className="block text-xs font-medium text-indigo-800 mb-1">Markup (%)</label>
-                                                    <div className="relative">
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            step="0.1"
-                                                            value={formData.pricingConfig?.markup || ''}
-                                                            onChange={(e) => setFormData({
-                                                                ...formData,
-                                                                pricingConfig: {
-                                                                    ...formData.pricingConfig!,
-                                                                    markup: Number(e.target.value)
-                                                                }
-                                                            })}
-                                                            className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                                            placeholder="e.g. 30"
-                                                        />
-                                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400">%</span>
+                                                    
+                                                    <div className="mt-4">
+                                                        <label className="block text-xs font-medium text-indigo-800 mb-1">Markup (%)</label>
+                                                        <div className="relative">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.1"
+                                                                value={formData.pricingConfig?.markup || ''}
+                                                                onChange={(e) => setFormData({
+                                                                    ...formData,
+                                                                    pricingConfig: {
+                                                                        ...formData.pricingConfig!,
+                                                                        markup: Number(e.target.value)
+                                                                    }
+                                                                })}
+                                                                className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                                                placeholder="e.g. 30"
+                                                            />
+                                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400">%</span>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}

@@ -7,12 +7,12 @@
   "scripts": {
     "backend:install": "npm --prefix backend install",
     "frontend:install": "npm --prefix frontend install",
-    "install-all": "npm run backend:install && npm run frontend:install",
-    "postinstall": "npm --prefix backend install",
+    "install-all": "npm run frontend:install && npm run backend:install",
+    "postinstall": "node scripts/postinstall.cjs",
     "backend:dev": "npm --prefix backend run dev",
     "frontend:dev": "npm --prefix frontend run dev",
     "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
-    "build": "npm run backend:install && npm run frontend:install && npm --prefix frontend run build",
+    "build": "npm run frontend:install && npm --prefix frontend run build",
     "start": "node src/index.js"
   },
   "devDependencies": {
