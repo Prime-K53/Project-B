@@ -7,6 +7,7 @@ import { transactionService } from '../services/transactionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { DEFAULT_ACCOUNTS } from '../constants';
 import { generateNextId } from '../utils/helpers';
+import { customerNotificationService } from '../services/customerNotificationService';
 
 interface FinanceState {
   accounts: Account[];
@@ -183,15 +184,26 @@ export const useFinanceStore = create<FinanceState>((set, get) => ({
       await api.finance.deleteAccount(id);
   },
 
-  addInvoice: async (invoice) => {
+addInvoice: async (invoice) => {
       const newInvoice = {
         ...invoice,
         id: String(invoice.id || '').trim() || await generateNextSalesInvoiceNumber()
       };
       set(state => ({ invoices: [newInvoice, ...state.invoices] }));
       await api.finance.saveInvoice(newInvoice);
+      
+      // Trigger customer notification
+      if (newInvoice.customerPhone) {
+        await customerNotificationService.triggerNotification('INVOICE', {
+          id: newInvoice.id,
+          customerName: newInvoice.customerName,
+          phoneNumber: newInvoice.customerPhone,
+          amount: newInvoice.total ? `${newInvoice.currency || 'KES'} ${Number(newInvoice.total).toLocaleString()}` : '',
+          dueDate: newInvoice.dueDate ? new Date(newInvoice.dueDate).toLocaleDateString() : '',
+        });
+      }
       return newInvoice.id;
-  },
+    },
   updateInvoice: async (invoice) => {
       set(state => ({ invoices: state.invoices.map(i => i.id === invoice.id ? invoice : i) }));
       await api.finance.saveInvoice(invoice);

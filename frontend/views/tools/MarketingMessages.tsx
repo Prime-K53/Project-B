@@ -37,7 +37,24 @@ const MarketingMessages: React.FC = () => {
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [showNewAutomation, setShowNewAutomation] = useState(false);
   const [showTemplatePreview, setShowTemplatePreview] = useState<WhatsAppTemplate | null>(null);
+  const [showCampaignPreview, setShowCampaignPreview] = useState(false);
+  const [showTemplatePreviewModal, setShowTemplatePreviewModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const replaceVars = (text: string): string => {
+    return text.split('{{name}}').join('Customer Name')
+      .split('{{company}}').join(companyConfig?.companyName || 'Your Company')
+      .split('{{product}}').join('Product Name')
+      .split('{{discount}}').join('20')
+      .split('{{link}}').join('https://example.com')
+      .split('{{code}}').join('SAVE20')
+      .split('{{amount}}').join('$100')
+      .split('{{orderId}}').join('ORD-12345')
+      .split('{{tracking}}').join('TRACK123')
+      .split('{{location}}').join('Our Store')
+      .split('{{time}}').join('10:00 AM')
+      .split('{{date}}').join('April 18, 2026');
+  };
 
   // Form states
   const [campaignForm, setCampaignForm] = useState<CampaignFormData>({
@@ -113,6 +130,14 @@ const MarketingMessages: React.FC = () => {
     setShowTemplatePreview(null);
     notify('Quick reply sent!', 'success');
   }, [selectedChat, companyConfig?.companyName, notify]);
+
+  const handlePreviewCampaign = () => {
+    if (!campaignForm.message.trim()) {
+      notify('Please enter a message to preview', 'error');
+      return;
+    }
+    setShowCampaignPreview(true);
+  };
 
   const handleCreateCampaign = async () => {
     if (!campaignForm.name || !campaignForm.message) {
@@ -633,7 +658,10 @@ const MarketingMessages: React.FC = () => {
                       <Copy size={12} className="inline mr-1" />Copy
                     </button>
                     <button 
-                      onClick={() => setShowTemplatePreview(template)}
+                      onClick={() => {
+                        setShowTemplatePreview(template);
+                        setShowTemplatePreviewModal(true);
+                      }}
                       className="flex-1 py-2 text-xs font-medium text-green-600 bg-green-50 rounded-lg hover:bg-green-100"
                     >
                       Preview
@@ -776,7 +804,7 @@ const MarketingMessages: React.FC = () => {
                   className="w-full p-3 border border-slate-200 rounded-lg h-32"
                   placeholder="Enter your message or select a template..."
                 />
-                <p className="text-xs text-slate-500 mt-1">Use {"{{name}}"} for customer name, {"{{company}}"} for company name</p>
+                <p className="text-xs text-slate-500 mt-1">Use {'{{name}}'} for customer name, {'{{company}}'} for company name</p>
               </div>
 
               <div>
@@ -826,10 +854,175 @@ const MarketingMessages: React.FC = () => {
                   Cancel
                 </button>
                 <button
+                  onClick={handlePreviewCampaign}
+                  className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+                >
+                  Preview
+                </button>
+                <button
                   onClick={handleCreateCampaign}
                   className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
                 >
                   {campaignForm.scheduledAt ? 'Schedule Campaign' : 'Create Campaign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Campaign Preview Modal */}
+      {showCampaignPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-slate-800">Campaign Preview</h2>
+              <button onClick={() => setShowCampaignPreview(false)} className="text-slate-500 hover:text-slate-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-slate-700 mb-2">Campaign Details</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Name:</span>
+                    <span className="font-medium text-slate-800">{campaignForm.name || 'Unnamed Campaign'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Description:</span>
+                    <span className="text-slate-800">{campaignForm.description || '-'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Recipients:</span>
+                    <span className="font-medium text-green-600">{campaignForm.recipients.length} contacts</span>
+                  </div>
+                  {campaignForm.scheduledAt && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Scheduled:</span>
+                      <span className="text-slate-800">{new Date(campaignForm.scheduledAt).toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Message Preview</label>
+                <div className="bg-slate-100 rounded-lg p-4 mb-2">
+                  <div className="bg-white rounded-xl border border-slate-200 p-3 max-w-sm ml-auto">
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                      {replaceVars(campaignForm.message)}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-2 text-right">
+                      {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">This is how your message will appear to recipients</p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <Users size={16} className="text-blue-600 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-medium text-blue-800">Variable Substitution</h4>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Variables like {'{{name}}'} will be automatically replaced with each recipient&apos;s name.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowCampaignPreview(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => {
+                    handleCreateCampaign();
+                    setShowCampaignPreview(false);
+                  }}
+                  className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+                >
+                  {campaignForm.scheduledAt ? 'Schedule Campaign' : 'Create Campaign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Preview Modal */}
+      {showTemplatePreviewModal && showTemplatePreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">Template Preview</h2>
+                <p className="text-sm text-green-600">{showTemplatePreview.category}</p>
+              </div>
+              <button onClick={() => setShowTemplatePreviewModal(false)} className="text-slate-500 hover:text-slate-700">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-slate-500 uppercase">Template Name</span>
+                </div>
+                <p className="font-medium text-slate-800">{showTemplatePreview.name}</p>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-slate-500 uppercase">Message Preview</span>
+                </div>
+                <div className="bg-slate-100 rounded-lg p-4">
+                  <div className="bg-white rounded-xl border border-slate-200 p-3 max-w-sm ml-auto">
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                      {replaceVars(showTemplatePreview.content)}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-2 text-right">
+                      {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 mt-2">Variables will be replaced with actual values when sending</p>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-slate-500 uppercase">Variables Used</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">{'{{name}}'}</span>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">{'{{company}}'}</span>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">{'{{product}}'}</span>
+                  <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-medium">{'{{link}}'}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button
+                  onClick={() => setShowTemplatePreviewModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setCampaignForm(prev => ({ ...prev, message: showTemplatePreview.content, templateId: showTemplatePreview.id }));
+                    setShowTemplatePreviewModal(false);
+                    notify('Template loaded to campaign!', 'success');
+                  }}
+                  className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+                >
+                  Use Template
                 </button>
               </div>
             </div>

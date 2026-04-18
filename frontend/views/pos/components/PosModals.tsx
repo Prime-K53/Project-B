@@ -707,11 +707,11 @@ export const CustomerModal: React.FC<{
 
     const customerNames = useMemo(() => {
         const names = new Set<string>();
-        // Add actual customers from CRM
+        // Add ALL customers from CRM (not just those with balances)
         customers?.forEach(c => {
             if (c.name) names.add(c.name);
         });
-        // Also keep legacy invoice customers just in case
+        // Also include legacy invoice customers 
         invoices?.forEach(inv => {
             if (inv.customerName) names.add(inv.customerName);
         });
@@ -794,12 +794,14 @@ export const CustomerModal: React.FC<{
                                         <div className="font-bold text-[#393a3d] text-sm">{name}</div>
                                     </div>
                                 </div>
-                                {custDebt > 0 && (
-                                    <div className="text-right">
-                                        <div className="text-xs font-bold text-[#d52b1e]">{companyConfig.currencySymbol}{custDebt.toLocaleString()}</div>
-                                        <div className="text-[10px] text-[#6b6c7f] font-medium uppercase">Outstanding</div>
+                                <div className="text-right">
+                                    <div className={`text-xs font-bold ${custDebt > 0 ? 'text-[#d52b1e]' : 'text-[#2ca01c]'}`}>
+                                        {companyConfig.currencySymbol}{custDebt.toLocaleString()}
                                     </div>
-                                )}
+                                    <div className="text-[10px] text-[#6b6c7f] font-medium uppercase">
+                                        {custDebt > 0 ? 'Outstanding' : 'Clear'}
+                                    </div>
+                                </div>
                             </button>
                         );
                     })}

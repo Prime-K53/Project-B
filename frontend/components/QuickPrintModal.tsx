@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Copy, Printer, Paperclip } from 'lucide-react';
+import { X, Copy, Printer } from 'lucide-react';
 
 interface QuickPrintModalProps {
   open: boolean;
@@ -28,31 +28,33 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
 }) => {
   const [quantity, setQuantity] = useState(1);
   const [pagesPerCopy, setPagesPerCopy] = useState(1);
-  const [enablePinning, setEnablePinning] = useState(false);
-  const [pinningCount, setPinningCount] = useState(1);
 
   const totalPages = quantity * pagesPerCopy;
   const printTotal = totalPages * pricePerPage;
 
+  // Auto-calculate pinning/stapling cost per copy (based on settings) - not visible to customer
   const pinningCost = useMemo(() => {
-    if (!enablePinning) return 0;
-    // If a staple price is provided in settings, prefer that (price per staple)
+    // If staple price is defined in settings, charge per copy automatically
     if (typeof staplePrice === 'number' && staplePrice > 0) {
-      return Number((pinningCount * staplePrice).toFixed(2));
+      return Number((quantity * staplePrice).toFixed(2));
     }
+    // Fallback to inventory item if no settings price
     if (!pinningItem || pinningItem.conversionRate <= 0) return 0;
-    const unitsNeeded = Math.ceil(pinningCount / pinningItem.conversionRate);
+    const unitsNeeded = Math.ceil(quantity / pinningItem.conversionRate);
     return Number((unitsNeeded * pinningItem.costPerUnit).toFixed(2));
-  }, [enablePinning, pinningItem, pinningCount, staplePrice]);
+  }, [quantity, pinningItem, staplePrice]);
 
   const finalTotal = printTotal + pinningCost;
 
   const handleConfirm = () => {
-    onConfirm(quantity, pagesPerCopy, finalTotal, type, enablePinning ? pinningCost : undefined, enablePinning ? pinningCount : undefined);
+    // Always include pinning cost if configured (quantity = number of copies)
+    if (pinningCost > 0) {
+      onConfirm(quantity, pagesPerCopy, finalTotal, type, pinningCost, quantity);
+    } else {
+      onConfirm(quantity, pagesPerCopy, finalTotal, type, undefined, undefined);
+    }
     setQuantity(1);
     setPagesPerCopy(1);
-    setEnablePinning(false);
-    setPinningCount(1);
     onClose();
   };
 
@@ -118,52 +120,22 @@ const QuickPrintModal: React.FC<QuickPrintModalProps> = ({
             />
           </div>
 
-          {(pinningItem || (typeof staplePrice === 'number')) && (
-            <div className="border border-slate-200 rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Paperclip className="w-4 h-4 text-slate-500" />
-                  <span className="text-[12.5px] font-semibold text-slate-700">Pinning / Stapling</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEnablePinning(!enablePinning)}
-                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${enablePinning ? 'bg-emerald-500' : 'bg-slate-200'}`}
-                >
-                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enablePinning ? 'translate-x-5' : 'translate-x-1'}`} />
-                </button>
-              </div>
-              {enablePinning && (
-                <div>
-                  <label className="modal-label-small block text-[11.5px] font-medium text-slate-500 mb-1 leading-tight">Number of Staples</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={pinningCount}
-                    onChange={(e) => setPinningCount(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full px-3 py-[6px] border border-slate-200 rounded-md text-slate-800 font-medium text-[13px] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 tabular-nums"
-                  />
-                  <p className="text-[11.5px] text-slate-400 mt-1 leading-tight">
-                    {typeof staplePrice === 'number' && staplePrice > 0
-                      ? `${currency}${staplePrice} per staple`
-                      : (pinningItem ? `${currency}${pinningItem.costPerUnit} per ${pinningItem.conversionRate} staples` : '')}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+{/*
+           * Pinning/Stapling is now charged automatically per copy based on settings.
+           * Not visible in UI - cost is included in total.
+           * 
+           * The pinning cost is calculated based on staplePrice in settings:
+           * - If staplePrice > 0: charged as staplePrice × quantity (copies)
+           * - If no settings price: charged based on inventory item cost
+           * 
+           * User won't see pinning option in the modal.
+           */}
 
-          <div className="p-3 bg-slate-50/80 rounded-lg space-y-1.5" style={{ lineHeight: '1.45' }}>
+<div className="p-3 bg-slate-50/80 rounded-lg space-y-1.5" style={{ lineHeight: '1.45' }}>
             <div className="flex justify-between items-center">
               <span className="text-[13px] font-medium text-slate-600">Total Pages:</span>
               <span className="font-semibold text-slate-800 tabular-nums text-right">{totalPages}</span>
             </div>
-            {enablePinning && pinningCost > 0 && (
-              <div className="flex justify-between items-center">
-                <span className="text-[13px] font-medium text-slate-600">Pinning ({pinningCount} staples):</span>
-                <span className="font-semibold text-slate-800 tabular-nums text-right">{currency}{pinningCost.toFixed(2)}</span>
-              </div>
-            )}
             <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
               <span className="font-semibold text-slate-700" style={{ fontSize: '13.5px' }}>Total:</span>
               <span className="font-bold text-emerald-600 tabular-nums text-right" style={{ fontSize: '18px' }}>

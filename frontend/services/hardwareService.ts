@@ -176,8 +176,9 @@ class HardwareService {
 
     // Items
     receipt.items.forEach(item => {
-        // Name
+        // Name - No bold for item descriptions
         add(COMMANDS.ALIGN_LEFT);
+        add(COMMANDS.BOLD_OFF);
         const descLines = String(item.desc || 'Item').split('\n');
         descLines.forEach((descLine, index) => {
           if (index === 0) {

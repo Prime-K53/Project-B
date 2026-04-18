@@ -3,6 +3,7 @@ import { Sale, Quotation, JobOrder, HeldOrder, ZReport, CustomerPayment, Shipmen
 import { api } from '../services/api';
 import { transactionService } from '../services/transactionService';
 import { generateNextId } from '../utils/helpers';
+import { customerNotificationService } from '../services/customerNotificationService';
 
 const buildDeliveryNotePatchFromShipment = (shipment: Shipment): Partial<DeliveryNote> | undefined => {
   if (!shipment.orderId) return undefined;
@@ -136,6 +137,16 @@ export const useSalesStore = create<SalesState>((set, get) => ({
     const newSale = { ...sale, id: sale.id || generateNextId('SALE', get().sales) };
     set(state => ({ sales: [...state.sales, newSale] }));
     await api.sales.createSale(newSale);
+    
+    // Trigger customer notification
+    if (newSale.customerPhone) {
+      await customerNotificationService.triggerNotification('SALES_ORDER', {
+        id: newSale.id,
+        customerName: newSale.customerName,
+        phoneNumber: newSale.customerPhone,
+        amount: newSale.total ? `${newSale.currency || 'KES'} ${Number(newSale.total).toLocaleString()}` : '',
+      });
+    }
   },
   updateSale: async (sale) => {
     set(state => ({ sales: state.sales.map(s => s.id === sale.id ? sale : s) }));
@@ -146,6 +157,16 @@ export const useSalesStore = create<SalesState>((set, get) => ({
     const newQuotation = { ...quotation, id: quotation.id || generateNextId('QTN', get().quotations) };
     set(state => ({ quotations: [...state.quotations, newQuotation] }));
     await api.sales.saveQuotation(newQuotation);
+    
+    // Trigger customer notification
+    if (newQuotation.customerPhone) {
+      await customerNotificationService.triggerNotification('QUOTATION', {
+        id: newQuotation.id,
+        customerName: newQuotation.customerName,
+        phoneNumber: newQuotation.customerPhone,
+        amount: newQuotation.total ? `${newQuotation.currency || 'KES'} ${Number(newQuotation.total).toLocaleString()}` : '',
+      });
+    }
   },
   updateQuotation: async (quotation) => {
     set(state => ({ quotations: state.quotations.map(q => q.id === quotation.id ? quotation : q) }));
@@ -178,11 +199,21 @@ export const useSalesStore = create<SalesState>((set, get) => ({
       set(state => ({ heldOrders: state.heldOrders.filter(h => h.id !== id) }));
   },
 
-  addCustomerPayment: async (payment) => {
+addCustomerPayment: async (payment) => {
       const newPayment = { ...payment, id: payment.id || generateNextId('RCPT', get().customerPayments) };
       set(state => ({ customerPayments: [...state.customerPayments, newPayment] }));
       await api.sales.saveCustomerPayment(newPayment);
-  },
+      
+      // Trigger customer notification
+      if (newPayment.customerPhone) {
+        await customerNotificationService.triggerNotification('PAYMENT', {
+          id: newPayment.id,
+          customerName: newPayment.customerName,
+          phoneNumber: newPayment.customerPhone,
+          amount: newPayment.amount ? `${newPayment.currency || 'KES'} ${Number(newPayment.amount).toLocaleString()}` : '',
+        });
+      }
+    },
   updateCustomerPayment: async (payment) => {
       set(state => ({ customerPayments: state.customerPayments.map(p => p.id === payment.id ? payment : p) }));
       await api.sales.saveCustomerPayment(payment);

@@ -126,6 +126,16 @@ export const customerNotificationService = {
 
     const message = generateMessageFromTemplate(type, data, config);
 
+    const logEntryBase = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      entityId: data.id,
+      customerName: data.customerName,
+      phoneNumber: data.phoneNumber || '',
+      message,
+      timestamp: new Date().toISOString(),
+    };
+
     // Auto-send when notifications are enabled (no manual confirmation needed)
     const shouldSend = true;
 

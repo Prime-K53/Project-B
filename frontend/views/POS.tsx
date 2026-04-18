@@ -389,10 +389,9 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           ? (companyConfig.transactionSettings?.pos?.photocopyPrice || 2.00)
           : (companyConfig.transactionSettings?.pos?.typePrintingPrice || 5.00);
 
-        // For quick print, we set price to the TOTAL (total pages × price per page) and quantity to 1
-        // This ensures the cart calculation (price × quantity) matches the modal total
-        const totalPages = quantity * pagesPerCopy;
-        const finalPrice = totalPages * pricePerPage;
+        // For quick print, we use the total FROM THE MODAL (which includes stapling if configured)
+        // This ensures the cart calculation matches the modal total
+        const finalPrice = total;
 
         const quickItem: CartItem = {
           id: `QUICK-${isPhotocopy ? 'PHOTO' : 'PRINT'}-${Date.now()}`,
@@ -400,8 +399,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           name: isPhotocopy ? 'Quick Photocopy' : 'Type & Printing',
           sku: isPhotocopy ? 'QUICK-PHOTO' : 'QUICK-PRINT',
           desc: isPhotocopy 
-            ? `Quick Photocopy (${pagesPerCopy} pages × ${quantity} copies)${pinningCost && pinningCount ? ` + ${pinningCount} staples` : ''}`
-            : `Type & Printing (${pagesPerCopy} pages × ${quantity} copies)${pinningCost && pinningCount ? ` + ${pinningCount} staples` : ''}`,
+            ? `Quick Photocopy (${pagesPerCopy} pages × ${quantity} copies)`
+            : `Type & Printing (${pagesPerCopy} pages × ${quantity} copies)`,
           price: finalPrice,
           quantity: 1,
           pagesOverride: pagesPerCopy,
@@ -422,30 +421,9 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           }
         } as any;
 
-        // Add pinning as separate line item if enabled
-        setCart(prev => {
-          let newCart = [...prev, quickItem];
-          if (pinningCost && pinningCost > 0) {
-            const pinningItem: CartItem = {
-              id: `PINNING-${Date.now()}`,
-              itemId: 'SVC-PINNING',
-              name: 'Pinning / Stapling',
-              sku: 'PINNING',
-              desc: `${pinningCount} staples`,
-              price: pinningCost,
-              quantity: 1,
-              category: 'Service',
-              type: 'Service',
-              stock: 9999,
-              minStockLevel: 0,
-              priceLocked: true,
-              lockedUnitPricePerCopy: pinningCost
-            } as any;
-            newCart = [...newCart, pinningItem];
-          }
-          return newCart;
-        });
-        notify(`${quantity}x${pagesPerCopy} pages${pinningCost && pinningCount ? ` + ${pinningCount} staples` : ''} added to cart`, 'success');
+        // Add to cart (stapling cost is included in item price)
+        setCart(prev => [...prev, quickItem]);
+        notify(`${quantity}x${pagesPerCopy} pages added to cart`, 'success');
       };
 
   const updateQuantity = async (id: string, value: number, isAbsolute?: boolean) => {

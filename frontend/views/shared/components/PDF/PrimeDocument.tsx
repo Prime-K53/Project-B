@@ -1409,7 +1409,7 @@ if (type === 'POS_RECEIPT') {
               </View>
               {r.items.map((item: any, i: number) => (
                 <View key={i} style={{ marginBottom: 6 * scale }}>
-                  <Text style={{ fontSize: mediumFontSize, fontWeight: 'bold' }}>{item.desc}</Text>
+                  <Text style={{ fontSize: mediumFontSize, fontWeight: 'normal' }}>{item.desc}</Text>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 * scale }}>
                     <Text style={{ fontSize: baseFontSize, color: '#444' }}>{item.qty} x {formatAmount(item.price)}</Text>
                     <Text style={{ fontSize: mediumFontSize }}>{formatAmount(item.total)}</Text>
@@ -2062,11 +2062,11 @@ if (type === 'POS_RECEIPT') {
             {('items' in data ? (data as any).items : []).map((item: any, i: number) => (
               <View key={i} style={s.row}>
                 <View style={{ flex: 3 }}>
-                  <Text style={{ fontWeight: 'bold', fontSize: 12 }}>{item.desc}</Text>
+                  <Text style={{ fontWeight: 'normal', fontSize: 12 }}>{item.desc}</Text>
                 </View>
                 <Text style={{ flex: 1, textAlign: 'center', fontSize: 12 }}>{item.qty}</Text>
                 <Text style={{ flex: 1, textAlign: 'right', fontSize: 12 }}>{formatAmount(item.price)}</Text>
-                <Text style={{ flex: 1.5, textAlign: 'right', fontWeight: 'bold', fontSize: 12 }}>{formatAmount(item.total)}</Text>
+                <Text style={{ flex: 1.5, textAlign: 'right', fontSize: 12 }}>{formatAmount(item.total)}</Text>
               </View>
             ))}
 

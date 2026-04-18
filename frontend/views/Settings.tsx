@@ -1435,7 +1435,7 @@ const Settings: React.FC = () => {
                                                     onChange={e => setConfig({ ...config, transactionSettings: { ...config.transactionSettings, pos: { ...config.transactionSettings?.pos, staplePrice: parseFloat(e.target.value) || 0 } } as any })}
                                                 />
                                             </div>
-                                            <p className="text-[10px] text-slate-400 mt-1">Price added per copy when stapling is required.</p>
+                                            <p className="text-[10px] text-slate-400 mt-1">Price added automatically per copy (no separate line item shown).</p>
                                         </div>
                                     </div>
                                 </section>
