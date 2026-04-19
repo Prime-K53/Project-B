@@ -47,8 +47,8 @@ const SmartPricing: React.FC = () => {
     
     const [paperExpanded, setPaperExpanded] = useState(true);
     const [finishingExpanded, setFinishingExpanded] = useState(true);
-    const [marketExpanded, setMarketExpanded] = useState(true);
-    const [bomExpanded, setBomExpanded] = useState(true);
+    const [marketExpanded, setMarketExpanded] = useState(false);
+    const [bomExpanded, setBomExpanded] = useState(false);
 
     useEffect(() => {
         const loadData = async () => {
@@ -81,7 +81,12 @@ const SmartPricing: React.FC = () => {
                 });
 
                 if (paperItems.length > 0) setSelectedPaperId(paperItems[0].id);
-                if (tonerItems.length > 0) setSelectedTonerId(tonerItems[0].id);
+                if (tonerItems.length > 0) {
+                    const universalToner = tonerItems.find(t => 
+                        (t.name || '').toLowerCase().includes('universal')
+                    );
+                    setSelectedTonerId(universalToner ? universalToner.id : tonerItems[0].id);
+                }
             } catch (err) {
                 console.error('Failed to load pricing data:', err);
             } finally {
