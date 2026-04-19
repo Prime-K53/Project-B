@@ -209,8 +209,8 @@ const SalesAudit: React.FC = () => {
             {/* Header with Date Filter */}
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-800 tracking-tight">Sales Audit Report</h2>
-                    <p className="text-sm text-slate-500 mt-1">Reconciliation and transaction analysis</p>
+                    <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Sales Audit Report</h2>
+                    <p className="text-sm text-slate-500 font-medium">Reconciliation and transaction analysis</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">

@@ -37,6 +37,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     const [remainingDue, setRemainingDue] = useState(total);
     const [currentPaymentAmount, setCurrentPaymentAmount] = useState(() => (Number.isFinite(total) ? total.toFixed(2) : ''));
     const [changeDue, setChangeDue] = useState(0);
+    const [activePaymentMethod, setActivePaymentMethod] = useState<string | null>(null);
+
+    const handleCancel = useCallback(() => {
+        setActivePaymentMethod(null);
+        handleCancel();
+    }, [onCancel]);
 
     // Auto-calculate change when amount received changes
     useEffect(() => {
@@ -105,6 +111,8 @@ const canCompleteSale = useMemo(() => {
         }
 
         onComplete(paymentsToSubmit, 'Change');
+        // Reset active payment method after completing sale
+        setActivePaymentMethod(null);
     }, [splitPayments, typedAmount, total, onComplete, notify]);
 
     const addPaymentMethod = useCallback((accountId: string) => {
@@ -123,6 +131,9 @@ const canCompleteSale = useMemo(() => {
         const newSplit = [...splitPayments, { method: method as any, amount: amountInput, accountId }];
         setSplitPayments(newSplit);
 
+        // Set active payment method for highlighting
+        setActivePaymentMethod(accountId);
+
         const newPaid = newSplit.reduce((sum, p) => sum + p.amount, 0);
         const newRemaining = total - newPaid;
 
@@ -140,7 +151,7 @@ const canCompleteSale = useMemo(() => {
     // Keyboard Shortcuts Logic
     useEffect(() => {
         const handleGlobalKeys = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onCancel();
+            if (e.key === 'Escape') handleCancel();
             if (e.key === 'Enter' && canCompleteSale) handleComplete();
 
             // Numerical shortcuts for payment methods (Alt + 1, 2, 3...)
@@ -152,7 +163,7 @@ const canCompleteSale = useMemo(() => {
         };
         window.addEventListener('keydown', handleGlobalKeys);
         return () => window.removeEventListener('keydown', handleGlobalKeys);
-    }, [canCompleteSale, handleComplete, onCancel, addPaymentMethod]);
+    }, [canCompleteSale, handleComplete, handleCancel, addPaymentMethod]);
 
     const normalizedBankAccounts = useMemo(() => {
         return (bankAccounts || []).filter(acc => acc.status !== 'Closed');
@@ -354,35 +365,47 @@ const canCompleteSale = useMemo(() => {
                         <div className="grid grid-cols-3 gap-3 mb-8">
                             <button
                                 onClick={() => addPaymentMethod('1000')}
-                                className="flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20 bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100"
+                                className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20 
+                                    ${activePaymentMethod === '1000' 
+                                        ? 'bg-blue-600 border-blue-600' 
+                                        : 'bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100'}`}
                             >
-                                <Banknote size={22} className="mb-1 text-blue-600" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-800">Cash</span>
+                                <Banknote size={22} className={`mb-1 ${activePaymentMethod === '1000' ? 'text-white' : 'text-blue-600'}`} />
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${activePaymentMethod === '1000' ? 'text-white' : 'text-slate-800'}`}>Cash</span>
                             </button>
                             <button
                                 onClick={() => addPaymentMethod('1050')}
-                                className="flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20 bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100"
+                                className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20 
+                                    ${activePaymentMethod === '1050' 
+                                        ? 'bg-blue-600 border-blue-600' 
+                                        : 'bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100'}`}
                             >
-                                <CreditCard size={22} className="mb-1 text-blue-600" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-800">Bank</span>
+                                <CreditCard size={22} className={`mb-1 ${activePaymentMethod === '1050' ? 'text-white' : 'text-blue-600'}`} />
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${activePaymentMethod === '1050' ? 'text-white' : 'text-slate-800'}`}>Bank</span>
                             </button>
                             <button
                                 onClick={() => addPaymentMethod('1060')}
-                                className="flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20 bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100"
+                                className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20 
+                                    ${activePaymentMethod === '1060' 
+                                        ? 'bg-blue-600 border-blue-600' 
+                                        : 'bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100'}`}
                             >
-                                <Smartphone size={22} className="mb-1 text-blue-600" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-800">Mobile</span>
+                                <Smartphone size={22} className={`mb-1 ${activePaymentMethod === '1060' ? 'text-white' : 'text-blue-600'}`} />
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${activePaymentMethod === '1060' ? 'text-white' : 'text-slate-800'}`}>Mobile</span>
                             </button>
                             <button
                                 onClick={() => addPaymentMethod('WALLET')}
                                 disabled={!customerName || walletBalance <= 0}
                                 className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all h-20
+                                    ${activePaymentMethod === 'WALLET'
+                                        ? 'bg-blue-600 border-blue-600'
+                                        : ''}
                                     ${(!customerName || walletBalance <= 0)
                                         ? 'bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed'
                                         : 'bg-white border-slate-200 hover:border-blue-600 hover:bg-blue-50 active:bg-blue-100'}`}
                             >
-                                <Wallet size={22} className={(!customerName || walletBalance <= 0) ? 'text-slate-400' : 'text-blue-600'} />
-                                <span className={`text-[10px] font-bold uppercase tracking-wider ${(!customerName || walletBalance <= 0) ? 'text-slate-400' : 'text-slate-800'}`}>Wallet</span>
+                                <Wallet size={22} className={`${activePaymentMethod === 'WALLET' ? 'text-white' : ''} ${(!customerName || walletBalance <= 0) ? 'text-slate-400' : 'text-blue-600'}`} />
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${activePaymentMethod === 'WALLET' ? 'text-white' : ''} ${(!customerName || walletBalance <= 0) ? 'text-slate-400' : 'text-slate-800'}`}>Wallet</span>
                                 <span className="text-[9px] text-slate-500 mt-0.5">{customerName ? `${currency}${formatNumber(walletBalance)}` : 'N/A'}</span>
                             </button>
                             <ButtonBase label="Loyalty" icon={Award} disabled={true} subText="Disabled" />
@@ -400,6 +423,7 @@ const canCompleteSale = useMemo(() => {
                                                 <span className="font-bold text-blue-600">{currency}{formatNumber(p.amount)}</span>
                                                 <button onClick={() => {
                                                     setSplitPayments(prev => prev.filter((_, idx) => idx !== i));
+                                                    setActivePaymentMethod(null);
                                                     const totalPaid = splitPayments.filter((_, idx) => idx !== i).reduce((s, x) => s + x.amount, 0);
                                                     setRemainingDue(total - totalPaid);
                                                     setChangeDue(0);

@@ -7,6 +7,7 @@ import { pricingService } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
 import { applyProductPriceRounding, ROUNDING_METHOD_OPTIONS } from '../../../services/pricingRoundingService';
 import { roundToCurrency } from '../../../utils/helpers';
+import { calculateBaseSellingPrice } from '../../../utils/pricing';
 
 // Generate a unique ID without external dependency
 const generateId = (): string => {
@@ -58,6 +59,7 @@ const defaultItem: Partial<Item> = {
     leadTimeDays: 0,
     minOrderQty: 1,
     reorderPoint: 0,
+    marginPercent: 0,
     variants: [],
     isVariantParent: false,
     isStationeryPack: false,
@@ -70,6 +72,148 @@ const defaultItem: Partial<Item> = {
         finishingOptions: [],
         manualOverride: false
     }
+};
+
+interface VolumePricingManagerProps {
+    enabled: boolean;
+    tiers: VolumePricingTier[];
+    onToggle: (enabled: boolean) => void;
+    onChange: (tiers: VolumePricingTier[]) => void;
+    currency: string;
+    basePrice: number;
+    cost: number;
+}
+
+const VolumePricingManager: React.FC<VolumePricingManagerProps> = ({
+    enabled,
+    tiers,
+    onToggle,
+    onChange,
+    currency,
+    basePrice
+}) => {
+    const sortedTiers = [...(tiers || [])].sort((a, b) => a.minQty - b.minQty);
+
+    const addTier = () => {
+        const lastTier = sortedTiers[sortedTiers.length - 1];
+        const nextMinQty = lastTier ? lastTier.minQty + 10 : 2;
+        const nextPrice = lastTier ? lastTier.price * 0.9 : basePrice * 0.9;
+        onChange([...(tiers || []), { minQty: nextMinQty, price: Number(nextPrice.toFixed(2)) }]);
+    };
+
+    const removeTier = (index: number) => {
+        const newTiers = [...(tiers || [])];
+        const tierToRemove = sortedTiers[index];
+        const realIdx = (tiers || []).findIndex(t => t === tierToRemove);
+        if (realIdx > -1) {
+            newTiers.splice(realIdx, 1);
+            onChange(newTiers);
+        }
+    };
+
+    const updateTier = (index: number, field: keyof VolumePricingTier, value: number) => {
+        const newTiers = [...(tiers || [])];
+        const tierToUpdate = sortedTiers[index];
+        const realIdx = (tiers || []).findIndex(t => t === tierToUpdate);
+        if (realIdx > -1) {
+            newTiers[realIdx] = { ...newTiers[realIdx], [field]: value };
+            onChange(newTiers);
+        }
+    };
+
+    return (
+        <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                        <Layers className="w-5 h-5" />
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-bold text-slate-800">Volume Pricing</h3>
+                        <p className="text-[10px] text-slate-500">Enable tiered pricing based on quantity</p>
+                    </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={enabled}
+                        onChange={(e) => onToggle(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+            </div>
+
+            {enabled && (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="grid grid-cols-12 gap-2 px-1">
+                        <div className="col-span-5 text-[10px] font-bold text-slate-400 uppercase">Min Quantity</div>
+                        <div className="col-span-5 text-[10px] font-bold text-slate-400 uppercase">Unit Price ({currency})</div>
+                        <div className="col-span-2"></div>
+                    </div>
+
+                    {sortedTiers.map((tier, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                            <div className="col-span-5">
+                                <input
+                                    type="number"
+                                    min="2"
+                                    value={tier.minQty}
+                                    onChange={(e) => updateTier(idx, 'minQty', Number(e.target.value))}
+                                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    placeholder="Qty starts from"
+                                />
+                            </div>
+                            <div className="col-span-5">
+                                <div className="relative">
+                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">{currency}</span>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={tier.price}
+                                        onChange={(e) => updateTier(idx, 'price', Number(e.target.value))}
+                                        className="w-full pl-6 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="Price for this tier"
+                                    />
+                                </div>
+                            </div>
+                            <div className="col-span-2 flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={() => removeTier(idx)}
+                                    className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+
+                    <button
+                        type="button"
+                        onClick={addTier}
+                        className="w-full py-2 border-2 border-dashed border-slate-200 rounded-lg text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all flex items-center justify-center gap-2 text-xs font-medium"
+                    >
+                        <Plus className="w-3.5 h-3.5" /> Add New Tier
+                    </button>
+
+                    {sortedTiers.length > 0 && sortedTiers.some(t => t.price >= basePrice) && (
+                        <div className="flex items-start gap-2 p-2 bg-amber-50 border border-amber-100 rounded-lg">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-500 mt-0.5" />
+                            <p className="text-[10px] text-amber-700">Tiered price should typically be lower than base price ({currency}{basePrice.toFixed(2)})</p>
+                        </div>
+                    )}
+
+                    {sortedTiers.length > 0 && sortedTiers.some(t => t.price < cost) && (
+                        <div className="flex items-start gap-2 p-2 bg-red-50 border border-red-100 rounded-lg">
+                            <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5" />
+                            <p className="text-[10px] text-red-700">Warning: One or more tiers are priced below cost ({currency}{cost.toFixed(2)})</p>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 };
 
 const ItemModal: React.FC<ItemModalProps> = ({
@@ -97,15 +241,19 @@ const ItemModal: React.FC<ItemModalProps> = ({
         price: 0,
         cost: 0,
         stock: 0,
-        pages: 1
+        marginPercent: 0,
+        pages: 1,
+        volumePricing: []
     });
     const [showVariantForm, setShowVariantForm] = useState(false);
+    const [expandedVariantPricing, setExpandedVariantPricing] = useState<string | null>(null);
 
     // Bulk Variant Generation State
     const [showBulkGenerator, setShowBulkGenerator] = useState(false);
     const [bulkAttributes, setBulkAttributes] = useState<{ name: string, values: string[] }[]>([{ name: 'Size', values: [] }]);
     const [bulkInputValue, setBulkInputValue] = useState<{ [key: number]: string }>({});
     const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
+const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; name: string; cost: number; description?: string }>>([]);
 
     // Rounding Engine State
     const [showInternalPricing, setShowInternalPricing] = useState(true);
@@ -113,7 +261,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
 
     // Stationery Pack Conversion State
     const [usePackConversion, setUsePackConversion] = useState(false);
-    
+
     // Computed values for pack conversion
     const derivedCostPerPiece = useMemo(() => {
         if (!formData.unitsPerPack || formData.unitsPerPack === 0) return 0;
@@ -122,9 +270,16 @@ const ItemModal: React.FC<ItemModalProps> = ({
 
     const calculatedPrice = useMemo(() => {
         const cost = derivedCostPerPiece;
+        
+        // PHASE 1: Base Margin Layer
+        const baseMarginPrice = calculateBaseSellingPrice(cost, formData.marginPercent);
+        if (formData.marginPercent) {
+            console.log(`[Pricing] Profit Base Layer (Margin ${formData.marginPercent}%): ${baseMarginPrice}`);
+        }
+
         const markup = formData.pricingConfig?.markup || 0;
         return cost * (1 + markup / 100);
-    }, [derivedCostPerPiece, formData.pricingConfig?.markup]);
+    }, [derivedCostPerPiece, formData.pricingConfig?.markup, formData.marginPercent]);
 
     const finalPrice = useMemo(() => {
         const roundingResult = applyProductPriceRounding({
@@ -195,19 +350,46 @@ const ItemModal: React.FC<ItemModalProps> = ({
             .catch((err) => {
                 console.error('Failed to load BOM templates for variant pricing', err);
             });
+        // Load finishing option costs (saved settings) to match SmartPricing UI
+        dbService.getSetting<Record<string, number>>('finishingOptionCosts')
+            .then(savedCosts => {
+                if (!mounted) return;
+                const defaults = [
+                    { id: 'binding', name: 'Binding', cost: 150, description: 'Book binding - comb or spiral' },
+                    { id: 'coverPages', name: 'Cover Pages', cost: 20, description: 'Front and back cover pages per copy' },
+                    { id: 'cutting', name: 'Cutting & Trimming', cost: 30, description: 'Trim edges to clean finish' },
+                    { id: 'holePunch', name: 'Hole Punching', cost: 20, description: 'Punch holes for folder binding' },
+                    { id: 'folding', name: 'Folding', cost: 15, description: 'Fold pages for insertion' },
+                    { id: 'stapling', name: 'Stapling', cost: 10, description: 'Corner or saddle stapling' }
+                ];
+                const merged = defaults.map(d => ({ ...d, cost: savedCosts?.[d.id] ?? d.cost }));
+                setFinishingButtons(merged);
+            })
+            .catch(() => {
+                // fallback to defaults
+                setFinishingButtons([
+                    { id: 'binding', name: 'Binding', cost: 150, description: 'Book binding - comb or spiral' },
+                    { id: 'coverPages', name: 'Cover Pages', cost: 20, description: 'Front and back cover pages per copy' },
+                    { id: 'cutting', name: 'Cutting & Trimming', cost: 30, description: 'Trim edges to clean finish' },
+                    { id: 'holePunch', name: 'Hole Punching', cost: 20, description: 'Punch holes for folder binding' },
+                    { id: 'folding', name: 'Folding', cost: 15, description: 'Fold pages for insertion' },
+                    { id: 'stapling', name: 'Stapling', cost: 10, description: 'Corner or saddle stapling' }
+                ]);
+            });
         return () => { mounted = false; };
     }, []);
 
     // Populate form when editing
     useEffect(() => {
         if (item && mode === 'edit') {
-            const shouldBeManual = 
+            const shouldBeManual =
                 item.pricingConfig?.manualOverride ??
                 (item.type === 'Service' || item.type === 'Material');
 
             setFormData({
                 ...defaultItem,
                 ...item,
+                variants: item.variants || [],
                 pricingConfig: {
                     ...defaultItem.pricingConfig,
                     ...item.pricingConfig,
@@ -255,6 +437,13 @@ const ItemModal: React.FC<ItemModalProps> = ({
 
             // 3. Finishing
             finishingCost = pConfig.finishingOptions.reduce((acc, option) => {
+                // If option defines an explicit flat cost per unit (used by SmartPricing-style buttons)
+                if ((option as any).flatCostPerUnit != null) {
+                    const perUnit = Number((option as any).flatCostPerUnit) || 0;
+                    const qty = Number(option.quantity || 1);
+                    return acc + (perUnit * qty);
+                }
+
                 const mat = materials.find((m: Item) => m.id === option.materialId);
                 if (mat) {
                     const capacity = mat.rollLength || mat.conversionRate || 1;
@@ -436,20 +625,11 @@ const ItemModal: React.FC<ItemModalProps> = ({
     const updateFinishingOption = (id: string, field: keyof FinishingOption, value: any) => {
         setFormData(prev => {
             const current = prev.pricingConfig?.finishingOptions || [];
-            const updated = current.map(opt => {
-                if (opt.id === id) {
-                    return { ...opt, [field]: value };
-                }
-                return opt;
-            });
+            const updated = current.map(opt => opt.id === id ? { ...opt, [field]: value } : opt)
+                // remove any with quantity <= 0
+                .filter(o => Number(o.quantity || 0) > 0);
 
-            return {
-                ...prev,
-                pricingConfig: {
-                    ...prev.pricingConfig!,
-                    finishingOptions: updated
-                }
-            };
+            return { ...prev, pricingConfig: { ...prev.pricingConfig!, finishingOptions: updated } };
         });
     };
 
@@ -579,7 +759,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                 minOrderQty: Number(formData.minOrderQty) || undefined,
                 reorderPoint: Number(formData.reorderPoint) || undefined,
                 variants: formData.variants || [],
-                isVariantParent: formData.isVariantParent || false,
+                isVariantParent: (formData.variants && formData.variants.length > 0) || formData.isVariantParent || false,
                 locationStock: formData.locationStock || [],
                 reserved: formData.reserved || 0,
                 adjustmentSnapshots: formData.adjustmentSnapshots || [],
@@ -710,7 +890,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
     const handleVariantPagesChange = async (variantId: string, newPages: number) => {
         // Find the variant to check pricing mode
         const variant = formData.variants?.find(v => v.id === variantId);
-        
+
         // Guard against undefined variant - exit early if variant not found
         if (!variant) {
             console.warn(`Variant with id ${variantId} not found`);
@@ -784,7 +964,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
             }
         } else {
             const specs = calculateItemFinancials(newPages, formData.pricingConfig, formData.type, variant.cost);
-            
+
             // Apply rounding for variants
             let finalPrice = variant.price;
             if (specs) {
@@ -1150,7 +1330,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                             {/* Pricing Tab */}
                             {!isServiceType && activeTab === 'pricing' && (
                                 <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
-                                    
+
                                     {/* Stationery Pack Conversion Toggle */}
                                     {formData.type === 'Stationery' && (
                                         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
@@ -1165,8 +1345,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     </div>
                                                 </div>
                                                 <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
+                                                    <input
+                                                        type="checkbox"
                                                         className="sr-only peer"
                                                         checked={usePackConversion}
                                                         onChange={(e) => {
@@ -1191,7 +1371,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                                                 </label>
                                             </div>
-                                            
+
                                             {/* Pack Conversion Fields */}
                                             {usePackConversion && (
                                                 <div className="mt-4">
@@ -1205,8 +1385,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                                     step="0.01"
                                                                     min="0"
                                                                     value={formData.costPerPack || ''}
-                                                                    onChange={(e) => setFormData({ 
-                                                                        ...formData, 
+                                                                    onChange={(e) => setFormData({
+                                                                        ...formData,
                                                                         costPerPack: Number(e.target.value),
                                                                         cost: derivedCostPerPiece
                                                                     })}
@@ -1221,8 +1401,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                                 type="number"
                                                                 min="1"
                                                                 value={formData.unitsPerPack || ''}
-                                                                onChange={(e) => setFormData({ 
-                                                                    ...formData, 
+                                                                onChange={(e) => setFormData({
+                                                                    ...formData,
                                                                     unitsPerPack: Number(e.target.value),
                                                                     cost: derivedCostPerPiece
                                                                 })}
@@ -1231,7 +1411,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                             />
                                                         </div>
                                                     </div>
-                                                    
+
                                                     <div className="mt-4">
                                                         <label className="block text-xs font-medium text-indigo-800 mb-1">Markup (%)</label>
                                                         <div className="relative">
@@ -1255,7 +1435,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     </div>
                                                 </div>
                                             )}
-                                            
+
                                             {/* Calculated Values Display */}
                                             {usePackConversion && (
                                                 <div className="mt-4 p-3 bg-white rounded-lg border border-indigo-100 space-y-2">
@@ -1301,6 +1481,30 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                             )}
                                         </div>
 
+                                        {/* Margin Percentage (Additive Layer) */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                                Margin (%)
+                                            </label>
+                                            <div className="relative">
+                                                <input
+                                                    type="number"
+                                                    step="0.1"
+                                                    min="0"
+                                                    value={formData.marginPercent || 0}
+                                                    onChange={(e) => {
+                                                        const margin = Number(e.target.value);
+                                                        if (!isNaN(margin) && margin >= 0) {
+                                                            setFormData({ ...formData, marginPercent: margin });
+                                                        }
+                                                    }}
+                                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                    placeholder="e.g. 15"
+                                                />
+                                            </div>
+                                            <p className="mt-1 text-[10px] text-slate-500">Base profit layer before adjustments</p>
+                                        </div>
+
                                         {/* Selling Price - Hidden for Materials */}
                                         {formData.type !== 'Material' && (
                                             <div>
@@ -1314,9 +1518,9 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                         step="0.01"
                                                         min="0"
                                                         value={usePackConversion ? finalPrice : (formData.price || '')}
-                                                        onChange={(e) => !usePackConversion && setFormData({ 
-                                                            ...formData, 
-                                                            price: Number(e.target.value), 
+                                                        onChange={(e) => !usePackConversion && setFormData({
+                                                            ...formData,
+                                                            price: Number(e.target.value),
                                                             calculated_price: Number(e.target.value),
                                                             pricingConfig: {
                                                                 ...formData.pricingConfig!,
@@ -1362,6 +1566,21 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                         </div>
                                     )}
 
+                                    {/* Volume Pricing Section */}
+                                    {formData.type !== 'Material' && (
+                                        <div className="md:col-span-2">
+                                            <VolumePricingManager
+                                                enabled={formData.allowVolumePricing || false}
+                                                tiers={formData.volumePricing || []}
+                                                onToggle={(enabled) => setFormData({ ...formData, allowVolumePricing: enabled })}
+                                                onChange={(tiers) => setFormData({ ...formData, volumePricing: tiers })}
+                                                currency={currency}
+                                                basePrice={formData.price || 0}
+                                                cost={formData.cost || 0}
+                                            />
+                                        </div>
+                                    )}
+
                                     {/* Internal Pricing Toggle Section - Hidden for Materials */}
                                     {formData.type !== 'Material' && formData.type !== 'Stationery' && (
                                         <div className="md:col-span-2 border-t border-slate-200 pt-4">
@@ -1374,7 +1593,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     {showInternalPricing ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                     {showInternalPricing ? 'Hide Internal Pricing' : 'Show Internal Pricing'}
                                                 </button>
-                                                
+
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -1505,8 +1724,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-xs font-medium text-slate-500">Manual Override</span>
                                                     <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
+                                                        <input
+                                                            type="checkbox"
                                                             className="sr-only peer"
                                                             checked={formData.pricingConfig?.manualOverride || false}
                                                             onChange={(e) => setFormData({
@@ -1524,7 +1743,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                                                 {marketAdjustments.filter(ma => ma.active ?? ma.isActive).map(rule => (
-                                                    <div 
+                                                    <div
                                                         key={rule.id}
                                                         onClick={() => handleToggleAdjustment(rule.id)}
                                                         className={`p-3 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${
@@ -1570,7 +1789,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 </h3>
                                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                                                     {ROUNDING_METHOD_OPTIONS.map(option => (
-                                                        <div 
+                                                        <div
                                                             key={option.value}
                                                             onClick={() => handlePricingConfigChange('selectedRoundingMethod', option.value)}
                                                             className={`px-3 py-2 rounded-lg border flex items-center gap-2 cursor-pointer transition-all ${
@@ -1663,54 +1882,84 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 </div>
                                             </div>
 
-                                            {/* Finishing Options */}
+{/* Finishing Options - simplified button set matching SmartPricing */}
                                             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6">
                                                 <h4 className="text-sm font-medium text-slate-700 mb-3">Finishing Options</h4>
-                                                <div className="flex gap-2 mb-4">
-                                                    {['Binding', 'Stapling', 'Covers'].map((type) => (
-                                                        <button
-                                                            key={type}
-                                                            type="button"
-                                                            onClick={() => toggleFinishingOption(type as any)}
-                                                            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${formData.pricingConfig?.finishingOptions.find(o => o.type === type)
-                                                                ? 'bg-blue-100 text-blue-700 border-blue-200'
-                                                                : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                                                                }`}
-                                                        >
-                                                            {formData.pricingConfig?.finishingOptions.find(o => o.type === type) ? '-' : '+'} {type}
-                                                        </button>
-                                                    ))}
+                                                <div className="flex flex-wrap gap-2 mb-3">
+                                                    {finishingButtons.map(btn => {
+                                                        const exists = (formData.pricingConfig?.finishingOptions || []).some(o => o.type === btn.name || o.id === btn.id);
+                                                        return (
+                                                            <button
+                                                                key={btn.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    // toggle option
+                                                                    setFormData(prev => {
+                                                                        const current = prev.pricingConfig?.finishingOptions || [];
+                                                                        const found = current.find(o => o.type === btn.name || o.id === btn.id);
+                                                                        if (found) {
+                                                                            return {
+                                                                                ...prev,
+                                                                                pricingConfig: {
+                                                                                    ...prev.pricingConfig!,
+                                                                                    finishingOptions: current.filter(o => !(o.type === btn.name || o.id === btn.id))
+                                                                                }
+                                                                            };
+                                                                        }
+
+                                                                        // add option with flat cost per copy stored in flatCostPerUnit
+                                                                        const newOpt: FinishingOption = {
+                                                                            id: generateId(),
+                                                                            type: btn.name,
+                                                                            materialId: '',
+                                                                            quantity: 1
+                                                                        } as any;
+                                                                        (newOpt as any).flatCostPerUnit = btn.cost; // used in calculation
+
+                                                                        return {
+                                                                            ...prev,
+                                                                            pricingConfig: {
+                                                                                ...prev.pricingConfig!,
+                                                                                finishingOptions: [...current, newOpt]
+                                                                            }
+                                                                        };
+                                                                    });
+                                                                }}
+                                                                className={`px-2.5 py-1.5 text-[11px] font-medium rounded-md border transition-colors flex items-center gap-2 ${exists ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                                            >
+                                                                <span className="text-xs font-bold">{btn.name}</span>
+                                                                <span className="text-[11px] text-slate-500">{currency}{btn.cost.toFixed(0)}</span>
+                                                            </button>
+                                                        );
+                                                    })}
                                                 </div>
 
-                                                <div className="space-y-3">
-                                                    {formData.pricingConfig?.finishingOptions.map((option, idx) => (
-                                                        <div key={option.id || idx} className="flex gap-3 items-end bg-white p-3 rounded border border-slate-200">
-                                                            <div className="w-24">
-                                                                <span className="text-xs font-bold text-slate-700 block mb-1">{option.type}</span>
+                                                {/* Detailed list for selected finishing options */}
+                                                <div className="space-y-2">
+                                                    {(formData.pricingConfig?.finishingOptions || []).map((option, idx) => (
+                                                        <div key={option.id || idx} className="flex items-center justify-between bg-white p-2 rounded border border-slate-200">
+                                                            <div>
+                                                                <div className="text-xs font-bold text-slate-700">{option.type}</div>
+                                                                <div className="text-[11px] text-slate-500">Per copy: {currency}{((option as any).flatCostPerUnit ?? 0).toFixed(2)}</div>
                                                             </div>
-                                                            <div className="flex-1">
-                                                                <label className="block text-[10px] text-slate-500 mb-1">Material</label>
-                                                                <select
-                                                                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                                                                    value={option.materialId || ''}
-                                                                    onChange={(e) => updateFinishingOption(option.id, 'materialId', e.target.value)}
-                                                                >
-                                                                    <option value="">Select Material...</option>
-                                                                    {materials.map((m: Item) => (
-                                                                        <option key={m.id} value={m.id}>{m.name} ({currency}{m.cost})</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                            <div className="w-24">
-                                                                <label className="block text-[10px] text-slate-500 mb-1">Usage Qty</label>
+                                                            <div className="flex items-center gap-2">
                                                                 <input
                                                                     type="number"
-                                                                    step="0.01"
-                                                                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm"
-                                                                    value={option.quantity}
+                                                                    min="1"
+                                                                    value={option.quantity || 1}
                                                                     onChange={(e) => updateFinishingOption(option.id, 'quantity', Number(e.target.value))}
-                                                                    placeholder="e.g. 1.0"
+                                                                    className="w-20 px-2 py-1 text-sm border border-slate-200 rounded text-center"
                                                                 />
+                                                                {String(option.type || '').toLowerCase() !== 'folding' && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => updateFinishingOption(option.id, 'quantity', 0)}
+                                                                        className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                                                        title="Remove"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     ))}
@@ -2089,7 +2338,11 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                             const newCost = Number(e.target.value);
                                                             setNewVariant({ ...newVariant, cost: newCost });
                                                             // Auto-calculate price for Stationery variants
-                                                            if (formData.type === 'Stationery' && newVariant.adjustmentPercent !== undefined) {
+                                                            if (formData.type === 'Stationery') {
+                                                                const baseMarginVal = calculateBaseSellingPrice(newCost, newVariant.marginPercent);
+                                                                if (newVariant.marginPercent) {
+                                                                    console.log(`[Variant Pricing] Base Margin Price: ${baseMarginVal}`);
+                                                                }
                                                                 const adjPrice = newCost * (1 + (newVariant.adjustmentPercent || 0) / 100);
                                                                 const roundingResult = applyProductPriceRounding({
                                                                     calculatedPrice: adjPrice,
@@ -2100,6 +2353,23 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                                         placeholder="e.g. 5.00"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Margin (%)</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.1"
+                                                        min="0"
+                                                        value={newVariant.marginPercent || 0}
+                                                        onChange={(e) => {
+                                                            const margin = Number(e.target.value);
+                                                            if (!isNaN(margin) && margin >= 0) {
+                                                                setNewVariant({ ...newVariant, marginPercent: margin });
+                                                            }
+                                                        }}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                        placeholder="e.g. 10"
                                                     />
                                                 </div>
                                                 <div>
@@ -2230,7 +2500,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     </div>
                                                     {newVariant.pricingSource === 'dynamic' && (
                                                         <p className="text-xs text-slate-500 mt-2">
-                                                            {formData.type === 'Stationery' 
+                                                            {formData.type === 'Stationery'
                                                                 ? "Price will be calculated from Cost + Parent's selected Adjustments"
                                                                 : `Price will be calculated from parent BOM using ${newVariant.pages || 1} pages`
                                                             }
@@ -2238,6 +2508,16 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                     )}
                                                 </div>
                                             )}
+
+                                            <VolumePricingManager
+                                                enabled={Boolean(newVariant.allowVolumePricing)}
+                                                tiers={newVariant.volumePricing || []}
+                                                onToggle={(enabled) => setNewVariant({ ...newVariant, allowVolumePricing: enabled })}
+                                                onChange={(tiers) => setNewVariant({ ...newVariant, volumePricing: tiers })}
+                                                currency={currency}
+                                                basePrice={newVariant.price || 0}
+                                                cost={newVariant.cost || 0}
+                                            />
 
                                             <div className="flex justify-end gap-2">
                                                 <button
@@ -2274,47 +2554,88 @@ const ItemModal: React.FC<ItemModalProps> = ({
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-100">
                                                     {formData.variants.map((variant, idx) => (
-                                                        <tr key={variant.id || idx} className="hover:bg-slate-50">
-                                                            <td className="px-4 py-2 text-sm text-slate-800">{variant.name}</td>
-                                                            {formData.type !== 'Stationery' && (
+                                                        <React.Fragment key={variant.id || idx}>
+                                                            <tr className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2 text-sm text-slate-800">{variant.name}</td>
+                                                                {formData.type !== 'Stationery' && (
+                                                                    <td className="px-4 py-2">
+                                                                        <input
+                                                                            type="number"
+                                                                            value={variant.pages || 0}
+                                                                            onChange={(e) => handleVariantPagesChange(variant.id, Number(e.target.value))}
+                                                                            className="w-20 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                                                        />
+                                                                    </td>
+                                                                )}
+                                                                <td className="px-4 py-2 text-sm text-slate-600 text-right">{currency}{variant.cost.toFixed(2)}</td>
+                                                                <td className="px-4 py-2 text-sm text-slate-800 text-right font-medium">{currency}{variant.price.toFixed(2)}</td>
                                                                 <td className="px-4 py-2">
                                                                     <input
                                                                         type="number"
-                                                                        value={variant.pages || 0}
-                                                                        onChange={(e) => handleVariantPagesChange(variant.id, Number(e.target.value))}
-                                                                        className="w-20 px-2 py-1 text-xs border border-slate-200 rounded text-center"
+                                                                        min="0"
+                                                                        value={variant.stock}
+                                                                        onChange={(e) => {
+                                                                            const newStock = Number(e.target.value);
+                                                                            setFormData(prev => ({
+                                                                                ...prev,
+                                                                                variants: (prev.variants || []).map(v =>
+                                                                                    v.id === variant.id ? { ...v, stock: newStock } : v
+                                                                                )
+                                                                            }));
+                                                                        }}
+                                                                        className="w-20 px-2 py-1 text-xs border border-slate-200 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                                                     />
                                                                 </td>
+                                                                <td className="px-4 py-2 text-right flex items-center justify-end gap-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setExpandedVariantPricing(expandedVariantPricing === variant.id ? null : variant.id)}
+                                                                        className={`p-1.5 rounded transition-colors ${expandedVariantPricing === variant.id ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:bg-slate-100'}`}
+                                                                        title="Manage Volume Pricing"
+                                                                    >
+                                                                        <Layers className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveVariant(variant.id)}
+                                                                        className="p-1.5 text-red-500 hover:bg-red-50 rounded"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                            {expandedVariantPricing === variant.id && (
+                                                                <tr key={`pricing-${variant.id}`} className="bg-blue-50/20">
+                                                                    <td colSpan={6} className="px-4 pb-4 pt-0">
+                                                                        <div className="border-t border-blue-100 mt-2">
+                                                                            <VolumePricingManager
+                                                                                enabled={Boolean(variant.allowVolumePricing)}
+                                                                                tiers={variant.volumePricing || []}
+                                                                                onToggle={(enabled) => {
+                                                                                    setFormData(prev => ({
+                                                                                        ...prev,
+                                                                                        variants: (prev.variants || []).map(v =>
+                                                                                            v.id === variant.id ? { ...v, allowVolumePricing: enabled } : v
+                                                                                        )
+                                                                                    }));
+                                                                                }}
+                                                                                onChange={(tiers) => {
+                                                                                    setFormData(prev => ({
+                                                                                        ...prev,
+                                                                                        variants: (prev.variants || []).map(v =>
+                                                                                            v.id === variant.id ? { ...v, volumePricing: tiers } : v
+                                                                                        )
+                                                                                    }));
+                                                                                }}
+                                                                                currency={currency}
+                                                                                basePrice={variant.price || 0}
+                                                                                cost={variant.cost || 0}
+                                                                            />
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
                                                             )}
-                                                            <td className="px-4 py-2 text-sm text-slate-600 text-right">{currency}{variant.cost.toFixed(2)}</td>
-                                                            <td className="px-4 py-2 text-sm text-slate-800 text-right font-medium">{currency}{variant.price.toFixed(2)}</td>
-                                                            <td className="px-4 py-2">
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    value={variant.stock}
-                                                                    onChange={(e) => {
-                                                                        const newStock = Number(e.target.value);
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            variants: (prev.variants || []).map(v =>
-                                                                                v.id === variant.id ? { ...v, stock: newStock } : v
-                                                                            )
-                                                                        }));
-                                                                    }}
-                                                                    className="w-20 px-2 py-1 text-xs border border-slate-200 rounded text-center focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                                                />
-                                                            </td>
-                                                            <td className="px-4 py-2 text-right">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveVariant(variant.id)}
-                                                                    className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                                                                >
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </button>
-                                                            </td>
-                                                        </tr>
+                                                        </React.Fragment>
                                                     ))}
                                                 </tbody>
                                             </table>
@@ -2338,4 +2659,3 @@ const ItemModal: React.FC<ItemModalProps> = ({
 };
 
 export default ItemModal;
-

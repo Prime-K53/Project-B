@@ -17,6 +17,11 @@ export interface NumberingRule {
   resetInterval?: 'Never' | 'Daily' | 'Monthly' | 'Yearly';
 }
 
+export interface VolumePricingTier {
+  minQty: number;
+  price: number;
+}
+
 export interface TransactionSettingsConfig {
   // Basic transaction controls
   allowBackdating: boolean;
@@ -452,6 +457,7 @@ export interface Item {
   unit?: string;
   cost: number;
   cost_price?: number;
+  marginPercent?: number;
   price: number;
   selling_price?: number;
   calculated_price?: number;
@@ -486,6 +492,8 @@ export interface Item {
   profitPerPiece?: number;
   markup_percent?: number;
   manual_override?: boolean;
+  allowVolumePricing?: boolean;
+  volumePricing?: VolumePricingTier[];
   [key: string]: any;
 }
 export type User = any; // TIER 2: Added as any due to missing definitions
@@ -597,11 +605,12 @@ export interface ProductVariant {
   name: string;
   sku: string;
   cost: number;
+  marginPercent?: number;
   price: number;
   stock: number;
-  pages?: number;
   inheritsParentBOM?: boolean;
   pricingSource?: 'dynamic' | 'static';
+  volumePricing?: VolumePricingTier[];
   [key: string]: any;
 }
 export type PricingSettings = any; // TIER 2: Added as any due to missing definitions

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Calculator, ChevronDown, ChevronUp, X, Info, Copy, RefreshCw, Save, Printer, Package, Settings, Plus } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useSales } from '../../context/SalesContext';
+import { applyProductPriceRounding } from '../../services/pricingRoundingService';
 import { useNavigate } from 'react-router-dom';
 import { dbService } from '../../services/db';
 import { Item, MarketAdjustment, BOMTemplate } from '../../types';
@@ -147,6 +148,27 @@ const SmartPricing: React.FC = () => {
     };
 
     const { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, finalPrice } = calculateCosts();
+
+    const roundingResult = React.useMemo(() => {
+        try {
+            return applyProductPriceRounding({ calculatedPrice: finalPrice, companyConfig });
+        } catch (err) {
+            console.error('Rounding failed', err);
+            // Fallback: no rounding
+            return {
+                originalPrice: finalPrice,
+                roundedPrice: finalPrice,
+                roundingDifference: 0,
+                methodUsed: (companyConfig?.pricingSettings?.defaultMethod as any) || 'ALWAYS_UP_50',
+                stepUsed: companyConfig?.pricingSettings?.customStep || 50,
+                applyRounding: false,
+                wasRounded: false,
+                alreadyRounded: false
+            } as any;
+        }
+    }, [finalPrice, companyConfig]);
+
+    const displayTotal = roundingResult?.roundedPrice ?? finalPrice;
 
     const handlePagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = parseInt(e.target.value, 10);
@@ -475,12 +497,22 @@ const SmartPricing: React.FC = () => {
                                         <span className="font-medium">+{formatCurrency(marketAdjustmentTotal)}</span>
                                     </div>
                                 )}
-                                <div className="border-t-2 border-indigo-100 pt-4 flex justify-between">
-                                    <span className="font-bold text-slate-800">Total</span>
-                                    <span className="text-2xl font-bold text-indigo-600">{formatCurrency(finalPrice)}</span>
+                                <div className="border-t-2 border-indigo-100 pt-4 flex justify-between items-end">
+                                    <div>
+                                        <div className="font-bold text-slate-800">Total</div>
+                                        {roundingResult && roundingResult.wasRounded && (
+                                            <div className="text-xs text-slate-500">Original: {formatCurrency(roundingResult.originalPrice)}</div>
+                                        )}
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-2xl font-bold text-indigo-600">{formatCurrency(displayTotal)}</div>
+                                        {roundingResult && roundingResult.wasRounded && (
+                                            <div className="text-xs text-emerald-600">Rounded (+{formatCurrency(roundingResult.roundingDifference)}) via {String(roundingResult.methodUsed)}</div>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="text-center text-xs text-slate-400">
-                                    Per copy: {formatCurrency(finalPrice / copies)}
+                                    Per copy: {formatCurrency(displayTotal / copies)}
                                 </div>
                             </div>
 
@@ -508,8 +540,8 @@ const SmartPricing: React.FC = () => {
                                                 name: `Print Job - ${pages} pages x ${copies} copies`,
                                                 description: `Paper: ${selectedPaper?.name || 'N/A'}, Toner: ${selectedToner?.name || 'N/A'}`,
                                                 quantity: copies,
-                                                unitPrice: finalPrice / copies,
-                                                total: finalPrice
+                                            unitPrice: (displayTotal / copies),
+                                            total: displayTotal
                                             }],
                                             subtotal: finalPrice,
                                             tax: 0,

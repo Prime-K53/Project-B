@@ -1456,7 +1456,7 @@ const DashboardContent: React.FC = () => {
             {/* Action Buttons — icon only on mobile */}
             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8 }}>
               <button
-                onClick={() => navigate('/internal-tools/pricing')}
+                onClick={() => navigate('/smart-operations/pricing')}
                 style={{
                   padding: isMobile ? '8px' : '8px 16px',
                   borderRadius: 999,

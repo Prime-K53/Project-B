@@ -23,6 +23,7 @@ import { customerNotificationService } from '../services/customerNotificationSer
 
 import { generateNextId, roundFinancial, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
 import { attachDocumentSecurity } from '../utils/documentSecurity';
+import { getUnitPrice } from '../utils/pricing';
 
 const POS: React.FC = () => {
   const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
@@ -355,13 +356,22 @@ const POS: React.FC = () => {
 
 
 
+    const baseItem = item.parentId ? inventory.find(i => i.id === item.parentId) : item;
+    const variantId = item.parentId ? item.id : undefined;
+
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
+      const newQty = existing ? (existing.quantity + (item.quantity || 1)) : (item.quantity || 1);
+      const resolvedPrice = getUnitPrice(baseItem, newQty, variantId);
+
+      const originalPrice = Number((item as any).selling_price ?? item.price) || 0;
+
       if (existing) {
         return prev.map(i => i.id === item.id ? {
           ...i,
-          quantity: i.quantity + (item.quantity || 1),
-          price,
+          quantity: newQty,
+          price: resolvedPrice,
+          originalPrice,
           adjustmentTotal,
           adjustmentBreakdown,
           adjustmentSnapshots,
@@ -370,8 +380,9 @@ const POS: React.FC = () => {
       }
       return [...prev, {
         ...item,
-        quantity: item.quantity || 1,
-        price,
+        quantity: newQty,
+        price: resolvedPrice,
+        originalPrice,
         adjustmentTotal,
         adjustmentBreakdown,
         adjustmentSnapshots,
@@ -490,9 +501,16 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       updateReservedStock(itemInCart.parentId || itemInCart.id, delta, 'POS Quantity Change', itemInCart.parentId ? itemInCart.id : undefined);
     }
 
+    const baseItemId = (itemInCart as any).parentId || itemInCart.id.split('::')[0];
+    const baseItem = inventory.find(i => i.id === baseItemId) || itemInCart;
+    const vId = (itemInCart as any).parentId ? itemInCart.id : undefined;
+    const resolvedPrice = getUnitPrice(baseItem as Item, newQty, vId);
+
     setCart(prev => prev.map(i => i.id === id ? {
       ...i,
       quantity: newQty,
+      price: resolvedPrice,
+      originalPrice: (itemInCart as any).originalPrice,
       adjustmentSnapshots: (itemInCart as any).adjustmentSnapshots || [],
       productionCostSnapshot: (itemInCart as any).productionCostSnapshot
     } : i));

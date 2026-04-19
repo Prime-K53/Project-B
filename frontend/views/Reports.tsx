@@ -156,130 +156,110 @@ const Reports: React.FC = () => {
             ? filteredData.reduce((sum, d) => sum + d.marginPercent, 0) / filteredData.length 
             : 0;
 
-        return (
-            <div className="space-y-8 animate-fadeIn pb-20">
+return (
+            <div className="space-y-6 animate-fadeIn">
                 {/* Header Section with KPIs */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 mb-4">
-                                <TrendingUp size={20} />
-                            </div>
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Avg Gross Margin</p>
-                            <div className="flex items-end gap-2 mt-1">
-                                <h3 className="text-3xl font-black text-slate-900 leading-none">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 tablet-auto-fit-250 gap-4">
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Avg Gross Margin</p>
+                                <h3 className={`text-2xl font-black mt-1 tabular-nums ${avgMarginPercent > 20 ? 'text-emerald-600' : 'text-amber-600'}`}>
                                     {avgMarginPercent.toFixed(1)}%
                                 </h3>
-                                <div className={`flex items-center text-[11px] font-bold pb-1 ${avgMarginPercent > 20 ? 'text-emerald-500' : 'text-amber-500'}`}>
-                                    {avgMarginPercent > 20 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                                <p className={`text-[11px] mt-1 font-medium ${avgMarginPercent > 20 ? 'text-emerald-500' : 'text-amber-500'}`}>
                                     {avgMarginPercent > 20 ? 'Healthy' : 'Low'}
-                                </div>
+                                </p>
+                            </div>
+                            <div className="p-3 bg-emerald-50 rounded-xl">
+                                <TrendingUp size={24} className="text-emerald-600" />
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 mb-4">
-                                <Coins size={20} />
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Market Adjustments</p>
+                                <h3 className="text-2xl font-black text-blue-600 mt-1 tabular-nums">
+                                    {formatCurrency(totalAdjustments)}
+                                </h3>
                             </div>
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Market Adjustments</p>
-                            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
-                                {formatCurrency(totalAdjustments)}
-                            </h3>
+                            <div className="p-3 bg-blue-50 rounded-xl">
+                                <Coins size={24} className="text-blue-600" />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-slate-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white mb-4">
-                                <Target size={20} />
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Total Gross Profit</p>
+                                <h3 className="text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                                    {formatCurrency(totalGrossProfit)}
+                                </h3>
                             </div>
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Total Gross Profit</p>
-                            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
-                                {formatCurrency(totalGrossProfit)}
-                            </h3>
+                            <div className="p-3 bg-slate-100 rounded-xl">
+                                <Target size={24} className="text-slate-600" />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-200/60 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-full -mr-8 -mt-8 transition-transform group-hover:scale-110" />
-                        <div className="relative z-10">
-                            <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 mb-4">
-                                <BarChart3 size={20} />
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Transaction Count</p>
+                                <h3 className="text-2xl font-black text-indigo-600 mt-1 tabular-nums">
+                                    {filteredData.length}
+                                </h3>
                             </div>
-                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Transaction Count</p>
-                            <h3 className="text-3xl font-black text-slate-900 leading-none mt-1">
-                                {filteredData.length}
-                            </h3>
+                            <div className="p-3 bg-indigo-50 rounded-xl">
+                                <BarChart3 size={24} className="text-indigo-600" />
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Charts Area */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-8 rounded-[2rem] border border-slate-200/60 shadow-sm">
-                        <div className="flex justify-between items-center mb-8">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-800 tracking-tight">Margin Performance Trend</h3>
-                                <p className="text-slate-400 text-sm font-medium mt-1">Profitability analysis over time</p>
-                            </div>
-                            <div className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-widest rounded-full">
-                                Snapshot Data
-                            </div>
-                        </div>
-                        <div className="h-[300px] w-full">
+                <div className="grid grid-cols-1 lg:grid-cols-2 tablet-auto-fit-280 tablet-auto-fit-reset gap-6">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+                            <TrendingUp size={18} className="text-emerald-500" />
+                            Margin Performance Trend
+                        </h3>
+                        <div style={{ width: '100%', height: 256, minHeight: 150 }}>
                             <ResponsiveContainer width="100%" height="100%" minHeight={150} minWidth={0}>
                                 <AreaChart data={trendData}>
                                     <defs>
                                         <linearGradient id="colorGross" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
                                             <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                                         </linearGradient>
                                         <linearGradient id="colorNet" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
                                             <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                    <XAxis 
-                                        dataKey="date" 
-                                        axisLine={false} 
-                                        tickLine={false} 
-                                        tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 600}} 
-                                        dy={10}
-                                    />
-                                    <YAxis 
-                                        axisLine={false} 
-                                        tickLine={false} 
-                                        tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 600}}
-                                        tickFormatter={(val) => `${currency}${val >= 1000 ? (val/1000).toFixed(0) + 'k' : val}`}
-                                    />
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${currency}${v >= 1000 ? (v/1000).toFixed(0) + 'k' : v}`} />
                                     <Tooltip 
-                                        contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
                                         formatter={(val: number) => [formatCurrency(val), '']}
+                                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
                                     />
-                                    <Area type="monotone" dataKey="grossMargin" name="Gross Margin" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorGross)" />
-                                    <Area type="monotone" dataKey="netMargin" name="Net Margin" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorNet)" />
+                                    <Area type="monotone" dataKey="grossMargin" name="Gross Margin" stroke="#3b82f6" strokeWidth={2} fill="url(#colorGross)" />
+                                    <Area type="monotone" dataKey="netMargin" name="Net Margin" stroke="#10b981" strokeWidth={2} fill="url(#colorNet)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
 
-                    <div className="bg-white p-8 rounded-[2rem] border border-slate-200/60 shadow-sm">
-                        <div className="flex justify-between items-center mb-8">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-800 tracking-tight">Adjustment Distribution</h3>
-                                <p className="text-slate-400 text-sm font-medium mt-1">Impact of various cost adjustments</p>
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400" title="Chart details">
-                                <Info size={16} />
-                            </div>
-                        </div>
-                        <div className="h-[300px] w-full">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+                            <Activity size={18} className="text-blue-500" />
+                            Adjustment Distribution
+                        </h3>
+                        <div className="h-[200px]">
                             <ResponsiveContainer width="100%" height="100%" minHeight={150} minWidth={0}>
                                 <BarChart data={adjustmentStats} layout="vertical" margin={{ left: 40, right: 20 }}>
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
@@ -294,10 +274,10 @@ const Reports: React.FC = () => {
                                     />
                                     <Tooltip 
                                         cursor={{fill: '#f8fafc'}}
-                                        contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '12px'}}
+                                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
                                         formatter={(val: number) => [formatCurrency(val), 'Amount']}
                                     />
-                                    <Bar dataKey="totalAmount" radius={[0, 8, 8, 0]} barSize={24}>
+                                    <Bar dataKey="totalAmount" radius={[0, 4, 4, 0]} barSize={20}>
                                         {adjustmentStats.map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                         ))}
@@ -310,39 +290,35 @@ const Reports: React.FC = () => {
 
                 {/* Adjustment Statistics Section */}
                 {adjustmentStats.length > 0 && (
-                    <div className="bg-white rounded-[2rem] p-8 border border-slate-200/60 shadow-sm overflow-hidden">
-                        <div className="flex items-center gap-3 mb-8">
-                            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                                <Activity size={18} />
-                            </div>
-                            <h3 className="font-black text-slate-800 text-[14px] tracking-widest uppercase">Adjustment Performance Matrix</h3>
-                        </div>
+                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+                            <Activity size={18} className="text-blue-500" />
+                            Adjustment Performance Matrix
+                        </h3>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-[13px]">
+                            <table className="w-full text-left text-sm">
                                 <thead>
-                                    <tr className="text-slate-400 font-black text-[10px] tracking-widest border-b border-slate-100">
-                                        <th className="px-6 py-4">ADJUSTMENT NAME</th>
-                                        <th className="px-6 py-4 text-right">TOTAL IMPACT</th>
-                                        <th className="px-6 py-4 text-right">VOLUME</th>
-                                        <th className="px-6 py-4 text-right">ITEMS AFFECTED</th>
-                                        <th className="px-6 py-4 text-right">MEAN PER TRANS.</th>
+                                    <tr className="text-slate-400 font-bold text-[10px] tracking-widest border-b border-slate-100">
+                                        <th className="px-4 py-3">Adjustment Name</th>
+                                        <th className="px-4 py-3 text-right">Total Impact</th>
+                                        <th className="px-4 py-3 text-right">Volume</th>
+                                        <th className="px-4 py-3 text-right">Items Affected</th>
+                                        <th className="px-4 py-3 text-right">Mean Per Trans.</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
-                                    {adjustmentStats.map((stat, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-50 transition-colors group">
-                                            <td className="px-6 py-5">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                                                    <span className="font-bold text-slate-800">{stat.adjustmentName}</span>
-                                                </div>
+                                    {adjustmentStats.map((adj, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                            <td className="px-4 py-3">
+                                                <span className="inline-flex items-center gap-2">
+                                                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                                                    <span className="font-semibold text-slate-700">{adj.adjustmentName}</span>
+                                                </span>
                                             </td>
-                                            <td className="px-6 py-5 text-right font-mono text-blue-600 font-black text-[14px]">{formatCurrency(stat.totalAmount)}</td>
-                                            <td className="px-6 py-5 text-right font-bold text-slate-600">
-                                                <span className="bg-slate-100 px-3 py-1 rounded-full">{stat.transactionCount}</span>
-                                            </td>
-                                            <td className="px-6 py-5 text-right font-medium text-slate-500">{stat.itemCount} units</td>
-                                            <td className="px-6 py-5 text-right font-mono text-slate-500 font-bold">{formatCurrency(stat.avgPerTransaction)}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-slate-900 tabular-nums">{formatCurrency(adj.totalAmount)}</td>
+                                            <td className="px-4 py-3 text-right text-slate-500 tabular-nums">{adj.count}</td>
+                                            <td className="px-4 py-3 text-right text-slate-500 tabular-nums">{adj.itemsAffected}</td>
+                                            <td className="px-4 py-3 text-right text-slate-500 tabular-nums">{formatCurrency(adj.meanAmount)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -350,79 +326,6 @@ const Reports: React.FC = () => {
                         </div>
                     </div>
                 )}
-
-                {/* Detail Table */}
-                <div className="bg-white rounded-[2rem] p-8 border border-slate-200/60 shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-slate-900 text-white rounded-lg shadow-lg">
-                                <Receipt size={18} />
-                            </div>
-                            <h3 className="font-black text-slate-800 text-[14px] tracking-widest uppercase">Margin Audit Ledger</h3>
-                        </div>
-                        <p className="text-slate-400 text-[11px] font-bold">Showing {filteredData.length} entries</p>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-[13px]">
-                            <thead>
-                                <tr className="text-slate-400 font-bold text-[10px] tracking-widest border-b border-slate-100">
-                                    <th className="px-6 py-4">TRANSACTION</th>
-                                    <th className="px-6 py-4">CUSTOMER</th>
-                                    <th className="px-6 py-4 text-right">BASE COST</th>
-                                    <th className="px-6 py-4 text-right">ADJUSTMENTS</th>
-                                    <th className="px-6 py-4 text-right">NET MARGIN</th>
-                                    <th className="px-6 py-4 text-right">PRICE</th>
-                                    <th className="px-6 py-4 text-right">GROSS MARGIN</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {filteredData.slice().reverse().map(d => (
-                                    <React.Fragment key={d.saleId}>
-                                        <tr className="hover:bg-slate-50/80 transition-all group">
-                                            <td className="px-6 py-5">
-                                                <div className="font-extrabold text-slate-800 group-hover:text-blue-600 transition-colors uppercase tracking-tight">{d.saleId}</div>
-                                                <div className="text-[10px] text-slate-400 font-black tracking-wider mt-0.5">{format(new Date(d.date), 'MMM dd, HH:mm')}</div>
-                                            </td>
-                                            <td className="px-6 py-5">
-                                                <div className="font-bold text-slate-600">{d.customerName}</div>
-                                            </td>
-                                            <td className="px-6 py-5 text-right font-mono text-slate-500 font-medium">{formatCurrency(d.totalCost)}</td>
-                                            <td className="px-6 py-5 text-right font-mono text-slate-600 font-bold">{formatCurrency(d.totalAdjustments)}</td>
-                                            <td className="px-6 py-5 text-right">
-                                                <div className="font-black text-emerald-600">{formatCurrency(d.netMarginPerSale)}</div>
-                                            </td>
-                                            <td className="px-6 py-5 text-right font-black text-slate-900 bg-slate-50/30">{formatCurrency(d.finalPrice)}</td>
-                                            <td className="px-6 py-5 text-right">
-                                                <div className={`font-black text-[14px] ${d.marginPercent >= 20 ? 'text-emerald-600' : d.marginPercent >= 10 ? 'text-blue-600' : 'text-rose-600'}`}>
-                                                    {formatCurrency(d.grossMargin)}
-                                                </div>
-                                                <div className="text-[10px] font-black text-slate-400">{d.marginPercent.toFixed(1)}%</div>
-                                            </td>
-                                        </tr>
-                                        {/* Adjustment breakdown row with better styling */}
-                                        {d.adjustmentBreakdown && d.adjustmentBreakdown.length > 0 && (
-                                            <tr key={`${d.saleId}-breakdown`} className="bg-slate-50/30">
-                                                <td colSpan={7} className="px-8 py-4">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className="w-1 h-8 bg-slate-200 rounded-full" />
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {d.adjustmentBreakdown.map((adj, idx) => (
-                                                                <div key={idx} className="bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-2 group/adj transition-all hover:border-blue-200">
-                                                                    <div className="text-[10px] font-black text-slate-400 group-hover/adj:text-blue-500 transition-colors uppercase tracking-widest">{adj.name || adj.type}:</div>
-                                                                    <div className="text-[12px] font-black text-slate-700 font-mono">{formatCurrency(adj.amount || adj.totalAmount)}</div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </React.Fragment>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
             </div>
         );
     };

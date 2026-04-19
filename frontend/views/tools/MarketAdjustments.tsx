@@ -210,9 +210,10 @@ const MarketAdjustments: React.FC = () => {
     };
 
     const formatCurrency = (amount: number) => {
+        const currencyCode = currency === '$' ? 'USD' : (currency === 'KES' ? 'KES' : currency === 'ZAR' ? 'ZAR' : currency === 'GBP' ? 'GBP' : currency === 'EUR' ? 'EUR' : currency === 'UGX' ? 'UGX' : currency || 'USD');
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
-            currency: 'USD'
+            currency: currencyCode
         }).format(amount || 0);
     };
 
