@@ -44,6 +44,21 @@ router.get('/profit-margins/audit-log', async (req, res) => {
   }
 });
 
+// GET /api/settings/profit-margins/resolve - Resolve effective margin for a product/category
+// Used by the frontend getEffectiveMargin() utility and all pricing calculations.
+router.get('/profit-margins/resolve', async (req, res) => {
+  try {
+    const { lineItemId, categoryId } = req.query;
+    const result = await profitMarginService.getEffectiveMargin(
+      lineItemId || null,
+      categoryId || null
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/settings/profit-margins/:id - Get single
 router.get('/profit-margins/:id', async (req, res) => {
   try {
@@ -101,21 +116,6 @@ router.post('/profit-margins/bulk-upload', authorizePricing, async (req, res) =>
     
     const results = await profitMarginService.bulkUpload(rows, userId);
     res.json(results);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/settings/profit-margins/resolve - Resolve effective margin for a product/category
-// Used by the frontend getEffectiveMargin() utility and all pricing calculations.
-router.get('/profit-margins/resolve', async (req, res) => {
-  try {
-    const { lineItemId, categoryId } = req.query;
-    const result = await profitMarginService.getEffectiveMargin(
-      lineItemId || null,
-      categoryId || null
-    );
-    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
