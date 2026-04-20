@@ -14,6 +14,7 @@ import { BankAccount, BankTransaction } from '../types/banking';
 import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLoss } from '../types/currency';
 
 import { assertInvoiceNumberFormat, calculateDueDate, generateNextId, resolveCustomerPaymentTerms, roundToCurrency } from '../utils/helpers';
+import { extractProfitMargin } from '../utils/financial/extractors';
 import { generateNextSalesInvoiceNumber } from './documentNumberService';
 import { pagesToReams, pagesToTonerKg } from '../utils/printConversions';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from '../utils/signatureUtils';
@@ -592,6 +593,7 @@ export const transactionService = {
         adjustmentTransactions: MarketAdjustmentTransaction[];
         adjustmentSnapshots: any[];
         adjustmentTotal: number;
+        // TODO: normalise to adjustmentSnapshots — see cleanup tracker
         adjustmentSummary: any[];
     }> {
         const allTransactionSnapshots: TransactionAdjustmentSnapshot[] = [];
@@ -995,6 +997,14 @@ export const transactionService = {
                     : sale.adjustmentTotal;
                 sale.transactionAdjustments = adjustmentResult.adjustmentTransactions;
                 sale.adjustmentSummary = adjustmentResult.adjustmentSummary;
+
+                // Backward compatibility: store profitAdjustment from snapshots
+                try {
+                    const profit = extractProfitMargin(sale);
+                    (sale as any).profitAdjustment = profit;
+                } catch (e) {
+                    // ignore extraction errors
+                }
 
                 // Save adjustment transactions to the store
                 for (const adjTx of adjustmentResult.adjustmentTransactions) {
@@ -1904,6 +1914,14 @@ export const transactionService = {
                     : invoice.adjustmentTotal;
                 invoice.transactionAdjustments = adjustmentResult.adjustmentTransactions;
                 invoice.adjustmentSummary = adjustmentResult.adjustmentSummary;
+
+                // Backward compatibility: store profitAdjustment from snapshots on invoice
+                try {
+                    const profitInv = extractProfitMargin(invoice as any);
+                    (invoice as any).profitAdjustment = profitInv;
+                } catch (e) {
+                    // ignore
+                }
 
                 // Save adjustment transactions to the store
                 for (const adjTx of adjustmentResult.adjustmentTransactions) {

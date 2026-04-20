@@ -112,7 +112,9 @@ const Reports: React.FC = () => {
             items: inv.items,
             adjustmentSnapshots: inv.adjustmentSnapshots || [],
             adjustmentTotal: inv.adjustmentTotal || 0,
+            // TODO: normalise to adjustmentSnapshots — see cleanup tracker
             transactionAdjustments: inv.transactionAdjustments || [],
+            // TODO: normalise to adjustmentSnapshots — see cleanup tracker
             adjustmentSummary: inv.adjustmentSummary || []
         }));
         

@@ -15,6 +15,7 @@ interface PaymentModalProps {
     availableCredit: number;
     walletBalance: number;
     subAccountName?: string;
+    // TODO: normalise to adjustmentSnapshots — see cleanup tracker
     adjustmentSummary?: { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }[];
     roundingAccumulation?: number;
 }

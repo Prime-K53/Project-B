@@ -20,6 +20,7 @@ interface CartSidebarProps {
     onPay: () => void;
     totals: { subtotal: number, discount: number, total: number };
     /** Adjustment summary for display in totals section */
+    // TODO: normalise to adjustmentSnapshots — see cleanup tracker
     adjustmentSummary?: { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }[];
     rounding?: {
         enabled: boolean;
