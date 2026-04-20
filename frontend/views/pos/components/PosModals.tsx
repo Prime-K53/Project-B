@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+// PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
 import { X, CheckCircle, Printer, Usb, Wallet, UserPlus, Save, ArrowRight, Calculator, DollarSign, Tag, ShieldCheck, Plus, Search, Building2, FileText, Clock } from 'lucide-react';
 import { HeldOrder, Sale, Invoice, Item, ProductVariant, BillOfMaterial, WorkOrder, BOMTemplate } from '../../../types';
 import { useData } from '../../../context/DataContext';
@@ -8,10 +9,10 @@ import { hardwareService } from '../../../services/hardwareService';
 import { generateAccountNumber, roundFinancial, formatNumber, roundToCurrency } from '../../../utils/helpers';
 import { bomService } from '../../../services/bomService';
 import { pricingService, DynamicServicePricingResult } from '../../../services/pricingService';
-import { calculateItemFinancials } from '../../../utils/pricing';
-import { getVariantPrice, getVariantCost } from '../../../utils/pricing';
 import { dbService } from '../../../services/db';
 import { applyProductPriceRounding } from '../../../services/pricingRoundingService';
+import { calculateServicePrice } from '../../../utils/pricing/pricingEngine';
+import { getPlaceholder } from '../../../constants/placeholders';
 
 
 
@@ -66,6 +67,7 @@ export const PrintingVariantModal: React.FC<{
             // Use dynamic variant pricing from pricingService
             const virtualVariant: ProductVariant = {
                 id: 'virtual',
+                productId: product.id,
                 sku: product.sku,
                 name: product.name,
                 attributes: attributes,
@@ -203,12 +205,11 @@ export const PrintingVariantModal: React.FC<{
 export const ServiceCalculatorModal: React.FC<{
     service: Item;
     currencySymbol: string;
-    calculatePricing: (pages: number, copies: number) => DynamicServicePricingResult;
     initialPages?: number;
     initialCopies?: number;
     onConfirm: (pricing: DynamicServicePricingResult) => void;
     onClose: () => void;
-}> = ({ service, currencySymbol, calculatePricing, initialPages = 1, initialCopies = 1, onConfirm, onClose }) => {
+}> = ({ service, currencySymbol, initialPages = 1, initialCopies = 1, onConfirm, onClose }) => {
     const { inventory = [], marketAdjustments = [], companyConfig } = useData();
     const [pages, setPages] = useState(Math.max(1, Number(initialPages) || 1));
     const [copies, setCopies] = useState(Math.max(1, Number(initialCopies) || 1));
@@ -253,49 +254,18 @@ export const ServiceCalculatorModal: React.FC<{
         setCopies(Math.max(1, Number(initialCopies) || 1));
     }, [initialPages, initialCopies, service.id]);
 
-    useEffect(() => {
-        const binding = inventory.find(i => i.name?.toLowerCase().includes('binding'));
-        const pinning = inventory.find(i => i.name?.toLowerCase().includes('staple') || i.name?.toLowerCase().includes('pin'));
-        const covers = inventory.find(i => i.name?.toLowerCase().includes('cover') || i.name?.toLowerCase().includes('card'));
-
-        setFinishingOptions(prev => prev.map(opt => {
-            let materialCost = 0;
-            let conversionRate = opt.materialConversionRate || 1;
-            let materialId: string | undefined;
-
-            if (opt.id === 'binding' && binding) {
-                materialCost = Number((binding as any).cost_price ?? (binding as any).cost_per_unit ?? binding.cost ?? 0);
-                conversionRate = Number((binding as any).conversionRate ?? (binding as any).conversion_rate ?? 1);
-                materialId = binding.id;
-            } else if (opt.id === 'pinning' && pinning) {
-                materialCost = Number((pinning as any).cost_price ?? (pinning as any).cost_per_unit ?? pinning.cost ?? 0);
-                conversionRate = Number((pinning as any).conversionRate ?? (pinning as any).conversion_rate ?? 5000);
-                materialId = pinning.id;
-            } else if (opt.id === 'covers' && covers) {
-                materialCost = Number((covers as any).cost_price ?? (covers as any).cost_per_unit ?? covers.cost ?? 0);
-                conversionRate = Number((covers as any).conversionRate ?? (covers as any).conversion_rate ?? 100);
-                materialId = covers.id;
-            }
-
-            return {
-                ...opt,
-                cost: materialCost,
-                materialConversionRate: conversionRate,
-                materialId
-            };
-        }));
-    }, [inventory]);
+    const [enginePricing, setEnginePricing] = useState<DynamicServicePricingResult | null>(null);
 
     const paper = useMemo(() => {
         return inventory.find(i =>
-            i.type === 'Material' &&
+            i.type === 'Raw Material' &&
             (i.name?.toLowerCase().includes('paper') || String(i.category || '').toLowerCase() === 'paper')
         );
     }, [inventory]);
 
     const toner = useMemo(() => {
         return inventory.find(i =>
-            i.type === 'Material' &&
+            i.type === 'Raw Material' &&
             (i.name?.toLowerCase().includes('toner') || String(i.category || '').toLowerCase() === 'toner')
         );
     }, [inventory]);
@@ -336,98 +306,164 @@ export const ServiceCalculatorModal: React.FC<{
         return roundToCurrency(paperCost + tonerCost + finishingCost);
     }, [paperCost, tonerCost, finishingCost]);
 
-    const { adjustmentTotal, adjustmentSnapshots } = useMemo(() => {
-        let total = 0;
-        const snapshots: any[] = [];
-
-        marketAdjustments.forEach(adj => {
-            const isActive = adj.active ?? adj.isActive;
-            const categoryMatch = !adj.applyToCategories || adj.applyToCategories.length === 0 || adj.applyToCategories.includes(service.category);
-            if (!isActive || !categoryMatch) return;
-
-            const isPercent = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
-            const pct = Number(adj.percentage ?? adj.value ?? 0);
-            const totalAmount = isPercent ? (baseCost * (pct / 100)) : (Number(adj.value) || 0) * pages * copies;
-            total += totalAmount;
-
-            const perCopy = copies > 0 ? (totalAmount / copies) : totalAmount;
-            snapshots.push({
+    const normalizedAdjustments = useMemo(() => {
+        return (marketAdjustments || [])
+            .filter((adj: any) => {
+                const isActive = adj.active ?? adj.isActive;
+                const categoryMatch = !adj.applyToCategories || adj.applyToCategories.length === 0 || adj.applyToCategories.includes(service.category);
+                return isActive && categoryMatch;
+            })
+            .map((adj: any) => ({
                 name: adj.name,
                 type: adj.type,
                 value: adj.value,
-                calculatedAmount: roundToCurrency(perCopy)
-            });
-        });
+                percentage: adj.type === 'PERCENTAGE' ? adj.value : undefined,
+                adjustmentId: adj.id,
+                isActive: true
+            }));
+    }, [marketAdjustments, service.category]);
 
-        return {
-            adjustmentTotal: roundToCurrency(total),
-            adjustmentSnapshots: snapshots
-        };
-    }, [marketAdjustments, baseCost, pages, copies, service.category]);
+    useEffect(() => {
+        let mounted = true;
+        const calculate = async () => {
+            if (!service.id || baseCost <= 0) {
+                setEnginePricing(null);
+                return;
+            }
 
-    const pricing = useMemo(() => {
-        const totalPages = pages * copies;
-        const totalPrice = roundToCurrency(baseCost + adjustmentTotal);
-        // Apply rounding consistent with product inventory modal
-        const rounding = applyProductPriceRounding({
-            calculatedPrice: totalPrice,
-            companyConfig
-        });
-        const roundedTotalPrice = rounding.roundedPrice;
-        const roundingDiff = rounding.roundingDifference;
+            try {
+                const result = await calculateServicePrice({
+                    itemId: service.id,
+                    categoryId: service.category,
+                    baseCost: baseCost,
+                    pages: pages,
+                    copies: copies,
+                    adjustments: normalizedAdjustments,
+                    context: 'SERVICE'
+                });
 
-        // Track rounding as an adjustment row (per-copy for consistency with existing rows)
-        const snapshotsExtended = [...adjustmentSnapshots];
-        if (roundingDiff > 0) {
-            const perCopyRound = copies > 0 ? roundToCurrency(roundingDiff / copies) : roundingDiff;
-            snapshotsExtended.push({
-                name: 'Rounding Adjustment',
-                type: 'ROUNDING',
-                value: rounding.stepUsed,
-                calculatedAmount: perCopyRound
-            });
-        }
-        const totalAdjustmentWithRounding = roundToCurrency(adjustmentTotal + roundingDiff);
-        const unitCostPerCopy = copies > 0 ? roundToCurrency(baseCost / copies) : baseCost;
-        const unitCostPerPage = totalPages > 0 ? roundToCurrency(baseCost / totalPages) : baseCost;
-        const unitPricePerCopy = copies > 0 ? roundToCurrency(roundedTotalPrice / copies) : roundedTotalPrice;
-        const unitPricePerPage = totalPages > 0 ? roundToCurrency(roundedTotalPrice / totalPages) : roundedTotalPrice;
-
-        return {
-            pages,
-            copies,
-            totalPages,
-            unitCostPerCopy,
-            unitCostPerPage,
-            unitPricePerCopy,
-            unitPricePerPage,
-            totalPrice: roundedTotalPrice,
-            calculatedTotalPrice: roundedTotalPrice,
-            adjustmentTotal: totalAdjustmentWithRounding,
-            adjustmentSnapshots: snapshotsExtended,
-            rounding: {
-                method: rounding.methodUsed,
-                step: rounding.stepUsed,
-                difference: roundingDiff,
-                originalTotal: totalPrice,
-                roundedTotal: roundedTotalPrice
-            },
-            serviceDetails: {
-                pages,
-                copies,
-                totalPages,
-                unitCostPerPage,
-                unitPricePerPage,
-                unitCostPerCopy,
-                unitPricePerCopy,
-                totalCost: baseCost,
-                totalPrice: roundedTotalPrice,
-                calculatedTotalPrice: roundedTotalPrice
+                if (mounted) {
+                    const totalPages = pages * copies;
+                    const transformed: DynamicServicePricingResult = {
+                        pages,
+                        copies,
+                        totalPages,
+                        unitCostPerCopy: copies > 0 ? roundToCurrency(baseCost / copies) : baseCost,
+                        unitPricePerCopy: result.unitPrice,
+                        unitCostPerPage: totalPages > 0 ? roundToCurrency(baseCost / totalPages) : baseCost,
+                        unitPricePerPage: totalPages > 0 ? roundToCurrency(result.unitPrice / totalPages) : result.unitPrice,
+                        totalCost: baseCost,
+                        totalPrice: result.totalPrice,
+                        calculatedTotalPrice: result.totalPrice,
+                        adjustmentTotal: result.adjustmentTotal,
+                        adjustmentSnapshots: result.adjustmentSnapshots,
+                        components: [],
+                        serviceDetails: {
+                            pages,
+                            copies,
+                            totalPages,
+                            unitCostPerPage: totalPages > 0 ? roundToCurrency(baseCost / totalPages) : baseCost,
+                            unitPricePerPage: totalPages > 0 ? roundToCurrency(result.unitPrice / totalPages) : result.unitPrice,
+                            unitCostPerCopy: copies > 0 ? roundToCurrency(baseCost / copies) : baseCost,
+                            unitPricePerCopy: result.unitPrice,
+                            totalCost: baseCost,
+                            totalPrice: result.totalPrice,
+                            calculatedTotalPrice: result.totalPrice
+                        }
+                    };
+                    setEnginePricing(transformed);
+                }
+            } catch (err) {
+                console.error('[ServiceCalculatorModal] Pricing engine error:', err);
             }
         };
-    }, [pages, copies, baseCost, adjustmentTotal, adjustmentSnapshots, companyConfig]);
 
-    const adjustmentRows = adjustmentSnapshots || [];
+        calculate();
+        return () => { mounted = false; };
+    }, [service.id, service.category, baseCost, pages, copies, normalizedAdjustments]);
+
+    useEffect(() => {
+        const binding = inventory.find(i => i.name?.toLowerCase().includes('binding'));
+        const pinning = inventory.find(i => i.name?.toLowerCase().includes('staple') || i.name?.toLowerCase().includes('pin'));
+        const covers = inventory.find(i => i.name?.toLowerCase().includes('cover') || i.name?.toLowerCase().includes('card'));
+
+        setFinishingOptions(prev => prev.map(opt => {
+            let materialCost = 0;
+            let conversionRate = opt.materialConversionRate || 1;
+            let materialId: string | undefined;
+
+            if (opt.id === 'binding' && binding) {
+                materialCost = Number((binding as any).cost_price ?? (binding as any).cost_per_unit ?? binding.cost ?? 0);
+                conversionRate = Number((binding as any).conversionRate ?? (binding as any).conversion_rate ?? 1);
+                materialId = binding.id;
+            } else if (opt.id === 'pinning' && pinning) {
+                materialCost = Number((pinning as any).cost_price ?? (pinning as any).cost_per_unit ?? pinning.cost ?? 0);
+                conversionRate = Number((pinning as any).conversionRate ?? (pinning as any).conversion_rate ?? 5000);
+                materialId = pinning.id;
+            } else if (opt.id === 'covers' && covers) {
+                materialCost = Number((covers as any).cost_price ?? (covers as any).cost_per_unit ?? covers.cost ?? 0);
+                conversionRate = Number((covers as any).conversionRate ?? (covers as any).conversion_rate ?? 100);
+                materialId = covers.id;
+            }
+
+            return {
+                ...opt,
+                cost: materialCost,
+                materialConversionRate: conversionRate,
+                materialId
+            };
+        }));
+    }, [inventory]);
+
+    const paper = useMemo(() => {
+        return inventory.find(i =>
+            i.type === 'Raw Material' &&
+            (i.name?.toLowerCase().includes('paper') || String(i.category || '').toLowerCase() === 'paper')
+        );
+    }, [inventory]);
+
+    const toner = useMemo(() => {
+        return inventory.find(i =>
+            i.type === 'Raw Material' &&
+            (i.name?.toLowerCase().includes('toner') || String(i.category || '').toLowerCase() === 'toner')
+        );
+    }, [inventory]);
+
+    const paperCost = useMemo(() => {
+        if (!paper) return 0;
+        const sheetsPerCopy = Math.ceil(pages / 2);
+        const totalSheets = sheetsPerCopy * copies;
+        const SHEETS_PER_REAM = 500;
+        const paperCostBasis = Number((paper as any).cost_price ?? (paper as any).cost_per_unit ?? paper.cost ?? 0);
+        const costPerSheet = paperCostBasis / SHEETS_PER_REAM;
+        return roundToCurrency(totalSheets * costPerSheet);
+    }, [paper, pages, copies]);
+
+    const tonerCost = useMemo(() => {
+        if (!toner) return 0;
+        const capacity = 20000;
+        const totalPages = pages * copies;
+        const tonerCostBasis = Number((toner as any).cost_price ?? (toner as any).cost_per_unit ?? toner.cost ?? 0);
+        const costPerPage = tonerCostBasis / capacity;
+        return roundToCurrency(totalPages * costPerPage);
+    }, [toner, pages, copies]);
+
+    const finishingCost = useMemo(() => {
+        const total = finishingOptions
+            .filter(opt => opt.coversPerCopy > 0)
+            .reduce((sum, opt) => {
+                const totalUsage = copies * opt.coversPerCopy;
+                const conversionRate = opt.materialConversionRate || 1;
+                if (conversionRate <= 0) return sum;
+                const materialUnitsNeeded = totalUsage / conversionRate;
+                return sum + (materialUnitsNeeded * opt.cost);
+            }, 0);
+        return roundToCurrency(total);
+    }, [finishingOptions, copies]);
+
+    const activePricing = enginePricing;
+
+    const adjustmentRows = enginePricing?.adjustmentSnapshots || [];
     const formatCurrency = (value: number) => `${currencySymbol}${formatNumber(value)}`;
     const bomTotal = roundToCurrency(paperCost + tonerCost);
     const toggleFinishingOption = (optionId: string) => {
@@ -507,11 +543,11 @@ export const ServiceCalculatorModal: React.FC<{
                             <div className="px-4 pb-4 space-y-3">
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-[#6b6c7f]">Service Dimensions</span>
-                                    <span className="font-bold text-[#393a3d]">{pricing.pages} pages x {pricing.copies} copies</span>
+                                    <span className="font-bold text-[#393a3d]">{activePricing.pages} pages x {activePricing.copies} copies</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <span className="text-[#6b6c7f]">Total Pages</span>
-                                    <span className="font-bold text-[#393a3d]">{pricing.totalPages}</span>
+                                    <span className="font-bold text-[#393a3d]">{activePricing.totalPages}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
                                     <div className="flex items-center gap-2">
@@ -618,7 +654,7 @@ export const ServiceCalculatorModal: React.FC<{
                             <div className="px-4 pb-4 space-y-2">
                                 {adjustmentRows.length > 0 ? (
                                     adjustmentRows.map((adj, index) => {
-                                        const totalAdj = (Number(adj.calculatedAmount) || 0) * pricing.copies;
+                                        const totalAdj = (Number(adj.calculatedAmount) || 0) * activePricing.copies;
                                         return (
                                             <div key={`${adj.name}-${index}`} className="flex justify-between items-center text-xs">
                                                 <span className="text-[#6b6c7f]">{adj.name}</span>
@@ -631,8 +667,22 @@ export const ServiceCalculatorModal: React.FC<{
                                 )}
                                 <div className="pt-2 border-t border-[#d4d7dc] flex justify-between items-center text-xs">
                                     <span className="font-bold text-[#393a3d] uppercase">Adjustment Total</span>
-                                    <span className="font-bold text-[#f59e0b]">{formatCurrency(pricing.adjustmentTotal)}</span>
+                                    <span className="font-bold text-[#f59e0b]">{formatCurrency(activePricing.adjustmentTotal)}</span>
                                 </div>
+                                {(() => {
+                                    const cost = activePricing.unitCostPerCopy || activePricing.totalCost / activePricing.copies;
+                                    const price = activePricing.unitPricePerCopy;
+                                    const profit = (price - cost) * activePricing.copies;
+                                    if (profit > 0) {
+                                        return (
+                                            <div className="mt-2 pt-2 border-t border-[#d4d7dc] flex justify-between items-center text-xs">
+                                                <span className="font-bold text-emerald-600 uppercase">Profit Margin</span>
+                                                <span className="font-bold text-emerald-600">{formatCurrency(profit)}</span>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                             </div>
                         )}
                     </div>
@@ -640,17 +690,17 @@ export const ServiceCalculatorModal: React.FC<{
                     <div className="bg-[#f4f5f8] p-4 rounded border border-[#d4d7dc] space-y-2.5">
                         <div className="flex justify-between items-center text-xs">
                             <span className="text-[#6b6c7f]">Unit Cost / Copy</span>
-                            <span className="font-bold text-[#393a3d]">{formatCurrency(pricing.unitCostPerCopy)}</span>
+                            <span className="font-bold text-[#393a3d]">{formatCurrency(activePricing.unitCostPerCopy)}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs">
                             <span className="text-[#6b6c7f]">Unit Price / Copy</span>
-                            <span className="font-bold text-[#0077c5]">{formatCurrency(pricing.unitPricePerCopy)}</span>
+                            <span className="font-bold text-[#0077c5]">{formatCurrency(activePricing.unitPricePerCopy)}</span>
                         </div>
                         {/* Hidden: Unit Price / Page */}
                         {/*
                         <div className="flex justify-between items-center text-xs">
                             <span className="text-[#6b6c7f]">Unit Price / Page</span>
-                            <span className="font-bold text-[#0077c5]">{formatCurrency(pricing.unitPricePerPage)}</span>
+                            <span className="font-bold text-[#0077c5]">{formatCurrency(activePricing.unitPricePerPage)}</span>
                         </div>
                         */}
                         <div className="pt-2 border-t border-[#d4d7dc] space-y-1.5">
@@ -658,12 +708,12 @@ export const ServiceCalculatorModal: React.FC<{
                             {/*
                             <div className="flex justify-between items-center text-xs">
                                 <span className="text-[#6b6c7f]">Cost Price (CP)</span>
-                                <span className="font-bold text-[#393a3d]">{formatCurrency(pricing.totalCost)}</span>
+                                <span className="font-bold text-[#393a3d]">{formatCurrency(activePricing.totalCost)}</span>
                             </div>
                             */}
                             <div className="flex justify-between items-center">
                                 <span className="text-xs font-bold text-[#393a3d] uppercase">Selling Price (SP)</span>
-                                <span className="text-xl font-bold text-[#0077c5]">{formatCurrency(pricing.totalPrice)}</span>
+                                <span className="text-xl font-bold text-[#0077c5]">{formatCurrency(activePricing.totalPrice)}</span>
                             </div>
                         </div>
                     </div>
@@ -676,13 +726,12 @@ export const ServiceCalculatorModal: React.FC<{
                             Cancel
                         </button>
                         <button
-                            // @ts-expect-error - Result type mismatch due to dynamically added properties
                             onClick={() => onConfirm({
-                                ...pricing,
+                                ...activePricing,
                                 priceLocked: true,
-                                lockedTotalPrice: pricing.totalPrice,
-                                lockedUnitPricePerCopy: pricing.unitPricePerCopy,
-                                lockedUnitCostPerCopy: pricing.unitCostPerCopy
+                                lockedTotalPrice: activePricing.totalPrice,
+                                lockedUnitPricePerCopy: activePricing.unitPricePerCopy,
+                                lockedUnitCostPerCopy: activePricing.unitCostPerCopy
                             })}
                             className="flex-1 py-3 bg-[#2ca01c] text-white rounded-full font-bold text-sm hover:bg-[#248217] shadow-sm flex items-center justify-center gap-2"
                         >

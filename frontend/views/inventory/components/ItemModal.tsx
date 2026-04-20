@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
+// PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
 import { X, Save, Plus, Trash2, AlertCircle, Package, DollarSign, Hash, MapPin, Truck, Tag, FileText, Box, Layers, ArrowRight, Wand2, Grid, Scale, RefreshCw, Eye, EyeOff, Info, Check, Edit3 } from 'lucide-react';
-import { Item, Warehouse, ProductVariant, PricingConfig, FinishingOption, AdjustmentSnapshot, BOMTemplate, MarketAdjustment, PricingRoundingMethod } from '../../../types';
+import { Item, Warehouse, ProductVariant, PricingConfig, FinishingOption, AdjustmentSnapshot, BOMTemplate, VolumePricingTier } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { generateAutoSKU, generateAutoBarcode, generateBulkVariants } from '../../../utils/skuGenerator';
 import { pricingService } from '../../../services/pricingService';
 import { dbService } from '../../../services/db';
 import { applyProductPriceRounding, ROUNDING_METHOD_OPTIONS } from '../../../services/pricingRoundingService';
-import { roundToCurrency } from '../../../utils/helpers';
 import { calculateBaseSellingPrice } from '../../../utils/pricing';
+import { calculateSellingPrice } from '../../../utils/pricing/pricingEngine';
 
 // Generate a unique ID without external dependency
 const generateId = (): string => {
@@ -74,6 +75,15 @@ const defaultItem: Partial<Item> = {
     }
 };
 
+const DEFAULT_FINISHING_BUTTONS: Array<{ id: string; name: string; cost: number; description?: string }> = [
+    { id: 'binding', name: 'Binding', cost: 150, description: 'Book binding - comb or spiral' },
+    { id: 'coverPages', name: 'Cover Pages', cost: 20, description: 'Front and back cover pages per copy' },
+    { id: 'cutting', name: 'Cutting & Trimming', cost: 30, description: 'Trim edges to clean finish' },
+    { id: 'holePunch', name: 'Hole Punching', cost: 20, description: 'Punch holes for folder binding' },
+    { id: 'folding', name: 'Folding', cost: 15, description: 'Fold pages for insertion' },
+    { id: 'stapling', name: 'Stapling', cost: 10, description: 'Corner or saddle stapling' }
+];
+
 interface VolumePricingManagerProps {
     enabled: boolean;
     tiers: VolumePricingTier[];
@@ -90,7 +100,8 @@ const VolumePricingManager: React.FC<VolumePricingManagerProps> = ({
     onToggle,
     onChange,
     currency,
-    basePrice
+    basePrice,
+    cost
 }) => {
     const sortedTiers = [...(tiers || [])].sort((a, b) => a.minQty - b.minQty);
 
@@ -262,6 +273,16 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
     // Stationery Pack Conversion State
     const [usePackConversion, setUsePackConversion] = useState(false);
 
+    // Live pricing preview from engine
+    const [enginePreview, setEnginePreview] = useState<{
+        unitPrice: number;
+        cost: number;
+        marginAmount: number;
+        adjustmentTotal: number;
+        adjustmentSnapshots: any[];
+        breakdown: any;
+    } | null>(null);
+
     // Computed values for pack conversion
     const derivedCostPerPiece = useMemo(() => {
         if (!formData.unitsPerPack || formData.unitsPerPack === 0) return 0;
@@ -291,12 +312,62 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
     }, [calculatedPrice, formData.pricingConfig?.selectedRoundingMethod, formData.pricingConfig?.customRoundingStep]);
 
     const isServiceType = formData.type === 'Service';
+    const activeMarketAdjustments = useMemo(
+        () => marketAdjustments.filter(ma => ma.active ?? ma.isActive),
+        [marketAdjustments]
+    );
 
     useEffect(() => {
         if (isServiceType && activeTab !== 'basic') {
             setActiveTab('basic');
         }
     }, [isServiceType, activeTab]);
+
+    useEffect(() => {
+        let mounted = true;
+        const updatePreview = async () => {
+            const cost = derivedCostPerPiece || formData.cost || 0;
+            if (cost <= 0) {
+                setEnginePreview(null);
+                return;
+            }
+
+            const adjustmentsInput = activeMarketAdjustments.map(adj => ({
+                name: adj.name,
+                type: adj.type,
+                value: adj.value,
+                percentage: adj.percentage ?? adj.value,
+                adjustmentId: adj.id,
+                isActive: true
+            }));
+
+            try {
+                const preview = await calculateSellingPrice({
+                    itemId: formData.id,
+                    categoryId: formData.category,
+                    baseCost: cost,
+                    adjustments: adjustmentsInput,
+                    context: 'POS'
+                });
+
+                if (mounted) {
+                    setEnginePreview({
+                        unitPrice: preview.unitPrice,
+                        cost: preview.cost,
+                        marginAmount: preview.marginAmount,
+                        adjustmentTotal: preview.adjustmentTotal,
+                        adjustmentSnapshots: preview.adjustmentSnapshots,
+                        breakdown: preview.breakdown
+                    });
+                }
+            } catch (err) {
+                console.error('[ItemModal] Pricing engine error:', err);
+            }
+        };
+
+        updatePreview();
+        return () => { mounted = false; };
+    }, [derivedCostPerPiece, formData.cost, formData.category, formData.id, activeMarketAdjustments]);
 
     const resolveRoundingBasePrice = () => {
         const raw = Number(formData.calculated_price);
@@ -313,7 +384,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
     // Helper function to apply rounding to a price
     const applyRoundingToPrice = (price: number, existingItem?: Item) => {
         // Materials are cost-only, no rounding needed
-        if (formData.type === 'Material' || formData.type === 'Stationery') {
+        if (formData.type === 'Raw Material' || formData.type === 'Stationery') {
             return {
                 calculatedPrice: price,
                 sellingPrice: price,
@@ -354,27 +425,12 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         dbService.getSetting<Record<string, number>>('finishingOptionCosts')
             .then(savedCosts => {
                 if (!mounted) return;
-                const defaults = [
-                    { id: 'binding', name: 'Binding', cost: 150, description: 'Book binding - comb or spiral' },
-                    { id: 'coverPages', name: 'Cover Pages', cost: 20, description: 'Front and back cover pages per copy' },
-                    { id: 'cutting', name: 'Cutting & Trimming', cost: 30, description: 'Trim edges to clean finish' },
-                    { id: 'holePunch', name: 'Hole Punching', cost: 20, description: 'Punch holes for folder binding' },
-                    { id: 'folding', name: 'Folding', cost: 15, description: 'Fold pages for insertion' },
-                    { id: 'stapling', name: 'Stapling', cost: 10, description: 'Corner or saddle stapling' }
-                ];
-                const merged = defaults.map(d => ({ ...d, cost: savedCosts?.[d.id] ?? d.cost }));
+                const merged = DEFAULT_FINISHING_BUTTONS.map(d => ({ ...d, cost: savedCosts?.[d.id] ?? d.cost }));
                 setFinishingButtons(merged);
             })
             .catch(() => {
                 // fallback to defaults
-                setFinishingButtons([
-                    { id: 'binding', name: 'Binding', cost: 150, description: 'Book binding - comb or spiral' },
-                    { id: 'coverPages', name: 'Cover Pages', cost: 20, description: 'Front and back cover pages per copy' },
-                    { id: 'cutting', name: 'Cutting & Trimming', cost: 30, description: 'Trim edges to clean finish' },
-                    { id: 'holePunch', name: 'Hole Punching', cost: 20, description: 'Punch holes for folder binding' },
-                    { id: 'folding', name: 'Folding', cost: 15, description: 'Fold pages for insertion' },
-                    { id: 'stapling', name: 'Stapling', cost: 10, description: 'Corner or saddle stapling' }
-                ]);
+                setFinishingButtons(DEFAULT_FINISHING_BUTTONS);
             });
         return () => { mounted = false; };
     }, []);
@@ -384,7 +440,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         if (item && mode === 'edit') {
             const shouldBeManual =
                 item.pricingConfig?.manualOverride ??
-                (item.type === 'Service' || item.type === 'Material');
+                (item.type === 'Service' || item.type === 'Raw Material');
 
             setFormData({
                 ...defaultItem,
@@ -399,7 +455,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         } else {
             setFormData({
                 ...defaultItem,
-                sku: generateSKU()
+                sku: generateAutoSKU('ITEM', 'NEW')
             });
         }
         setErrors({});
@@ -409,7 +465,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
     }, [item, mode, isOpen]);
 
     // Material filtering for BOM
-    const materials = useMemo(() => (inventory || []).filter((i: Item) => i.type === 'Material'), [inventory]);
+    const materials = useMemo(() => (inventory || []).filter((i: Item) => i.type === 'Raw Material'), [inventory]);
     const paperMaterials = useMemo(() => materials.filter((i: Item) => i.category?.toLowerCase().includes('paper') || i.name.toLowerCase().includes('paper')), [materials]);
     const tonerMaterials = useMemo(() => materials.filter((i: Item) => i.category?.toLowerCase().includes('toner') || i.category?.toLowerCase().includes('cartridge') || i.name.toLowerCase().includes('toner')), [materials]);
 
@@ -458,9 +514,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
 
         // 4. Market Adjustments
         let totalMarketAdj = 0;
-        const activeAdjs = marketAdjustments.filter(ma => {
-            const isActive = ma.active ?? ma.isActive;
-            if (!isActive) return false;
+        const applicableAdjustments = activeMarketAdjustments.filter(ma => {
             if (pItemType === 'Stationery') {
                 return pConfig.selectedAdjustmentIds?.includes(ma.id);
             }
@@ -468,7 +522,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         });
         const snapshots: AdjustmentSnapshot[] = [];
 
-        activeAdjs.forEach(adj => {
+        applicableAdjustments.forEach(adj => {
             let amount = 0;
             if (adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage') {
                 amount = totalCost * (adj.value / 100);
@@ -498,7 +552,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
 
     // Pricing Calculation Logic
     useEffect(() => {
-        if (formData.type === 'Material' || !formData.pricingConfig || formData.pricingConfig.manualOverride) return;
+        if (formData.type === 'Raw Material' || !formData.pricingConfig || formData.pricingConfig.manualOverride) return;
 
         const financials = calculateItemFinancials(formData.pages || 1, formData.pricingConfig, formData.type, formData.cost);
         if (!financials) return;
@@ -534,17 +588,16 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         formData.pages,
         formData.cost,
         materials,
-        marketAdjustments,
+        activeMarketAdjustments,
         companyConfig
     ]);
 
     // Helper to calculate adjustments for any item/variant based on its cost
     const getAdjustmentSnapshots = (baseCost: number): AdjustmentSnapshot[] => {
-        const activeAdjs = marketAdjustments.filter(ma => ma.active ?? ma.isActive);
         const snapshots: AdjustmentSnapshot[] = [];
         const pages = Number(formData.pages) || 1;
 
-        activeAdjs.forEach(adj => {
+        activeMarketAdjustments.forEach(adj => {
             let amount = 0;
             if (adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage') {
                 amount = baseCost * (adj.value / 100);
@@ -564,15 +617,18 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         return snapshots;
     };
 
+    const patchPricingConfig = (patch: Partial<PricingConfig>) => {
+        setFormData(prev => ({
+            ...prev,
+            pricingConfig: {
+                ...prev.pricingConfig!,
+                ...patch
+            }
+        }));
+    };
 
     const handlePricingConfigChange = (field: string, value: any) => {
-        setFormData({
-            ...formData,
-            pricingConfig: {
-                ...formData.pricingConfig!,
-                [field]: value
-            }
-        });
+        patchPricingConfig({ [field]: value } as Partial<PricingConfig>);
     };
 
     const handleToggleAdjustment = (adjId: string) => {
@@ -593,35 +649,6 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
         });
     };
 
-    const toggleFinishingOption = (type: 'Binding' | 'Stapling' | 'Covers') => {
-        setFormData(prev => {
-            const current = prev.pricingConfig?.finishingOptions || [];
-            const exists = current.find(o => o.type === type);
-
-            let updated;
-            if (exists) {
-                updated = current.filter(o => o.type !== type);
-            } else {
-                updated = [...current, {
-                    id: generateId(),
-                    type,
-                    name: type,
-                    quantity: 1,
-                    cost: 0,
-                    priceAdjustment: 0
-                }];
-            }
-
-            return {
-                ...prev,
-                pricingConfig: {
-                    ...prev.pricingConfig!,
-                    finishingOptions: updated
-                }
-            };
-        });
-    };
-
     const updateFinishingOption = (id: string, field: keyof FinishingOption, value: any) => {
         setFormData(prev => {
             const current = prev.pricingConfig?.finishingOptions || [];
@@ -634,34 +661,28 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
     };
 
 
-    const generateSKU = (): string => {
-        const prefix = 'ITM';
-        const timestamp = Date.now().toString(36).toUpperCase();
-        const random = Math.random().toString(36).substring(2, 5).toUpperCase();
-        return `${prefix}-${timestamp}-${random}`;
-    };
-
-    // Generate a unique barcode (EAN-13 style format)
-    const generateBarcode = (): string => {
-        // Use a company prefix (3 digits) + timestamp (6 digits) + random (3 digits) + checksum
-        const companyPrefix = '200'; // Standard internal product prefix
-        const timestamp = Date.now().toString().slice(-6);
-        const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-        const baseCode = companyPrefix + timestamp + random;
-
-        // Calculate EAN-13 checksum
-        let sum = 0;
-        for (let i = 0; i < 12; i++) {
-            const digit = parseInt(baseCode[i]);
-            sum += i % 2 === 0 ? digit : digit * 3;
-        }
-        const checksum = (10 - (sum % 10)) % 10;
-
-        return baseCode + checksum.toString();
-    };
-
     const generateVariantId = (): string => {
         return 'VAR-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substring(2, 5).toUpperCase();
+    };
+
+    const recalculateStationeryVariantPrice = (
+        currentVariant: Partial<ProductVariant>,
+        incomingPatch: Partial<ProductVariant>
+    ): Partial<ProductVariant> => {
+        const nextVariant = { ...currentVariant, ...incomingPatch };
+        const baseCost = Number(nextVariant.cost ?? formData.cost ?? 0);
+        const adjPercent = Number(nextVariant.adjustmentPercent || 0);
+        const adjustedPrice = baseCost * (1 + adjPercent / 100);
+        const roundingResult = applyProductPriceRounding({
+            calculatedPrice: adjustedPrice,
+            methodOverride: nextVariant.selectedRoundingMethod
+        });
+
+        return {
+            ...nextVariant,
+            calculated_price: roundingResult.originalPrice,
+            price: roundingResult.roundedPrice
+        };
     };
 
     const validateForm = (): boolean => {
@@ -720,7 +741,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                     finishingOptions: formData.pricingConfig.finishingOptions || [],
                     manualOverride:
                         formData.pricingConfig.manualOverride ??
-                        (formData.type === 'Service' || formData.type === 'Material' || formData.type === 'Stationery')
+                        (formData.type === 'Service' || formData.type === 'Raw Material' || formData.type === 'Stationery')
                 }
                 : undefined;
 
@@ -822,6 +843,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
 
         const variant: ProductVariant = {
             id: newVariant.id || generateVariantId(),
+            productId: formData.id || generateId(),
             uuid: generateId(),
             sku: newVariant.sku,
             name: newVariant.name,
@@ -1049,7 +1071,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
             {/* Modal */}
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+                <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-blue-100 rounded-lg">
                             <Package className="w-5 h-5 text-blue-600" />
@@ -1122,7 +1144,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                         <form onSubmit={handleSubmit} className="p-6">
                             {/* Basic Info Tab */}
                             {activeTab === 'basic' && (
-                                <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
+                                <div className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Name */}
                                         <div className="flex items-center gap-2">
@@ -1226,7 +1248,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                     }`}
                                             >
                                                 <option value="Product">Product</option>
-                                                <option value="Material">Material</option>
+                                                <option value="Raw Material">Material</option>
                                                 <option value="Service">Service</option>
                                                 <option value="Stationery">Stationery</option>
                                             </select>
@@ -1665,7 +1687,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                     </div>
 
                                     {/* Conversion Unit Section for Materials & Stationery */}
-                                    {(formData.type === 'Material' || formData.type === 'Stationery') && (
+                                    {(formData.type === 'Raw Material' || formData.type === 'Stationery') && (
                                         <div className="border-t border-slate-200 pt-6">
                                             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                                                 <Scale className="w-5 h-5 text-indigo-600" /> UOM Conversion
@@ -1728,13 +1750,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                             type="checkbox"
                                                             className="sr-only peer"
                                                             checked={formData.pricingConfig?.manualOverride || false}
-                                                            onChange={(e) => setFormData({
-                                                                ...formData,
-                                                                pricingConfig: {
-                                                                    ...formData.pricingConfig!,
-                                                                    manualOverride: e.target.checked
-                                                                }
-                                                            })}
+                                                            onChange={(e) => patchPricingConfig({ manualOverride: e.target.checked })}
                                                         />
                                                         <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                                                     </label>
@@ -1742,7 +1758,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                             </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                                                {marketAdjustments.filter(ma => ma.active ?? ma.isActive).map(rule => (
+                                                {activeMarketAdjustments.map(rule => (
                                                     <div
                                                         key={rule.id}
                                                         onClick={() => handleToggleAdjustment(rule.id)}
@@ -1777,7 +1793,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                         </span>
                                                     </div>
                                                 ))}
-                                                {marketAdjustments.filter(ma => ma.active ?? ma.isActive).length === 0 && (
+                                                {activeMarketAdjustments.length === 0 && (
                                                     <p className="col-span-2 text-center py-4 text-slate-400 text-sm italic">No active market adjustments available</p>
                                                 )}
                                             </div>
@@ -1832,12 +1848,18 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                         <span className="text-xl font-bold text-green-400">{currency}{formData.calculated_price?.toFixed(2) || formData.price?.toFixed(2) || '0.00'}</span>
                                                     </div>
                                                     <div className="text-right">
-                                                        <span className="text-[10px] text-slate-500 block uppercase">Real-time Margin</span>
-                                                        <span className="text-sm font-bold text-indigo-300">
+                                                        <span className="text-[10px] text-slate-500 block uppercase">Profit Margin</span>
+                                                        <span className="text-sm font-bold text-emerald-400">
                                                             {formData.cost && formData.price ? `${(((formData.price - formData.cost) / formData.cost) * 100).toFixed(1)}%` : '0%'}
                                                         </span>
                                                     </div>
                                                 </div>
+                                                {formData.cost && formData.price && formData.price > formData.cost && (
+                                                    <div className="mt-2 pt-2 border-t border-slate-600 flex justify-between items-center">
+                                                        <span className="text-xs text-emerald-400">Profit Amount</span>
+                                                        <span className="text-sm font-bold text-emerald-400">+{currency}{(formData.price - formData.cost).toFixed(2)}</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -1975,9 +1997,8 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
 
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                const activeRules = marketAdjustments.filter(ma => ma.active ?? ma.isActive);
-                                                                if (activeRules.length > 0) {
-                                                                    return activeRules.map(rule => (
+                                                                if (activeMarketAdjustments.length > 0) {
+                                                                    return activeMarketAdjustments.map(rule => (
                                                                         <div key={rule.id} className="px-3 py-1.5 border border-indigo-200 rounded-lg text-xs bg-indigo-100 text-indigo-900 font-medium flex items-center gap-2">
                                                                             <Truck className="w-3 h-3" />
                                                                             {rule.name}
@@ -2184,7 +2205,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
 
                             {/* Variants Tab */}
                             {!isServiceType && activeTab === 'variants' && (
-                                <div className="space-y-6">
+                                <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
                                     <div className="flex items-center justify-between">
                                         <div>
                                             <h4 className="text-sm font-semibold text-slate-700">Product Variants</h4>
@@ -2336,20 +2357,12 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                         value={newVariant.cost || 0}
                                                         onChange={(e) => {
                                                             const newCost = Number(e.target.value);
-                                                            setNewVariant({ ...newVariant, cost: newCost });
-                                                            // Auto-calculate price for Stationery variants
-                                                            if (formData.type === 'Stationery') {
-                                                                const baseMarginVal = calculateBaseSellingPrice(newCost, newVariant.marginPercent);
-                                                                if (newVariant.marginPercent) {
-                                                                    console.log(`[Variant Pricing] Base Margin Price: ${baseMarginVal}`);
-                                                                }
-                                                                const adjPrice = newCost * (1 + (newVariant.adjustmentPercent || 0) / 100);
-                                                                const roundingResult = applyProductPriceRounding({
-                                                                    calculatedPrice: adjPrice,
-                                                                    methodOverride: newVariant.selectedRoundingMethod
-                                                                });
-                                                                setNewVariant(prev => ({ ...prev, price: roundingResult.roundedPrice, calculated_price: roundingResult.calculatedPrice }));
-                                                            }
+                                                            const patch = { cost: newCost };
+                                                            setNewVariant(
+                                                                formData.type === 'Stationery'
+                                                                    ? recalculateStationeryVariantPrice(newVariant, patch)
+                                                                    : { ...newVariant, ...patch }
+                                                            );
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                                         placeholder="e.g. 5.00"
@@ -2380,17 +2393,12 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                         value={newVariant.adjustmentPercent || 0}
                                                         onChange={(e) => {
                                                             const adjPercent = Number(e.target.value);
-                                                            setNewVariant({ ...newVariant, adjustmentPercent: adjPercent });
-                                                            // Auto-calculate price for Stationery variants
-                                                            if (formData.type === 'Stationery') {
-                                                                const baseCost = newVariant.cost || formData.cost || 0;
-                                                                const adjPrice = baseCost * (1 + adjPercent / 100);
-                                                                const roundingResult = applyProductPriceRounding({
-                                                                    calculatedPrice: adjPrice,
-                                                                    methodOverride: newVariant.selectedRoundingMethod
-                                                                });
-                                                                setNewVariant(prev => ({ ...prev, price: roundingResult.roundedPrice, calculated_price: roundingResult.calculatedPrice }));
-                                                            }
+                                                            const patch = { adjustmentPercent: adjPercent };
+                                                            setNewVariant(
+                                                                formData.type === 'Stationery'
+                                                                    ? recalculateStationeryVariantPrice(newVariant, patch)
+                                                                    : { ...newVariant, ...patch }
+                                                            );
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                                         placeholder="e.g. 15.0"
@@ -2401,18 +2409,12 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                     <select
                                                         value={newVariant.selectedRoundingMethod || 'none'}
                                                         onChange={(e) => {
-                                                            setNewVariant({ ...newVariant, selectedRoundingMethod: e.target.value });
-                                                            // Auto-calculate price when rounding changes
-                                                            if (formData.type === 'Stationery') {
-                                                                const baseCost = newVariant.cost || formData.cost || 0;
-                                                                const adjPercent = newVariant.adjustmentPercent || 0;
-                                                                const adjPrice = baseCost * (1 + adjPercent / 100);
-                                                                const roundingResult = applyProductPriceRounding({
-                                                                    calculatedPrice: adjPrice,
-                                                                    methodOverride: e.target.value
-                                                                });
-                                                                setNewVariant(prev => ({ ...prev, price: roundingResult.roundedPrice, calculated_price: roundingResult.calculatedPrice }));
-                                                            }
+                                                            const patch = { selectedRoundingMethod: e.target.value };
+                                                            setNewVariant(
+                                                                formData.type === 'Stationery'
+                                                                    ? recalculateStationeryVariantPrice(newVariant, patch)
+                                                                    : { ...newVariant, ...patch }
+                                                            );
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                                     >

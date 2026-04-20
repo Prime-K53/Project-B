@@ -152,7 +152,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                                 textClass = "text-amber-600";
                             }
 
-                            return (
+                                return (
                                 <div key={idx} className="flex justify-between items-center">
                                     <span className="text-slate-400 text-[11px] font-normal tracking-tight flex items-center gap-1.5">
                                         <Icon size={10} className={colorClass} /> • {adj.adjustmentName}
@@ -161,6 +161,25 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                                 </div>
                             );
                         })}
+                        {(() => {
+                            const profitMargin = cart.reduce((sum, item) => {
+                                const itemCost = item.cost || 0;
+                                const itemPrice = item.price || 0;
+                                const margin = itemPrice - itemCost;
+                                return sum + (margin > 0 ? margin * item.quantity : 0);
+                            }, 0);
+                            if (profitMargin > 0) {
+                                return (
+                                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
+                                        <span className="text-emerald-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                            <TrendingUp size={10} className="text-emerald-500" /> • Profit Margin
+                                        </span>
+                                        <span className="text-emerald-600 font-mono text-[11px] font-semibold">+{currency}{formatNumber(profitMargin)}</span>
+                                    </div>
+                                );
+                            }
+return null;
+                        })()}
                     </div>
                 )}
 

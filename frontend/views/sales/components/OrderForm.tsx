@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+// PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
 import { X, Save, Plus, Trash2, Calculator, Info, ShieldCheck, Building2, Package, Tag, Clock, Search, ChevronDown, Coins, UserPlus, Calendar, RefreshCw, Wallet, Mail, Layers, ExternalLink, FileText, Printer, FileDown, Eye, TrendingUp, Truck, Scale, Copy } from 'lucide-react';
 import { useData } from '../../../context/DataContext';
 import { useOrders } from '../../../context/OrdersContext';
@@ -12,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { VariantSelectorModal, ServiceCalculatorModal } from '../../pos/components/PosModals';
 import { Loader2 } from 'lucide-react';
 import QuickPrintModal from '../../../components/QuickPrintModal';
+import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 
@@ -669,18 +671,6 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const calculateServicePricing = (service: Item, pages: number, copies: number) => {
-        return pricingService.calculateDynamicServicePrice(
-            service,
-            pages,
-            copies,
-            inventory,
-            bomTemplates,
-            marketAdjustments,
-            { useStoredPriceAsFinal: true }
-        );
-    };
-
     const openServiceCalculator = (service: Item, editIndex: number | null = null, initial?: { pages: number; copies: number }) => {
         setSelectedServiceForCalculator(service);
         setServiceEditIndex(editIndex);
@@ -690,12 +680,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         });
     };
 
-    const handleServicePricingConfirm = (pricing: DynamicServicePricingResult) => {
+    const handleServicePricingConfirm = async (pricing: DynamicServicePricingResult) => {
         if (!selectedServiceForCalculator) return;
 
         const service = selectedServiceForCalculator;
-        const adjustmentSnapshots = pricing.adjustmentSnapshots || [];
-        const adjustmentTotal = adjustmentSnapshots.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0);
 
         const pricedLine: CartItem = {
             ...service,
@@ -704,8 +692,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             price: pricing.unitPricePerCopy,
             cost: pricing.unitCostPerCopy,
             basePrice: pricing.unitCostPerCopy,
-            adjustmentSnapshots,
-            adjustmentTotal,
+            adjustmentSnapshots: pricing.adjustmentSnapshots || [],
+            adjustmentTotal: pricing.adjustmentTotal,
             pagesOverride: pricing.pages,
             serviceDetails: pricing.serviceDetails,
             // Store price lock information to prevent recalculation on quantity changes
@@ -715,68 +703,101 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             lockedUnitCostPerCopy: pricing.lockedUnitCostPerCopy
         } as any;
 
-        setFormData((prev: any) => {
-            const items = [...prev.items];
+        // Work with the current formData snapshot to compute merges synchronously
+        const currentItems = Array.isArray(formData.items) ? [...formData.items] : [];
 
-            if (serviceEditIndex !== null && serviceEditIndex >= 0 && serviceEditIndex < items.length) {
-                items[serviceEditIndex] = {
-                    ...items[serviceEditIndex],
-                    ...pricedLine
+        if (serviceEditIndex !== null && serviceEditIndex >= 0 && serviceEditIndex < currentItems.length) {
+            currentItems[serviceEditIndex] = {
+                ...currentItems[serviceEditIndex],
+                ...pricedLine
+            };
+            setFormData({ ...formData, items: currentItems });
+            notify(`${service.name} ${serviceEditIndex !== null ? 'updated' : 'added'}`, "success");
+            setSelectedServiceForCalculator(null);
+            setServiceEditIndex(null);
+            return;
+        }
+
+        const existingIdx = currentItems.findIndex((line: any) =>
+            line.type === 'Service'
+            && !line.parentId
+            && line.id === service.id
+            && Number(line.serviceDetails?.pages || line.pagesOverride || 0) === pricing.pages
+        );
+
+        if (existingIdx > -1) {
+            const mergedCopies = Number(currentItems[existingIdx].quantity || 0) + pricing.copies;
+
+            // If price is locked, maintain the locked unit price and scale the total
+            if (pricing.priceLocked && pricing.lockedUnitPricePerCopy !== undefined) {
+                currentItems[existingIdx] = {
+                    ...currentItems[existingIdx],
+                    quantity: mergedCopies,
+                    price: pricing.lockedUnitPricePerCopy,
+                    cost: pricing.lockedUnitCostPerCopy || currentItems[existingIdx].cost,
+                    basePrice: pricing.lockedUnitCostPerCopy || currentItems[existingIdx].basePrice,
+                    pagesOverride: pricing.pages,
+                    adjustmentSnapshots: pricing.adjustmentSnapshots || [],
+                    adjustmentTotal: pricing.adjustmentTotal,
+                    serviceDetails: pricing.serviceDetails,
+                    priceLocked: true,
+                    lockedTotalPrice: pricing.lockedTotalPrice,
+                    lockedUnitPricePerCopy: pricing.lockedUnitPricePerCopy,
+                    lockedUnitCostPerCopy: pricing.lockedUnitCostPerCopy
                 };
-                return { ...prev, items };
-            }
 
-            const existingIdx = items.findIndex((line: any) =>
-                line.type === 'Service'
-                && !line.parentId
-                && line.id === service.id
-                && Number(line.serviceDetails?.pages || line.pagesOverride || 0) === pricing.pages
-            );
-
-            if (existingIdx > -1) {
-                const mergedCopies = Number(items[existingIdx].quantity || 0) + pricing.copies;
-
-                // If price is locked, maintain the locked unit price and scale the total
-                if (pricing.priceLocked && pricing.lockedUnitPricePerCopy !== undefined) {
-                    items[existingIdx] = {
-                        ...items[existingIdx],
-                        quantity: mergedCopies,
-                        price: pricing.lockedUnitPricePerCopy,
-                        cost: pricing.lockedUnitCostPerCopy || items[existingIdx].cost,
-                        basePrice: pricing.lockedUnitCostPerCopy || items[existingIdx].basePrice,
-                        pagesOverride: pricing.pages,
-                        adjustmentSnapshots,
-                        adjustmentTotal,
-                        serviceDetails: pricing.serviceDetails,
-                        priceLocked: true,
-                        lockedTotalPrice: pricing.lockedTotalPrice,
-                        lockedUnitPricePerCopy: pricing.lockedUnitPricePerCopy,
-                        lockedUnitCostPerCopy: pricing.lockedUnitCostPerCopy
-                    };
-                } else {
-                    // If not locked, recalculate pricing for the merged quantity
-                    const mergedPricing = calculateServicePricing(service, pricing.pages, mergedCopies);
-                    const mergedSnapshots = mergedPricing.adjustmentSnapshots || [];
-                    const mergedAdjustmentTotal = mergedSnapshots.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0);
-
-                    items[existingIdx] = {
-                        ...items[existingIdx],
-                        quantity: mergedPricing.copies,
-                        price: mergedPricing.unitPricePerCopy,
-                        cost: mergedPricing.unitCostPerCopy,
-                        basePrice: mergedPricing.unitCostPerCopy,
-                        pagesOverride: mergedPricing.pages,
-                        adjustmentSnapshots: mergedSnapshots,
-                        adjustmentTotal: mergedAdjustmentTotal,
-                        serviceDetails: mergedPricing.serviceDetails
-                    };
-                }
+                setFormData({ ...formData, items: currentItems });
             } else {
-                items.push(pricedLine);
-            }
+                // If not locked, recalculate pricing using engine
+                const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive).map((adj: any) => ({
+                    name: adj.name,
+                    type: adj.type,
+                    value: adj.value,
+                    percentage: adj.percentage ?? adj.value,
+                    adjustmentId: adj.id,
+                    isActive: true
+                }));
 
-            return { ...prev, items };
-        });
+                const baseCost = Number(service.cost) || 0;
+                const mergedPricing = await calculateServicePrice({
+                    itemId: service.id,
+                    categoryId: service.category,
+                    baseCost: baseCost,
+                    pages: pricing.pages,
+                    copies: mergedCopies,
+                    adjustments: activeAdjs,
+                    marketAdjustments: activeAdjs,
+                    context: 'SERVICE'
+                });
+
+                const totalPages = pricing.pages * mergedCopies;
+                currentItems[existingIdx] = {
+                    ...currentItems[existingIdx],
+                    quantity: mergedCopies,
+                    price: mergedPricing.unitPrice,
+                    cost: mergedPricing.cost,
+                    basePrice: mergedPricing.cost,
+                    pagesOverride: pricing.pages,
+                    adjustmentSnapshots: mergedPricing.adjustmentSnapshots,
+                    adjustmentTotal: mergedPricing.adjustmentTotal,
+                    serviceDetails: {
+                        pages: pricing.pages,
+                        copies: mergedCopies,
+                        totalPages,
+                        unitCostPerPage: mergedPricing.cost / pricing.pages,
+                        unitPricePerCopy: mergedPricing.unitPrice,
+                        unitCostPerCopy: mergedPricing.cost,
+                        totalCost: baseCost,
+                        totalPrice: mergedPricing.totalPrice
+                    }
+                };
+
+                setFormData({ ...formData, items: currentItems });
+            }
+        } else {
+            currentItems.push(pricedLine);
+            setFormData({ ...formData, items: currentItems });
+        }
 
         notify(`${service.name} ${serviceEditIndex !== null ? 'updated' : 'added'}`, "success");
         setSelectedServiceForCalculator(null);
@@ -1059,7 +1080,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         notify(`${quantity}x${pagesPerCopy} pages added to voucher`, 'success');
     };
 
-    const handleAddItem = async (item: Item) => {
+const handleAddItem = async (item: Item) => {
         if (item.isVariantParent) {
             setSelectedProductForVariants(item);
             return;
@@ -1071,29 +1092,54 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             return;
         }
 
-        // Check if item already exists in the current list
         const existingItemIdx = formData.items.findIndex((i: any) => i.id === item.id && !i.parentId);
 
         if (existingItemIdx > -1) {
-            // Item exists, just increment quantity
             await handleQuantityChange(existingItemIdx, formData.items[existingItemIdx].quantity + 1);
             notify(`Incremented quantity for ${item.name}`, "success");
         } else {
-            // Add atomic stock reservation
             if (item.type !== 'Service') {
                 updateReservedStock(item.id, 1, `Selection in ${type} Form`);
             }
 
-            // Use inventory price directly, no recalculation
-            const prices = getInventoryPrices(item as CartItem);
+            const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+            const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+                const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+                let calcAmount = 0;
+                if (isPercentage) {
+                    calcAmount = Number(item.cost) * (adj.value / 100);
+                } else {
+                    calcAmount = adj.value;
+                }
+                return {
+                    name: adj.name,
+                    type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+                    value: adj.value,
+                    percentage: isPercentage ? adj.value : undefined,
+                    calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+                    adjustmentId: adj.id,
+                    isActive: true
+                };
+            });
+
+            const pricing = await calculateSellingPrice({
+                itemId: item.id,
+                categoryId: item.category,
+                baseCost: Number(item.cost),
+                quantity: 1,
+                adjustments: marketAdjustmentsInput,
+                context: 'ORDER'
+            });
+
             const newItem: CartItem = {
                 ...item,
                 quantity: 1,
                 discount: 0,
-                price: prices.price,
-                cost: prices.cost,
-                basePrice: prices.cost,
-                adjustmentSnapshots: prices.adjustmentSnapshots,
+                price: pricing.unitPrice,
+                cost: pricing.cost,
+                basePrice: pricing.cost,
+                adjustmentSnapshots: pricing.adjustmentSnapshots,
+                adjustmentTotal: pricing.adjustmentTotal,
                 pagesOverride: (item as any).pages
             };
 
@@ -1107,25 +1153,16 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         setItemSearch('');
     };
 
-    const handleVariantSelect = async (variant: ProductVariant) => {
+const handleVariantSelect = async (variant: ProductVariant) => {
         if (!selectedProductForVariants) return;
 
-        // Check if this specific variant already exists
         const existingItemIdx = formData.items.findIndex((i: any) => i.id === variant.id && i.parentId === selectedProductForVariants.id);
 
         if (existingItemIdx > -1) {
-            // Variant exists, just increment quantity
             await handleQuantityChange(existingItemIdx, formData.items[existingItemIdx].quantity + 1);
             notify(`Incremented quantity for ${variant.name}`, "success");
         } else {
-            // Apply Smart Pricing if configured for the variant (inherited from parent or specific)
-            let price = variant.price;
-            let adjustmentTotal = 0;
-            let adjustmentSnapshots: AdjustmentSnapshot[] = [];
             const parentItem = selectedProductForVariants;
-
-
-            // Variant Item Setup with complete adjustment data
             const variantItem: any = {
                 ...selectedProductForVariants,
                 id: variant.id,
@@ -1137,26 +1174,50 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 stock: variant.stock,
                 isVariantParent: false,
                 variants: [],
-                pagesOverride: variant.pages, // Default to variant pages
-                // ✅ Variant-specific adjustment data for margin tracking
+                pagesOverride: variant.pages,
                 pricingSource: variant.pricingSource,
                 productionCostSnapshot: variant.productionCostSnapshot,
-                quantity: (variant as any).quantity || 1 // Use selected quantity or default to 1
+                quantity: (variant as any).quantity || 1
             };
 
             const quantity = (variantItem as any).quantity || 1;
 
-            // Add atomic stock reservation for variant
             updateReservedStock(selectedProductForVariants.id, quantity, `Variant selection in ${type} Form`, variant.id);
 
-            // Use variant's inventory price directly — no recalculation
-            const prices = getInventoryPrices(variantItem as CartItem);
-            variantItem.price = Number(prices.price) || 0;
-            variantItem.cost = Number(prices.cost) || 0;
-            variantItem.basePrice = Number(prices.cost) || 0;
-            // ✅ Use calculated adjustmentSnapshots from getInventoryPrices
-            variantItem.adjustmentSnapshots = prices.adjustmentSnapshots;
-            variantItem.adjustmentTotal = prices.adjustmentSnapshots?.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0) || 0;
+            const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+            const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+                const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+                let calcAmount = 0;
+                if (isPercentage) {
+                    calcAmount = Number(variantItem.cost) * (adj.value / 100);
+                } else {
+                    calcAmount = adj.value;
+                }
+                return {
+                    name: adj.name,
+                    type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+                    value: adj.value,
+                    percentage: isPercentage ? adj.value : undefined,
+                    calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+                    adjustmentId: adj.id,
+                    isActive: true
+                };
+            });
+
+            const pricing = await calculateSellingPrice({
+                itemId: variant.id,
+                categoryId: variantItem.category,
+                baseCost: Number(variantItem.cost),
+                quantity: 1,
+                adjustments: marketAdjustmentsInput,
+                context: 'ORDER'
+            });
+
+            variantItem.price = pricing.unitPrice;
+            variantItem.cost = pricing.cost;
+            variantItem.basePrice = pricing.cost;
+            variantItem.adjustmentSnapshots = pricing.adjustmentSnapshots;
+            variantItem.adjustmentTotal = pricing.adjustmentTotal;
 
             setFormData((prev: any) => ({
                 ...prev,
@@ -1199,24 +1260,52 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 return;
             }
 
-            // If not locked, recalculate pricing for the new quantity
+            // If not locked, recalculate pricing using engine
             const pages = Number(cartItem.serviceDetails?.pages || item.pagesOverride || 1);
             const baseService = inventory.find((i: Item) => i.id === (cartItem.itemId || item.id)) || item;
-            const pricing = calculateServicePricing(baseService, pages, safeQty);
-            const adjustmentSnapshots = pricing.adjustmentSnapshots || [];
-            const adjustmentTotal = adjustmentSnapshots.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0);
 
+            const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive).map((adj: any) => ({
+                name: adj.name,
+                type: adj.type,
+                value: adj.value,
+                percentage: adj.percentage ?? adj.value,
+                adjustmentId: adj.id,
+                isActive: true
+            }));
+
+            const baseCost = Number(baseService.cost) || 0;
+            const pricing = await calculateServicePrice({
+                itemId: baseService.id,
+                categoryId: baseService.category,
+                baseCost: baseCost,
+                pages: pages,
+                copies: safeQty,
+                adjustments: activeAdjs,
+                marketAdjustments: activeAdjs,
+                context: 'SERVICE'
+            });
+
+            const totalPages = pages * safeQty;
             const newItems = [...formData.items];
             newItems[idx] = {
                 ...newItems[idx],
-                quantity: pricing.copies,
-                price: pricing.unitPricePerCopy,
-                cost: pricing.unitCostPerCopy,
-                basePrice: pricing.unitCostPerCopy,
-                pagesOverride: pricing.pages,
-                adjustmentSnapshots,
-                adjustmentTotal,
-                serviceDetails: pricing.serviceDetails
+                quantity: safeQty,
+                price: pricing.unitPrice,
+                cost: pricing.cost,
+                basePrice: pricing.cost,
+                pagesOverride: pages,
+                adjustmentSnapshots: pricing.adjustmentSnapshots,
+                adjustmentTotal: pricing.adjustmentTotal,
+                serviceDetails: {
+                    pages,
+                    copies: safeQty,
+                    totalPages,
+                    unitCostPerPage: pricing.cost / pages,
+                    unitPricePerCopy: pricing.unitPrice,
+                    unitCostPerCopy: pricing.cost,
+                    totalCost: baseCost,
+                    totalPrice: pricing.totalPrice
+                }
             };
 
             setFormData({ ...formData, items: newItems });
@@ -2191,6 +2280,26 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                                                 </div>
                                             );
                                         })}
+                                        {(() => {
+                                            const profitMargin = formData.items.reduce((sum, item) => {
+                                                const itemCost = item.cost || 0;
+                                                const itemPrice = item.price || 0;
+                                                const margin = itemPrice - itemCost;
+                                                const qty = item.quantity || 1;
+                                                return sum + (margin > 0 ? margin * qty : 0);
+                                            }, 0);
+                                            if (profitMargin > 0) {
+                                                return (
+                                                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
+                                                        <span className="text-emerald-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                                            <TrendingUp size={10} className="text-emerald-500" /> • Profit Margin
+                                                        </span>
+                                                        <span className="text-emerald-600 font-mono text-[11px] font-semibold">+{currency}{profitMargin.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
                                     </div>
                                     <div className="flex justify-between items-center pt-4 border-t border-slate-50">
                                         <div className="flex items-center gap-2 text-slate-400 font-normal text-[13px]">
@@ -2280,7 +2389,6 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                         currencySymbol={currency}
                         initialPages={serviceInitialValues.pages}
                         initialCopies={serviceInitialValues.copies}
-                        calculatePricing={(pages, copies) => calculateServicePricing(selectedServiceForCalculator, pages, copies)}
                         onConfirm={handleServicePricingConfirm}
                         onClose={() => {
                             setSelectedServiceForCalculator(null);

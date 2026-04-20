@@ -95,7 +95,7 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   const paperMaterials = useMemo(() => {
     const base = (inventory || []).filter(
       (i: any) =>
-        i.type === 'Material' &&
+        i.type === 'Raw Material' &&
         (String(i.category || '').toLowerCase() === 'paper' || i.name?.toLowerCase().includes('paper'))
     );
     const selected = (inventory || []).find((i: any) => String(i.id) === String(pricingConfig.paperId));
@@ -108,7 +108,7 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   const tonerMaterials = useMemo(() => {
     const base = (inventory || []).filter(
       (i: any) =>
-        i.type === 'Material' &&
+        i.type === 'Raw Material' &&
         (String(i.category || '').toLowerCase() === 'toner' || i.name?.toLowerCase().includes('toner'))
     );
     const selected = (inventory || []).find((i: any) => String(i.id) === String(pricingConfig.tonerId));
@@ -121,7 +121,7 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   const autoPaper = useMemo(() => {
     return (inventory || []).find(
       (i: any) =>
-        i.type === 'Material' &&
+        i.type === 'Raw Material' &&
         (i.name?.toLowerCase().includes('paper') || String(i.category || '').toLowerCase() === 'paper')
     );
   }, [inventory]);
@@ -129,7 +129,7 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
   const autoToner = useMemo(() => {
     return (inventory || []).find(
       (i: any) =>
-        i.type === 'Material' &&
+        i.type === 'Raw Material' &&
         (i.name?.toLowerCase().includes('toner') || String(i.category || '').toLowerCase() === 'toner')
     );
   }, [inventory]);
@@ -1157,6 +1157,19 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
                   <div className="text-xl font-bold text-green-400">${(feePerLearner * formData.number_of_learners).toFixed(2)}</div>
                 </div>
               </div>
+              {(() => {
+                const revenue = feePerLearner * formData.number_of_learners;
+                const profit = revenue - totalCost;
+                if (profit > 0) {
+                  return (
+                    <div className="mt-3 pt-3 border-t border-slate-600 flex justify-between items-center">
+                      <div className="text-xs text-emerald-400 font-semibold">Profit Margin</div>
+                      <div className="text-lg font-bold text-emerald-400">${profit.toFixed(2)}</div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </div>
 

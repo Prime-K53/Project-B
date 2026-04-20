@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calculator, ChevronDown, ChevronUp, X, Info, Copy, RefreshCw, Save, Printer, Package, Settings, Plus } from 'lucide-react';
+import { Calculator, ChevronDown, ChevronUp, X, Info, Copy, RefreshCw, Save, Printer, Package, Settings, Plus, TrendingUp } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useSales } from '../../context/SalesContext';
 import { applyProductPriceRounding } from '../../services/pricingRoundingService';
@@ -516,6 +516,18 @@ const SmartPricing: React.FC = () => {
                                         )}
                                     </div>
                                 </div>
+                                {(() => {
+                                    const profitMargin = displayTotal - baseCost;
+                                    if (profitMargin > 0) {
+                                        return (
+                                            <div className="mt-2 pt-2 border-t border-indigo-100 flex justify-between items-center">
+                                                <span className="text-sm font-semibold text-emerald-600">Profit Margin</span>
+                                                <span className="text-lg font-bold text-emerald-600">+{formatCurrency(profitMargin)}</span>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                                 <div className="text-center text-xs text-slate-400">
                                     Per copy: {formatCurrency(displayTotal / copies)}
                                 </div>
