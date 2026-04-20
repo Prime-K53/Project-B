@@ -1316,6 +1316,8 @@ export function calculateMarginAnalysis(transactions: any[] = []): any[] {
     // NOTE: wastageAdjustment is never written to the DB.
     // Defaults to 0 until persistence is added. See Phase 3+.
     const totalWastage = trans.wastageAdjustment || 0;
+    // NOTE: transportAdjustment is never written to the DB.
+    // Defaults to 0 until persistence is added. See Phase 3+.
     const totalTransport = trans.transportAdjustment || 0;
     // Use adjustmentTotal which is actually stored in the database
     const totalAdjustments = trans.adjustmentTotal || trans.adjustmentSnapshots?.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0) || 0;
