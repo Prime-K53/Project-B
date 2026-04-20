@@ -1,3 +1,6 @@
+// DEPRECATED: This file has zero importers as of April 21, 2026.
+// Do not add new imports. Scheduled for removal — see cleanup tracker.
+
 import {
   ExaminationBatch,
   ExaminationClass,
@@ -44,11 +47,18 @@ export interface ClassFinancialUpdate {
  * @param payload - The pricing sync payload with batch, settings, and adjustments
  * @param options - Optional sync configuration
  * @returns PricingSyncResult with success status and update details
+ * 
+ * @deprecated No callers found as of April 21, 2026.
+ * Candidate for removal after 2 weeks of silence.
+ * Functions were intended to be used by examination pricing sync flows
+ * but are not currently imported anywhere in the codebase.
  */
 export async function syncPricingToClasses(
   payload: PricingSyncPayload,
   options: SyncOptions = {}
 ): Promise<PricingSyncResult> {
+  console.warn('[DEPRECATED] examinationPricingSyncService.syncPricingToClasses called — this service has no known callers and is scheduled for removal.');
+  
   const { batchId, settings, adjustments, triggeredBy, triggerSource } = payload;
   const { triggerRecalculation = true } = options;
   
@@ -176,12 +186,19 @@ export async function syncPricingToClasses(
  * @param overrideAmount - The new override amount
  * @param userId - The ID of the user making the change
  * @returns OverrideCascadeResult with before/after values
+ * 
+ * @deprecated No callers found as of April 21, 2026.
+ * Candidate for removal after 2 weeks of silence.
+ * Functions were intended to be used by examination pricing sync flows
+ * but are not currently imported anywhere in the codebase.
  */
 export async function applyOverrideCascade(
   classId: string,
   overrideAmount: number,
   userId: string
 ): Promise<OverrideCascadeResult> {
+  console.warn('[DEPRECATED] examinationPricingSyncService.applyOverrideCascade called — this service has no known callers and is scheduled for removal.');
+  
   try {
     // Fetch current class data
     const cls = await examinationBatchService.getClass(classId);
@@ -220,12 +237,19 @@ export async function applyOverrideCascade(
  * @param overrides - Map of classId to override amount
  * @param userId - The ID of the user making the changes
  * @returns Array of OverrideCascadeResult for each updated class
+ * 
+ * @deprecated No callers found as of April 21, 2026.
+ * Candidate for removal after 2 weeks of silence.
+ * Functions were intended to be used by examination pricing sync flows
+ * but are not currently imported anywhere in the codebase.
  */
 export async function applyBatchOverrideCascade(
   batchId: string,
   overrides: Map<string, number>,
   userId: string
 ): Promise<OverrideCascadeResult[]> {
+  console.warn('[DEPRECATED] examinationPricingSyncService.applyBatchOverrideCascade called — this service has no known callers and is scheduled for removal.');
+  
   const results: OverrideCascadeResult[] = [];
   
   for (const [classId, overrideAmount] of overrides.entries()) {
@@ -248,11 +272,18 @@ export async function applyBatchOverrideCascade(
  * @param classId - The ID of the class to reset
  * @param userId - The ID of the user performing the reset
  * @returns The updated class data
+ * 
+ * @deprecated No callers found as of April 21, 2026.
+ * Candidate for removal after 2 weeks of silence.
+ * Functions were intended to be used by examination pricing sync flows
+ * but are not currently imported anywhere in the codebase.
  */
 export async function resetFinancialMetricsToSystemCalculated(
   classId: string,
   userId: string
 ): Promise<ExaminationClass> {
+  console.warn('[DEPRECATED] examinationPricingSyncService.resetFinancialMetricsToSystemCalculated called — this service has no known callers and is scheduled for removal.');
+  
   try {
     const cls = await examinationBatchService.getClass(classId);
     
@@ -296,6 +327,11 @@ export async function resetFinancialMetricsToSystemCalculated(
  * 
  * @param batchId - The batch ID to validate
  * @returns Object with validation results and any issues found
+ * 
+ * @deprecated No callers found as of April 21, 2026.
+ * Candidate for removal after 2 weeks of silence.
+ * Functions were intended to be used by examination pricing sync flows
+ * but are not currently imported anywhere in the codebase.
  */
 export async function validateBatchFinancialConsistency(
   batchId: string
@@ -305,6 +341,8 @@ export async function validateBatchFinancialConsistency(
   totalClasses: number;
   classesWithIssues: number;
 }> {
+  console.warn('[DEPRECATED] examinationPricingSyncService.validateBatchFinancialConsistency called — this service has no known callers and is scheduled for removal.');
+  
   try {
     const batch = await examinationBatchService.getBatch(batchId);
     
