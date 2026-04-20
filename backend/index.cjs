@@ -1319,6 +1319,8 @@ async function startServer() {
 });
 
 // 2.1 Calculate Variant Price - Dynamic pricing for product variants
+// SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+// Confirm before removing.
 app.post('/api/calculate-variant-price', (req, res) => {
   const { parentId, variantId, pages, quantity = 1 } = req.body;
   
@@ -1510,6 +1512,8 @@ app.post('/api/calculate-variant-price', (req, res) => {
 });
 
 // 3. GET Examinations (with status filter)
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
 app.get('/api/examinations', (req, res) => {
   const { status, school_id } = req.query;
   let query = "SELECT * FROM examinations WHERE 1=1";
@@ -1533,6 +1537,8 @@ app.get('/api/examinations', (req, res) => {
 });
 
 // 4. Multi-Subject Calculation API
+// SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+// Confirm before removing.
 app.post('/api/calculate', (req, res) => {
   const { school_id, subjects } = req.body;
   console.log(`Calculation requested for school_id: ${school_id}`);
@@ -1655,6 +1661,8 @@ app.post('/api/confirm-batch', async (req, res) => {
 });
 
 // 6. Complete Subject with Actual Waste
+// SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+// Confirm before removing.
 app.post('/api/complete-subject', async (req, res) => {
   const { exam_id, actual_waste_sheets } = req.body;
 
@@ -1771,6 +1779,8 @@ app.post('/api/complete-subject', async (req, res) => {
 });
 
 // 7. Generate Bulk Invoice
+// SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+// Confirm before removing.
 app.post('/api/generate-invoice', async (req, res) => {
   try {
     const { exam_ids, school_id, customer_id, sub_account_name } = req.body;
@@ -1827,6 +1837,8 @@ app.post('/api/generate-invoice', async (req, res) => {
 });
 
   // 8. Get All Invoices
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/invoices', checkPermission('view_invoices'), (req, res) => {
     db.all(`SELECT i.*, COALESCE(s.name, 'Independent Customer') as school_name 
             FROM invoices i 
@@ -1838,6 +1850,8 @@ app.post('/api/generate-invoice', async (req, res) => {
 });
 
 // 9. Mark Invoice as Paid
+// SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+// Confirm before removing.
 app.post('/api/invoices/:id/pay', (req, res) => {
   const { id } = req.params;
   const { payment_method } = req.body;
