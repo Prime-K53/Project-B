@@ -374,6 +374,9 @@ async function startServer() {
 
   // System & Licensing Endpoints
   const licenseService = require('./services/licenseService.cjs');
+
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/status', (req, res) => {
     res.json({ 
       status: 'online', 
@@ -386,6 +389,8 @@ async function startServer() {
     res.json({ message: 'API is operational' });
   });
 
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/health-check', (req, res) => {
     res.json({
       status: 'healthy',
@@ -394,6 +399,8 @@ async function startServer() {
     });
   });
 
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/system/license', (req, res) => {
     res.json({
       fingerprint: licenseService.getFingerprint(),
@@ -586,6 +593,8 @@ async function startServer() {
   }, settingsRoutes);
 
   // Production fallback endpoint: return a basic set of work centers/resources
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/production/seed-work-centers', (req, res) => {
     const mockWorkCenters = [
       { id: 'WC-1', name: 'Main Press', status: 'Active', description: 'Primary examination printing press' },
@@ -1290,6 +1299,8 @@ async function startServer() {
   });
 
   // 1. GET Schools
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/schools', checkPermission('view_schools'), (req, res) => {
     db.all("SELECT * FROM schools", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -1298,6 +1309,8 @@ async function startServer() {
 });
 
   // 2. GET Inventory
+  // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
+  // Confirm before removing.
   app.get('/api/inventory', checkPermission('view_inventory'), (req, res) => {
     db.all("SELECT * FROM inventory", [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
