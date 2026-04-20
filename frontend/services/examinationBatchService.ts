@@ -2,6 +2,7 @@ import { ExaminationBatch, ExaminationClass, ExaminationPricingSettings, Examina
 import { getUrl } from '../config/api.js';
 import { dbService } from './db';
 import { generateNextExaminationBatchNumber } from './documentNumberService';
+import { getHeaders, joinPath, safeJson, toServiceError, isLikelyNetworkError } from './examinationServiceUtils';
 
 export interface ExaminationInvoiceLineItem {
   id: string;
@@ -334,46 +335,12 @@ const removeOutboxEntries = async (ids: string[]) => {
   writeFallbackOutbox(fallback);
 };
 
-const getHeaders = () => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  const userJson = sessionStorage.getItem('nexus_user');
-  if (userJson) {
-    try {
-      const user = JSON.parse(userJson);
-      if (user.id) headers['x-user-id'] = user.id;
-      if (user.role) headers['x-user-role'] = user.role;
-      if (user.email) headers['x-user-email'] = user.email;
-      if (user.isSuperAdmin === true) headers['x-user-is-super-admin'] = 'true';
-    } catch (e) {
-      console.warn('Failed to parse user from session storage', e);
-    }
-  } else {
-    // Fallback for development/testing when user is not logged in
-    headers['x-user-id'] = 'USR-0001';
-    headers['x-user-role'] = 'Admin';
-    headers['x-user-is-super-admin'] = 'true';
-  }
-  return headers;
-};
-
 const fetchWithTimeout = async (
   endpoint: string,
   options: RequestInit = {},
   timeoutMs: number = REQUEST_TIMEOUT_MS
 ) => {
   let lastError: Error | null = null;
-
-  const isLikelyNetworkError = (error: Error) => {
-    const message = String(error.message || '').toLowerCase();
-    return (
-      error.name === 'TypeError'
-      || message.includes('failed to fetch')
-      || message.includes('networkerror')
-      || message.includes('network request failed')
-    );
-  };
 
   for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
     const base = API_BASE_CANDIDATES[index];
@@ -446,52 +413,6 @@ const fetchWithTimeout = async (
   }
 
   throw lastError || new Error('All API candidates failed');
-};
-
-const toServiceError = async (response: Response, fallback: string) => {
-  try {
-    const raw = await response.text();
-    const statusSuffix = ` (HTTP ${response.status})`;
-
-    // Detect HTML response (indicates backend error page, wrong URL, or proxy failure)
-    if (raw.trim().startsWith('<!DOCTYPE') || raw.trim().startsWith('<html')) {
-      return `Backend not reachable or wrong API URL: Received HTML instead of JSON${statusSuffix}`;
-    }
-
-    if (!raw || !raw.trim()) return `${fallback}${statusSuffix}`;
-
-    try {
-      const data = JSON.parse(raw);
-      const detail = data?.error || data?.message || data?.diagnostic;
-      if (detail) return `${fallback}: ${String(detail)}`;
-    } catch (parseError) {
-      console.error(`[examinationBatchService] Failed to parse JSON response:`, parseError);
-      console.debug(`[examinationBatchService] Raw response text:`, raw);
-    }
-
-    const compact = raw.replace(/\s+/g, ' ').trim();
-    const preview = compact.length > 180 ? `${compact.slice(0, 180)}...` : compact;
-    return `${fallback}: ${preview}${statusSuffix}`;
-  } catch (err) {
-    console.error(`[examinationBatchService] Error processing service error:`, err);
-    return `${fallback} (HTTP ${response.status})`;
-  }
-};
-
-const safeJson = async (response: Response, context: string) => {
-  const raw = await response.text();
-  
-  if (raw.trim().startsWith('<!DOCTYPE') || raw.trim().startsWith('<html')) {
-    throw new Error(`Backend not reachable or wrong API URL: Received HTML response in ${context}`);
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error(`[examinationBatchService] JSON parse error in ${context}:`, err);
-    console.debug(`[examinationBatchService] Failed content:`, raw);
-    throw new Error(`Invalid response format from server in ${context}. Expected JSON.`);
-  }
 };
 
 const requestWithFallback = async (

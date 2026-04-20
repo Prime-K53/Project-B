@@ -1,6 +1,7 @@
 import { ExaminationBatchNotification, NotificationAuditLog, NotificationType, NotificationPriority } from '../types';
 import { API_BASE_URL, getUrl } from '../config/api.js';
 import { dbService } from './db';
+import { getHeaders, joinPath, safeJson, toServiceError, isLikelyNetworkError } from './examinationServiceUtils';
 
 const REQUEST_TIMEOUT_MS = 30000;
 const HEAVY_REQUEST_TIMEOUT_MS = 180000;
@@ -10,37 +11,6 @@ const PASSWORD_BYPASS_USER_ID = 'USR-PASSWORD-BYPASS';
 
 const API_BASE_CANDIDATES = [`${API_BASE_URL}/examination`];
 let backendRetryAfter = 0;
-
-const joinPath = (base: string, endpoint: string) => {
-  const trimmedBase = String(base || '').replace(/^\/+|\/+$/g, '');
-  const trimmedEndpoint = String(endpoint || '').replace(/^\/+/, '');
-  if (!trimmedBase) return trimmedEndpoint;
-  if (!trimmedEndpoint) return trimmedBase;
-  return `${trimmedBase}/${trimmedEndpoint}`;
-};
-
-const getHeaders = () => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  const userJson = sessionStorage.getItem('nexus_user');
-  if (userJson) {
-    try {
-      const user = JSON.parse(userJson);
-      if (user.id) headers['x-user-id'] = user.id;
-      if (user.role) headers['x-user-role'] = user.role;
-      if (user.email) headers['x-user-email'] = user.email;
-      headers['x-user-is-super-admin'] = user.isSuperAdmin === true ? 'true' : 'false';
-    } catch (e) {
-      console.warn('Failed to parse user from session storage', e);
-    }
-  } else {
-    headers['x-user-id'] = 'USR-0001';
-    headers['x-user-role'] = 'Admin';
-    headers['x-user-is-super-admin'] = 'true';
-  }
-  return headers;
-};
 
 const getLocalNotificationsForUser = async (
   userId: string,
@@ -75,18 +45,6 @@ const fetchWithTimeout = async (
   timeoutMs: number = REQUEST_TIMEOUT_MS
 ) => {
   let lastError: Error | null = null;
-
-  const isLikelyNetworkError = (error: Error) => {
-    const message = String(error.message || '').toLowerCase();
-    return (
-      error.name === 'TypeError'
-      || message.includes('failed to fetch')
-      || message.includes('networkerror')
-      || message.includes('network request failed')
-      || message.includes('err_connection_closed')
-      || message.includes('connection closed')
-    );
-  };
 
   for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
     const base = API_BASE_CANDIDATES[index];
@@ -159,52 +117,6 @@ const fetchWithTimeout = async (
   }
 
   throw lastError || new Error('All API candidates failed');
-};
-
-const toServiceError = async (response: Response, fallback: string) => {
-  try {
-    const raw = await response.text();
-    const statusSuffix = ` (HTTP ${response.status})`;
-
-    // Detect HTML response (indicates backend error page, wrong URL, or proxy failure)
-    if (raw.trim().startsWith('<!DOCTYPE') || raw.trim().startsWith('<html')) {
-      return `Backend not reachable or wrong API URL: Received HTML instead of JSON${statusSuffix}`;
-    }
-
-    if (!raw || !raw.trim()) return `${fallback}${statusSuffix}`;
-
-    try {
-      const data = JSON.parse(raw);
-      const detail = data?.error || data?.message || data?.diagnostic;
-      if (detail) return `${fallback}: ${String(detail)}`;
-    } catch (parseError) {
-      console.error(`[examinationNotificationService] Failed to parse JSON response:`, parseError);
-      console.debug(`[examinationNotificationService] Raw response text:`, raw);
-    }
-
-    const compact = raw.replace(/\s+/g, ' ').trim();
-    const preview = compact.length > 180 ? `${compact.slice(0, 180)}...` : compact;
-    return `${fallback}: ${preview}${statusSuffix}`;
-  } catch (err) {
-    console.error(`[examinationNotificationService] Error processing service error:`, err);
-    return `${fallback} (HTTP ${response.status})`;
-  }
-};
-
-const safeJson = async (response: Response, context: string) => {
-  const raw = await response.text();
-  
-  if (raw.trim().startsWith('<!DOCTYPE') || raw.trim().startsWith('<html')) {
-    throw new Error(`Backend not reachable or wrong API URL: Received HTML response in ${context}`);
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error(`[examinationNotificationService] JSON parse error in ${context}:`, err);
-    console.debug(`[examinationNotificationService] Failed content:`, raw);
-    throw new Error(`Invalid response format from server in ${context}. Expected JSON.`);
-  }
 };
 
 export const examinationNotificationService = {
