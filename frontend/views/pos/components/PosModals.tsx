@@ -415,52 +415,6 @@ export const ServiceCalculatorModal: React.FC<{
         }));
     }, [inventory]);
 
-    const paper = useMemo(() => {
-        return inventory.find(i =>
-            i.type === 'Raw Material' &&
-            (i.name?.toLowerCase().includes('paper') || String(i.category || '').toLowerCase() === 'paper')
-        );
-    }, [inventory]);
-
-    const toner = useMemo(() => {
-        return inventory.find(i =>
-            i.type === 'Raw Material' &&
-            (i.name?.toLowerCase().includes('toner') || String(i.category || '').toLowerCase() === 'toner')
-        );
-    }, [inventory]);
-
-    const paperCost = useMemo(() => {
-        if (!paper) return 0;
-        const sheetsPerCopy = Math.ceil(pages / 2);
-        const totalSheets = sheetsPerCopy * copies;
-        const SHEETS_PER_REAM = 500;
-        const paperCostBasis = Number((paper as any).cost_price ?? (paper as any).cost_per_unit ?? paper.cost ?? 0);
-        const costPerSheet = paperCostBasis / SHEETS_PER_REAM;
-        return roundToCurrency(totalSheets * costPerSheet);
-    }, [paper, pages, copies]);
-
-    const tonerCost = useMemo(() => {
-        if (!toner) return 0;
-        const capacity = 20000;
-        const totalPages = pages * copies;
-        const tonerCostBasis = Number((toner as any).cost_price ?? (toner as any).cost_per_unit ?? toner.cost ?? 0);
-        const costPerPage = tonerCostBasis / capacity;
-        return roundToCurrency(totalPages * costPerPage);
-    }, [toner, pages, copies]);
-
-    const finishingCost = useMemo(() => {
-        const total = finishingOptions
-            .filter(opt => opt.coversPerCopy > 0)
-            .reduce((sum, opt) => {
-                const totalUsage = copies * opt.coversPerCopy;
-                const conversionRate = opt.materialConversionRate || 1;
-                if (conversionRate <= 0) return sum;
-                const materialUnitsNeeded = totalUsage / conversionRate;
-                return sum + (materialUnitsNeeded * opt.cost);
-            }, 0);
-        return roundToCurrency(total);
-    }, [finishingOptions, copies]);
-
     const activePricing = enginePricing;
 
     const adjustmentRows = enginePricing?.adjustmentSnapshots || [];
@@ -812,7 +766,7 @@ export const CustomerModal: React.FC<{
                                 <label className="text-[11px] font-bold text-[#6b6c7f] uppercase">Contact info</label>
                                 <input
                                     className="w-full p-2.5 border border-[#babec5] rounded text-sm focus:border-[#0077c5] outline-none bg-white"
-                                    placeholder="e.g. +265 888 123 456"
+                                    placeholder={getPlaceholder.phone()}
                                     value={newCustomerContact}
                                     onChange={e => setNewCustomerContact(e.target.value)}
                                 />
