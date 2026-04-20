@@ -1,3 +1,9 @@
+// DEPRECATED: This file has zero importers as of April 21, 2026.
+// Also contains a stale internal call to
+// pricingEngine.calculateExaminationBatchPricing which is not
+// exported by examinationPricingEngine.cjs.
+// Do not add new imports. Scheduled for removal — see cleanup tracker.
+
 const pricingEngine = require('./examinationPricingEngine.cjs');
 const batchWorkflow = require('./examinationBatchWorkflow.cjs');
 const invoiceAdapter = require('./examinationInvoiceAdapter.cjs');
@@ -9,7 +15,15 @@ class ExaminationService {
     this.repository = repo;
   }
 
+  /**
+   * @deprecated No callers found as of April 21, 2026.
+   * Candidate for removal after 2 weeks of silence.
+   * Functions were intended to be used by examination batch flows
+   * but are not currently imported anywhere in the codebase.
+   */
   async createBatch(data, userId = 'System') {
+    console.warn('[DEPRECATED] examinationOrchestrator.createBatch called — zero importers, stale internal call, scheduled for removal.');
+    
     const batch = await this.repository.createBatchRecord(data, userId);
     
     // Send notification
@@ -24,7 +38,15 @@ class ExaminationService {
     return batch;
   }
 
+  /**
+   * @deprecated No callers found as of April 21, 2026.
+   * Candidate for removal after 2 weeks of silence.
+   * Functions were intended to be used by examination batch flows
+   * but are not currently imported anywhere in the codebase.
+   */
   async calculateBatch(batchId, settings, userId = 'System') {
+    console.warn('[DEPRECATED] examinationOrchestrator.calculateBatch called — zero importers, stale internal call, scheduled for removal.');
+    
     const batch = await this.repository.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
     
@@ -45,7 +67,15 @@ class ExaminationService {
     return updatedBatch;
   }
 
+  /**
+   * @deprecated No callers found as of April 21, 2026.
+   * Candidate for removal after 2 weeks of silence.
+   * Functions were intended to be used by examination batch flows
+   * but are not currently imported anywhere in the codebase.
+   */
   async approveBatch(batchId, userId = 'System') {
+    console.warn('[DEPRECATED] examinationOrchestrator.approveBatch called — zero importers, stale internal call, scheduled for removal.');
+    
     const batch = await this.repository.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
     
@@ -63,7 +93,15 @@ class ExaminationService {
     return updatedBatch;
   }
 
+  /**
+   * @deprecated No callers found as of April 21, 2026.
+   * Candidate for removal after 2 weeks of silence.
+   * Functions were intended to be used by examination batch flows
+   * but are not currently imported anywhere in the codebase.
+   */
   async generateInvoice(batchId, userId = 'System', options = {}) {
+    console.warn('[DEPRECATED] examinationOrchestrator.generateInvoice called — zero importers, stale internal call, scheduled for removal.');
+    
     const batch = await this.repository.getBatchById(batchId);
     if (!batch) throw new Error('Batch not found');
     
