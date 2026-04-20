@@ -1,3 +1,5 @@
+const { toNumericValue, pickPositiveNumber, roundMoney } = require('./examinationSharedUtils');
+
 const EXAMINATION_INVOICE_ORIGIN = 'examination';
 
 const buildExaminationLogicalInvoiceNumber = (invoiceId, dateValue = new Date().toISOString()) => {
@@ -6,28 +8,6 @@ const buildExaminationLogicalInvoiceNumber = (invoiceId, dateValue = new Date().
   const numericId = Math.max(0, Math.floor(Number(invoiceId) || 0));
   return `EXM-${year}-${String(numericId).padStart(6, '0')}`;
 };
-
-const toNumericValue = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const normalized = value.replace(/,/g, '').trim();
-    if (!normalized) return null;
-    const parsed = Number(normalized);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const pickPositiveNumber = (...values) => {
-  for (const value of values) {
-    const numeric = toNumericValue(value);
-    if (numeric !== null && numeric > 0) return numeric;
-  }
-  return null;
-};
-
-const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const sanitizeSkuToken = (value, fallback = 'EXM') => {
   const token = String(value || '')

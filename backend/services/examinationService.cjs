@@ -4,6 +4,7 @@ const pricingEngine = require('./examinationPricingEngine.cjs');
 const batchWorkflow = require('./examinationBatchWorkflow.cjs');
 const examinationInvoiceAdapter = require('./examinationInvoiceAdapter.cjs');
 const { auditService } = require('../auditService.cjs');
+const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils');
 
 const PAGES_PER_SHEET = pricingEngine.PAGES_PER_SHEET;
 const TONER_PAGES_PER_KG = pricingEngine.TONER_PAGES_PER_KG;
@@ -40,26 +41,6 @@ const runRun = (query, params = []) => {
       else resolve(this);
     });
   });
-};
-
-const toNumericValue = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const normalized = value.replace(/,/g, '').trim();
-    if (!normalized) return null;
-    const num = Number(normalized);
-    return Number.isFinite(num) ? num : null;
-  }
-  return null;
-};
-
-const pickPositiveNumber = (...values) => {
-  for (const value of values) {
-    const num = toNumericValue(value);
-    if (num !== null && num > 0) return num;
-  }
-  return null;
 };
 
 const toBoolean = (value) => {
