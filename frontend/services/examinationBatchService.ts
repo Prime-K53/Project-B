@@ -3,6 +3,7 @@ import { getUrl } from '../config/api.js';
 import { dbService } from './db';
 import { generateNextExaminationBatchNumber } from './documentNumberService';
 import { getHeaders, joinPath, safeJson, toServiceError, isLikelyNetworkError } from './examinationServiceUtils';
+import { ensureBackendInProd } from './api';
 
 export interface ExaminationInvoiceLineItem {
   id: string;
@@ -87,12 +88,6 @@ const FALLBACK_OUTBOX_KEY = 'nexus_examination_batches_outbox_fallback';
 const API_BASE_CANDIDATES = ['api/examination'];
 
 const isProd = Boolean((import.meta as any)?.env?.PROD);
-
-const ensureBackendInProd = (context: string, error: unknown) => {
-  if (!isProd) return;
-  console.error(`[${context}] Backend request failed in production`, error);
-  throw error instanceof Error ? error : new Error(`${context} failed`);
-};
 
 const joinPath = (base: string, endpoint: string) => {
   const trimmedBase = String(base || '').replace(/^\/+|\/+$/g, '');

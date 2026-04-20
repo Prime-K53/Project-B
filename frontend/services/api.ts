@@ -42,7 +42,7 @@ const apiClient = axios.create({
 const isProd = Boolean(import.meta.env?.PROD);
 const PASSWORD_BYPASS_USER_ID = 'USR-PASSWORD-BYPASS';
 
-const ensureBackendInProd = (context: string, error: unknown) => {
+export const ensureBackendInProd = (context: string, error: unknown) => {
   if (!isProd) return;
   console.error(`[${context}] Backend request failed in production`, error);
   throw error instanceof Error ? error : new Error(`${context} failed`);
