@@ -26,6 +26,7 @@ import {
 } from '../types/reports';
 import { logger } from './logger';
 import { dbService } from './db';
+import { extractProfitMargin } from '@/utils/financial/extractors';
 
 // Storage keys
 const REPORT_DEFINITIONS_KEY = 'nexus_report_definitions';
@@ -1312,10 +1313,16 @@ export function getAgedData(
 export function calculateMarginAnalysis(transactions: any[] = []): any[] {
   return transactions.map((trans: any) => {
     const totalCost = (trans.items || []).reduce((sum: number, item: any) => sum + (item.cost || 0), 0);
-    const totalWastage = (trans.wastageAdjustment || 0);
-    const totalTransport = (trans.transportAdjustment || 0);
-    const totalProfit = (trans.profitAdjustment || 0);
-    const totalAdjustments = totalWastage + totalTransport + totalProfit;
+    // NOTE: wastageAdjustment is never written to the DB.
+    // Defaults to 0 until persistence is added. See Phase 3+.
+    const totalWastage = trans.wastageAdjustment || 0;
+    const totalTransport = trans.transportAdjustment || 0;
+    // Use adjustmentTotal which is actually stored in the database
+    const totalAdjustments = trans.adjustmentTotal || trans.adjustmentSnapshots?.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0) || 0;
+    // Get profit margin from the stored adjustmentTotal if no other profit data
+    const profitMargin = trans.profitMargin || trans.adjustmentTotal || 0;
+    // Keep totalProfit for backward compatibility
+    const totalProfit = extractProfitMargin(trans) || profitMargin;
 
     const costBeforeWastage = totalCost;
     const costBeforeTransport = costBeforeWastage + totalWastage;
@@ -1339,6 +1346,7 @@ export function calculateMarginAnalysis(transactions: any[] = []): any[] {
       marginPercent: Math.max(-100, Math.min(100, marginPercent)),
       totalAdjustments,
       adjustmentBreakdown: trans.adjustmentSnapshots || trans.transactionAdjustments || [],
+      profitMargin: extractProfitMargin(trans),
     };
   });
 }
