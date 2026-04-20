@@ -8,13 +8,13 @@ const WORKFLOW_VALIDATION_CODES = {
 
 const STATUS_ORDER = ['Draft', 'Calculated', 'Approved', 'Invoiced'];
 
+const { roundMoney } = require('./examinationSharedUtils');
+
 const toNumber = (value, fallback = 0) => {
   if (value === null || value === undefined || value === '') return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
-
-const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const createWorkflowError = (message, workflowCode) => {
   const error = new Error(message);
