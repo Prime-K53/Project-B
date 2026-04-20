@@ -215,19 +215,46 @@ const closeDbAndExit = (code = 1) => {
   }
 };
 
-// Security Middleware (Temporarily disabled)
-// app.use(helmet());
+// Security Middleware
+try {
+  const helmet = require('helmet');
+  app.use(helmet());
+} catch (e) {
+  console.warn('[Security] helmet is not available:', e && e.message);
+}
 
-// Rate Limiting (Temporarily disabled)
-/*
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+// Rate Limiting
+try {
+  const rateLimit = require('express-rate-limit');
+  const limiter = rateLimit({
+    windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+    max: Number(process.env.RATE_LIMIT_MAX) || 200, // Limit each IP
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  app.use(limiter);
+} catch (e) {
+  console.warn('[Security] express-rate-limit is not available:', e && e.message);
+}
+
+// Additional security headers applied to all responses
+app.use((req, res, next) => {
+  try {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', process.env.REFERRER_POLICY || 'no-referrer-when-downgrade');
+    // Only set HSTS if explicitly enabled via env to avoid local dev issues
+    if (process.env.ENABLE_HSTS === 'true') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    // Minimal CSP to mitigate inline script attacks; configurable via env
+    const csp = process.env.CONTENT_SECURITY_POLICY || "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;";
+    res.setHeader('Content-Security-Policy', csp);
+  } catch (err) {
+    // Non-fatal: continue request handling
+    console.warn('[Security] failed to set some headers:', err && err.message);
+  }
+  next();
 });
-app.use(limiter);
-*/
 
 app.use((req, res, next) => {
   const correlationId = req.headers['x-correlation-id'] || randomUUID();
@@ -246,6 +273,7 @@ app.use((req, res, next) => {
 
 // Audit middleware for correlation ID propagation and context capture
 const { auditContextMiddleware, auditAuthMiddleware, auditCrudMiddleware } = require('./auditMiddleware.cjs');
+const { validateTransactionPrice, calculateSellingPrice } = require('./services/pricingEngine.cjs');
 app.use(auditContextMiddleware);
 
 app.use('/api/auth', auditAuthMiddleware);
@@ -356,10 +384,6 @@ async function startServer() {
 
   app.get('/api', (req, res) => {
     res.json({ message: 'API is operational' });
-  });
-
-  app.get('/', (req, res) => {
-    res.json({ message: 'Prime ERP Backend Root is operational' });
   });
 
   app.get('/api/health-check', (req, res) => {
@@ -475,8 +499,30 @@ async function startServer() {
     );
   });
 
-  app.post('/api/sales', (req, res) => {
+  app.post('/api/sales', async (req, res) => {
     const payload = req.body || {};
+    
+    try {
+      if (payload.items && Array.isArray(payload.items)) {
+        for (const item of payload.items) {
+          if (item.price != null && item.cost != null) {
+            await validateTransactionPrice({
+              itemId: item.itemId || item.productId || item.id,
+              categoryId: item.categoryId || item.category,
+              cost: item.cost,
+              price: item.price,
+              quantity: item.quantity || 1,
+              adjustmentSnapshots: item.adjustmentSnapshots || [],
+              adjustmentTotal: item.adjustmentTotal
+            });
+          }
+        }
+      }
+    } catch (validationError) {
+      console.error('[Pricing Validation Failed]', validationError.message);
+      return res.status(400).json({ error: validationError.message, code: 'PRICE_VALIDATION_FAILED' });
+    }
+
     const id = payload.id || randomUUID();
     const date = payload.date || new Date().toISOString();
     const totalAmount = Number(payload.totalAmount ?? payload.total ?? 0);
@@ -1019,6 +1065,25 @@ async function startServer() {
       const o = req.body || {};
       if (!o.id || !o.items || !Array.isArray(o.items) || o.items.length === 0) {
         return sendError(res, 400, 'Order id and items are required', 'MISSING_FIELDS');
+      }
+
+      try {
+        for (const item of o.items || []) {
+          if (item.price != null && item.cost != null) {
+            await validateTransactionPrice({
+              itemId: item.itemId || item.productId || item.id,
+              categoryId: item.categoryId || item.category,
+              cost: item.cost,
+              price: item.price,
+              quantity: item.quantity || 1,
+              adjustmentSnapshots: item.adjustmentSnapshots || [],
+              adjustmentTotal: item.adjustmentTotal
+            });
+          }
+        }
+      } catch (validationError) {
+        console.error('[Pricing Validation Failed]', validationError.message);
+        return sendError(res, 400, validationError.message, 'PRICE_VALIDATION_FAILED');
       }
 
       const now = new Date().toISOString();
