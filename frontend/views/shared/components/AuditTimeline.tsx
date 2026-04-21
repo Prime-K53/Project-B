@@ -10,14 +10,18 @@ import { AuditLogEntry } from '../../../types';
 import { exportToCSV } from '../../../utils/helpers';
 
 interface AuditTimelineProps {
-    logs: AuditLogEntry[];
+    logs?: AuditLogEntry[];
+    entityType?: string;
+    entityId?: string;
     title?: string;
     subtitle?: string;
     hideFilters?: boolean;
 }
 
 export const AuditTimeline: React.FC<AuditTimelineProps> = ({ 
-    logs, 
+    logs = [], 
+    entityType,
+    entityId,
     title = "Audit Trail Intelligence", 
     subtitle = "Immutable security ledger capturing all system state changes.",
     hideFilters = false

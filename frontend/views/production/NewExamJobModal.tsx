@@ -368,37 +368,6 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
     }
 
     const base_internal_cost = materialCost;
-    let adjustmentTotal = 0;
-    const adjustmentBreakdown: { category: string; amount: number }[] = [];
-    const adjustmentSnapshots: any[] = [];
-
-    for (const adjustment of marketAdjustments || []) {
-      const isActive = Boolean(adjustment?.isActive ?? adjustment?.active);
-      if (!isActive) continue;
-
-      const normalizedType = normalizeAdjustmentType(adjustment?.type);
-      const numericValue = extractAdjustmentValue(adjustment, normalizedType);
-      const amount = normalizedType === 'FIXED'
-        ? (numericValue * total_pages)
-        : (base_internal_cost * (numericValue / 100));
-      const roundedAmount = Math.round(amount * 100) / 100;
-
-      adjustmentTotal += roundedAmount;
-      adjustmentBreakdown.push({
-        category: adjustment?.displayName || adjustment?.name || adjustment?.id || 'Adjustment',
-        amount: roundedAmount
-      });
-      adjustmentSnapshots.push({
-        name: adjustment?.displayName || adjustment?.name || adjustment?.id || 'Adjustment',
-        type: normalizedType,
-        value: numericValue,
-        calculatedAmount: roundedAmount
-      });
-    }
-    adjustmentTotal = Math.round(adjustmentTotal * 100) / 100;
-
-    // Total internal cost includes base cost plus adjustments
-    const internal_cost = base_internal_cost + adjustmentTotal;
 
     return {
       sheets_per_copy,
@@ -406,12 +375,12 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
       base_sheets,
       waste_sheets,
       total_sheets_used: total_sheets,
-      internal_cost,
+      internal_cost: base_internal_cost,
       material_cost: materialCost,
       base_cost: base_internal_cost,
-      adjustmentTotal,
-      adjustmentBreakdown,
-      adjustmentSnapshots,
+      adjustmentTotal: 0,
+      adjustmentBreakdown: [],
+      adjustmentSnapshots: [],
       toner_kgs
     };
   };
@@ -461,8 +430,11 @@ export const NewExamJobModal: React.FC<NewExamJobModalProps> = ({
       const total_cost = base_cost + adjustmentTotal;
       const selling_price = total_learners * price_per_learner;
 
-      // Profit = selling price - total cost
-      const profit = selling_price - total_cost;
+      // Profit extracted from adjustmentSnapshots (NOT recalculated)
+      const profitMarginSnapshot = adjustmentSnapshots.find(s => s.name === 'Profit Margin');
+      const profit = profitMarginSnapshot 
+        ? profitMarginSnapshot.calculatedAmount * total_learners 
+        : selling_price - total_cost;
 
       return {
         selling_price,

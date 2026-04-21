@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ReportDefinition, ReportColumn, ReportFilter, ReportSorting, ReportGrouping, ReportChart, ReportCategory, ReportType, DEFAULT_REPORT_DEFINITIONS } from '../../types/reports';
+import { ReportDefinition, ReportColumn, ReportFilter, ReportSorting, ReportGrouping, ReportChart, ReportCategory, ReportType, DEFAULT_REPORT_DEFINITIONS, FilterOperator } from '../../types/reports';
 import { reportService } from '../../services/reportService';
 import { logger } from '../../services/logger';
 import Button from '../../components/Button';
@@ -797,7 +797,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ definitionId, onSave, onC
           {definitionId ? 'Edit Report' : 'Create Report'}
         </h2>
         <div className="flex space-x-2">
-          <Button variant="secondary" onClick={onCancel}>
+          <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={loading}>
@@ -1003,7 +1003,7 @@ const ColumnDialog: React.FC<ColumnDialogProps> = ({ column, fields, onSave, onC
         </div>
 
         <div className="flex justify-end space-x-2 pt-4 border-t">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={handleSave}>
@@ -1104,7 +1104,7 @@ const FilterDialog: React.FC<FilterDialogProps> = ({ filter, fields, onSave, onC
         </label>
 
         <div className="flex justify-end space-x-2 pt-4 border-t">
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={handleSave}>

@@ -186,6 +186,7 @@ export interface CompanyConfig {
   logo?: string;
   signature?: string;
   footer?: string;
+  showCompanyLogo?: boolean;
 
   // Configuration sections
   appearance: AppearanceConfig;
@@ -278,11 +279,11 @@ export interface SalesOrder {
   territoryId?: string | null;
   orderDate: string;
   deliveryDate?: string | null;
-  status: 'Draft' | 'Confirmed' | 'Processing' | 'Shipped' | 'Completed' | 'Cancelled';
+  status: 'Draft' | 'Confirmed' | 'Processing' | 'Cancelled' | 'Fulfilled';
   items: SalesOrderItem[];
   subtotal: number;
-  discounts?: number;
-  tax?: number;
+  discounts: number;
+  tax: number;
   total: number;
   notes?: string;
 }
@@ -341,19 +342,7 @@ export interface SalesOrderItem {
   line_total?: number;
 }
 
-export interface SalesOrder {
-  id: string;
-  quotationId?: string | null;
-  customerId?: string | null;
-  orderDate: string;
-  deliveryDate?: string | null;
-  status: 'Draft' | 'Confirmed' | 'Processing' | 'Fulfilled' | 'Cancelled';
-  items: SalesOrderItem[];
-  subtotal: number;
-  discounts: number;
-  tax: number;
-  total: number;
-  notes?: string;
+export interface SalesOrder extends SalesOrderBase {
   created_by?: string;
   created_at?: string;
 }
@@ -666,6 +655,14 @@ export interface SmartPricingConfig {
   hiddenBOMId?: string;
   bomTemplateId?: string;
   adjustmentPercentage?: number;
+  pages?: number;
+  copies?: number;
+  paperItemId?: string;
+  tonerItemId?: string;
+  finishingEnabled?: string[];
+  roundingMethod?: string;
+  roundedPrice?: number;
+  originalPrice?: number;
   [key: string]: any;
 }
 export type SidebarStyle = any;

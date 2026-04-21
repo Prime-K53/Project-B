@@ -4392,10 +4392,10 @@ const examinationService = {
           const roundingDiffPerLearner = Math.round((roundedFeePerLearner - expectedFeePerLearner) * 100) / 100;
 
           if (roundingDiffPerLearner > 0) {
-            const roundingTotalForClass = Math.round(roundingDiffPerLearner * learners * 100) / 100;
-            totalAdjustments = Math.round((totalAdjustments + roundingTotalForClass) * 100) / 100;
-            totalCost = Math.round((totalBomCost + totalAdjustments) * 100) / 100;
+            // Update the expected fee to the rounded value
             expectedFeePerLearner = roundedFeePerLearner;
+            // Calculate totalCost FROM the fee to ensure consistency (forward calculation)
+            totalCost = Math.round(expectedFeePerLearner * learners * 100) / 100;
           }
         }
 
@@ -4405,6 +4405,9 @@ const examinationService = {
           ? Number(cls.manual_cost_per_learner)
           : expectedFeePerLearner;
 
+        // CRITICAL FIX: Calculate liveTotalPreview FROM fee to ensure fee × learners = total
+        // This prevents floating-point precision mismatch where total (calculated as fee × learners)
+        // differs from the sum of BOM + adjustments due to rounding at intermediate steps.
         const liveTotalPreview = Math.round(finalFeePerLearner * learners * 100) / 100;
 
         // Update the class

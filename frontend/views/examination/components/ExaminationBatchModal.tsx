@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Plus, Search, ChevronDown, Building2, UserPlus, Coins, Calendar} from 'lucide-react';
+import { X, Save, Plus, Search, ChevronDown, Building2, UserPlus, Coins, Calendar, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useExamination } from '../../../context/ExaminationContext';
 import { useAuth } from '../../../context/AuthContext';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../../components/Ca
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../../components/Dialog';
 import { toast } from '../../../components/Toast';
 import { Customer } from '../../../types';
+import { getPlaceholder } from '../../../constants/placeholders';
 import { dbService } from '../../../services/db';
 
 interface ExaminationBatchModalProps {
@@ -537,7 +538,7 @@ const ExaminationBatchModal: React.FC<ExaminationBatchModalProps> = ({ isOpen, o
                 <Input
                   value={newCustomer.phone}
                   onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="+265 999 123 456"
+                  placeholder={getPlaceholder.phone()}
                 />
               </div>
               <div>

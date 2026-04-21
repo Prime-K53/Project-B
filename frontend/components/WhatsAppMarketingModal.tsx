@@ -3,6 +3,7 @@ import {
   MessageSquare, Send, X, Users, MessageCircle, 
   Sparkles, Check, ChevronRight, Copy 
 } from 'lucide-react';
+import { getPlaceholder } from '../constants/placeholders';
 
 const AI_TEMPLATES = [
   {
@@ -333,7 +334,7 @@ const WhatsAppMarketingModal: React.FC<WhatsAppMarketingModalProps> = ({
                       </label>
                       <input
                         type="text"
-                        placeholder="e.g. +265 888 123 456"
+                        placeholder={getPlaceholder.phone()}
                         value={recipient}
                         onChange={(e) => setRecipient(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"

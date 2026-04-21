@@ -25,6 +25,21 @@ import {
 import { logger } from './logger';
 
 /**
+ * Helper to get dynamic config from CompanyConfig (mirrored from helpers)
+ */
+const getCompanyConfig = () => {
+    const saved = localStorage.getItem('nexus_company_config');
+    if (saved) {
+        try {
+            return JSON.parse(saved);
+        } catch (e) {
+            console.error("Failed to parse company config", e);
+        }
+    }
+    return null;
+};
+
+/**
  * Helper to get dynamic GL mapping from CompanyConfig
  */
 const getGLConfig = () => {
@@ -1497,13 +1512,13 @@ export const transactionService = {
                 let invoiceId = hasInvoiceIdConflict ? '' : String(sale.id);
                 if (!hasInvoiceIdConflict) {
                     try {
-                        assertInvoiceNumberFormat(invoiceId, undefined, 'invoice');
+                        assertInvoiceNumberFormat(invoiceId, getCompanyConfig(), 'invoice');
                     } catch {
                         invoiceId = '';
                     }
                 }
                 if (!invoiceId) {
-                    invoiceId = await generateNextSalesInvoiceNumber();
+                    invoiceId = await generateNextSalesInvoiceNumber(getCompanyConfig());
                 }
 
                 const invoice: Invoice = {
@@ -1880,7 +1895,7 @@ export const transactionService = {
                     invoice.dueDate = issuedDate;
                 }
 
-                assertInvoiceNumberFormat(invoice.id, undefined, 'invoice');
+                assertInvoiceNumberFormat(invoice.id, getCompanyConfig(), 'invoice');
 
                 // 1. Save Invoice
                 await invoiceStore.put(invoice);
@@ -2205,7 +2220,7 @@ export const transactionService = {
                     invoice.dueDate = issuedDate;
                 }
 
-                assertInvoiceNumberFormat(invoice.id, undefined, 'invoice');
+                assertInvoiceNumberFormat(invoice.id, getCompanyConfig(), 'invoice');
 
                 // 1. Save Invoice
                 await invoiceStore.put(invoice);

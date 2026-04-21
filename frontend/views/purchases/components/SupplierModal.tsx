@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Phone, MapPin, FileText, Building, Landmark, Truck } from 'lucide-react';
 import { Supplier } from '../../../types';
+import { getPlaceholder } from '../../../constants/placeholders';
 
 interface SupplierModalProps {
   isOpen: boolean;
@@ -142,7 +143,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({ isOpen, onClose, o
                       value={formData.phone || ''}
                       onChange={handleChange}
                       className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none text-sm bg-slate-50/50"
-                      placeholder="e.g. +265 888 123 456"
+                      placeholder={getPlaceholder.phone()}
                     />
                     <Phone className="absolute left-4 top-3 text-slate-400" size={18} />
                   </div>
@@ -165,7 +166,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({ isOpen, onClose, o
                           onChange={handleChange}
                           rows={4}
                           className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none resize-none text-sm bg-slate-50/50"
-                          placeholder="e.g. 123 Business Rd, Lilongwe"
+                          placeholder={getPlaceholder.address()}
                         />
                       </div>
 
@@ -192,7 +193,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({ isOpen, onClose, o
                           disabled={useBillingForShipping}
                           rows={4}
                           className={`w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none resize-none text-sm ${useBillingForShipping ? 'bg-slate-100 text-slate-400' : 'bg-slate-50/50'}`}
-                          placeholder="e.g. Plot 47, Sector 2, Blantyre"
+                          placeholder={`${getPlaceholder.addressLine2()}, ${getPlaceholder.city()}`}
                         />
                       </div>
                     </div>
@@ -205,7 +206,7 @@ export const SupplierModal: React.FC<SupplierModalProps> = ({ isOpen, onClose, o
                           value={formData.city || ''}
                           onChange={handleChange}
                           className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none text-sm bg-slate-50/50"
-                          placeholder="e.g. Lilongwe"
+                          placeholder={getPlaceholder.city()}
                         />
                       </div>
                     </div>

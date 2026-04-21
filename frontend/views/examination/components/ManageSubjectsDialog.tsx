@@ -51,7 +51,7 @@ const getMaterialUnitCost = (item: Item | undefined): number => (
 
 const isHiddenBomMaterialCandidate = (item: Item): boolean => {
   const typeHint = String((item as any)?.type ?? '').trim().toLowerCase();
-  if (typeHint === 'material') return true;
+  if (typeHint === 'Raw Material') return true;
   const hint = `${String(item?.name || '')} ${String((item as any)?.material || '')} ${String(item?.category || '')} ${String((item as any)?.category_id || '')}`.toLowerCase();
   return hint.includes('paper') || hint.includes('toner');
 };

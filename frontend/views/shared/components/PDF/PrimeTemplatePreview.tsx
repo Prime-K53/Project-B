@@ -5,6 +5,7 @@ import { attachDocumentSecurity } from '../../../../utils/documentSecurity.ts';
 import { PrimeDocument } from './PrimeDocument.tsx';
 import { PrimeDocData } from './schemas.ts';
 import { getDefaultPaymentTermsLabel } from './templateSettings.ts';
+import { getPlaceholder } from '../../../../constants/placeholders';
 
 interface PrimeTemplatePreviewProps {
   config: CompanyConfig;
@@ -32,8 +33,8 @@ const buildPreviewDocumentData = (config: CompanyConfig): PrimeDocData => {
     dueDate: dueDate.toLocaleDateString(),
     paymentTerms,
     clientName: 'Mwai Academy',
-    address: 'Area 47, Lilongwe',
-    phone: '+265 999 123 456',
+    address: getPlaceholder.address(),
+    phone: getPlaceholder.phone(),
     createdAtIso: issueDate.toISOString(),
     createdByName: 'Template Preview',
     items,

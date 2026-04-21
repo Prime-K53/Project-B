@@ -20,6 +20,8 @@ interface InventoryContextType {
     refreshMarketAdjustments: () => Promise<void>;
     isLoading: boolean;
     fetchInventoryData: () => Promise<void>;
+    fetchInventory: () => Promise<void>;
+    fetchProcurementData: () => Promise<void>;
 
     addItem: (item: Item) => Promise<void>;
     updateItem: (item: Item, reason?: string) => Promise<void>;
@@ -463,6 +465,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             isLoading,
             refreshMarketAdjustments: fetchMarketAdjustments,
             fetchInventoryData: fetchInventory,
+            fetchInventory,
+            fetchProcurementData,
             addItem, updateItem, recalculatePrice, deleteItem, addWarehouse,
             addPurchase, updatePurchase, approvePurchase, saveGoodsReceipt, processGoodsReceipt, deleteGoodsReceipt,
             updateStock, updateReservedStock, transferStock, getAvailableWithKits,

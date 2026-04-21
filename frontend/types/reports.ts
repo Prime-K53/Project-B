@@ -92,7 +92,8 @@ export type ReportType =
   | 'withholding_tax'
   | 'tax_compliance'
   
-  // Custom
+  // Generic/Custom
+  | 'tabular'
   | 'custom';
 
 /**
@@ -647,4 +648,5 @@ export const EXPORT_FORMAT_ICONS: Record<ExportFormat, string> = {
   csv: '📋',
   json: '{ }',
   html: '🌐',
+  print: '🖨️',
 };

@@ -774,8 +774,9 @@ const initDb = () => {
         // Seed initial data
         db.get("SELECT COUNT(*) as count FROM inventory", (err, row) => {
           if (row && row.count === 0) {
-            db.run("INSERT INTO inventory (material, quantity, cost_per_unit) VALUES (?, ?, ?)", ['Paper', 10000, 35]);
-            db.run("INSERT INTO inventory (material, quantity, cost_per_unit) VALUES (?, ?, ?)", ['Toner', 1000000, 0.25]);
+            // Insert default inventory items with required name and id fields
+            db.run("INSERT INTO inventory (id, name, material, quantity, cost_per_unit) VALUES (?, ?, ?, ?, ?)", ['INV-PAPER-DEFAULT', 'Paper', 'Paper', 10000, 35]);
+            db.run("INSERT INTO inventory (id, name, material, quantity, cost_per_unit) VALUES (?, ?, ?, ?, ?)", ['INV-TONER-DEFAULT', 'Toner', 'Toner', 1000000, 0.25]);
             console.log('Inventory seeded.');
           }
         });

@@ -1025,9 +1025,11 @@ export const VariantSelectorModal: React.FC<{
                             </div>
                             <div className="text-right ml-4">
                                 <div className="text-sm font-bold text-[#0077c5]">{currency}{formatNumber(v.price)}</div>
-                                <div className={`text-[10px] font-medium ${v.stock <= 0 ? 'text-[#d52b1e]' : 'text-[#6b6c7f]'}`}>
-                                    {v.stock} in stock
-                                </div>
+                                {(product.type === 'Stationery' || product.type === 'Material' || product.type === 'Raw Material') && (
+                                    <div className={`text-[10px] font-medium ${v.stock <= 0 ? 'text-[#d52b1e]' : 'text-[#6b6c7f]'}`}>
+                                        {v.stock} in stock
+                                    </div>
+                                )}
                             </div>
                         </button>
                     ))}

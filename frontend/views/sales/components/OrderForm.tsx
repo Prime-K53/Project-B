@@ -14,6 +14,7 @@ import { VariantSelectorModal, ServiceCalculatorModal } from '../../pos/componen
 import { Loader2 } from 'lucide-react';
 import QuickPrintModal from '../../../components/QuickPrintModal';
 import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pricing/pricingEngine';
+import { getPlaceholder } from '../../../constants/placeholders';
 
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 
@@ -1749,7 +1750,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                             <label className="text-[13px] font-semibold text-slate-500 whitespace-nowrap pt-2 w-32">Billing Protocol</label>
                                             <textarea
                                                 className="w-64 p-2 border border-slate-200 rounded-lg text-xs font-normal bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 outline-none transition-all shadow-sm h-20 resize-none"
-                                                placeholder="e.g. 123 Business Rd, Lilongwe"
+                                                placeholder={getPlaceholder.address()}
                                                 value={formData.billingAddress}
                                                 onChange={e => setFormData({ ...formData, billingAddress: e.target.value })}
                                             />
@@ -1758,7 +1759,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                             <label className="text-[13px] font-semibold text-slate-500 whitespace-nowrap pt-2 w-32">Logistics Protocol</label>
                                             <textarea
                                                 className="w-64 p-2 border border-slate-200 rounded-lg text-xs font-normal bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 outline-none transition-all shadow-sm h-20 resize-none"
-                                                placeholder="e.g. Plot 47, Area 4"
+                                                placeholder={`${getPlaceholder.addressLine2()}, ${getPlaceholder.city()}`}
                                                 value={formData.shippingAddress}
                                                 onChange={e => setFormData({ ...formData, shippingAddress: e.target.value })}
                                             />

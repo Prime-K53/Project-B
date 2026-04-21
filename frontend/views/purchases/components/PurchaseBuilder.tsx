@@ -10,7 +10,8 @@ import { SupplierModal } from './SupplierModal';
 
 interface PurchaseBuilderProps {
     inventory: Item[];
-    supplierNames: string[];
+    supplierNames?: string[];
+    suppliers?: any[];
     onCreateOrder: (data: { supplierId: string, items: any[], reference: string, dueDate: string, date: string }) => void;
     initialData?: Purchase | null;
     onUpdateOrder?: (id: string, data: { supplierId: string, items: any[], reference: string, dueDate: string, date: string }) => void;
@@ -134,7 +135,7 @@ export const PurchaseBuilder: React.FC<PurchaseBuilderProps> = ({ inventory, sup
 
     // Requirement: Hide products and services. Only allow materials/stationery for Bills/Purchases.
     const availableItems = inventory.filter(i => 
-        (i.type === 'Material' || i.type === 'Stationery') &&
+        (i.type === 'Raw Material' || i.type === 'Stationery') &&
         (i.name.toLowerCase().includes(searchItem.toLowerCase()) || 
         i.sku.toLowerCase().includes(searchItem.toLowerCase()))
     );
@@ -224,7 +225,7 @@ export const PurchaseBuilder: React.FC<PurchaseBuilderProps> = ({ inventory, sup
                             const matchedInv = inventory.find(i => i.name.toLowerCase().includes(itemName.toLowerCase()));
                             
                             // Check if matched item is allowed (Material/Stationery)
-                            if (matchedInv && (matchedInv.type === 'Material' || matchedInv.type === 'Stationery')) {
+                            if (matchedInv && (matchedInv.type === 'Raw Material' || matchedInv.type === 'Stationery')) {
                                 newItems.push({
                                     item: matchedInv,
                                     qty: scanItem.qty || 1,

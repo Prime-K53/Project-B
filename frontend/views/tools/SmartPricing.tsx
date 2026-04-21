@@ -39,6 +39,9 @@ const SmartPricing: React.FC = () => {
     const [finishingOptions, setFinishingOptions] = useState<FinishingOption[]>(defaultFinishingOptions);
     const [marketAdjustmentEnabled, setMarketAdjustmentEnabled] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
+    const [showProductDialog, setShowProductDialog] = useState(false);
+    const [productName, setProductName] = useState('');
+    const [isCreatingProduct, setIsCreatingProduct] = useState(false);
     const [editingCosts, setEditingCosts] = useState<{ [key: string]: number }>({});
     const [inventory, setInventory] = useState<Item[]>([]);
     const [marketAdjustments, setMarketAdjustments] = useState<MarketAdjustment[]>([]);
@@ -481,53 +484,62 @@ const SmartPricing: React.FC = () => {
                             
                             <div className="p-6 space-y-4">
                                 <div className="flex justify-between text-slate-600">
-                                    <span>Paper ({selectedPaper?.name || 'N/A'})</span>
+                                    <span>{selectedPaper?.name?.replace(/\s*\d+gsm.*/i, '') || 'Paper'}</span>
                                     <span className="font-medium">{formatCurrency(paperCost)}</span>
                                 </div>
                                 <div className="flex justify-between text-slate-600">
-                                    <span>Toner ({selectedToner?.name || 'N/A'})</span>
+                                    <span>{selectedToner?.name?.replace(/\s*Universal\s*/i, '') || 'Toner'}</span>
                                     <span className="font-medium">{formatCurrency(tonerCost)}</span>
                                 </div>
                                 <div className="flex justify-between text-slate-600">
                                     <span>Finishing</span>
                                     <span className="font-medium">{formatCurrency(finishingCost)}</span>
                                 </div>
-                                <div className="flex justify-between text-slate-600">
-                                    <span>Subtotal</span>
-                                    <span className="font-medium">{formatCurrency(baseCost)}</span>
-                                </div>
-                                {marketAdjustmentEnabled && marketAdjustmentTotal > 0 && (
-                                    <div className="flex justify-between text-emerald-600">
-                                        <span>Market Adjustments</span>
-                                        <span className="font-medium">+{formatCurrency(marketAdjustmentTotal)}</span>
-                                    </div>
-                                )}
-                                <div className="border-t-2 border-indigo-100 pt-4 flex justify-between items-end">
-                                    <div>
-                                        <div className="font-bold text-slate-800">Total</div>
-                                        {roundingResult && roundingResult.wasRounded && (
-                                            <div className="text-xs text-slate-500">Original: {formatCurrency(roundingResult.originalPrice)}</div>
-                                        )}
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="text-2xl font-bold text-indigo-600">{formatCurrency(displayTotal)}</div>
-                                        {roundingResult && roundingResult.wasRounded && (
-                                            <div className="text-xs text-emerald-600">Rounded (+{formatCurrency(roundingResult.roundingDifference)}) via {String(roundingResult.methodUsed)}</div>
-                                        )}
-                                    </div>
-                                </div>
+                                {marketAdjustmentEnabled && marketAdjustments.map((adj, idx) => {
+                                    const type = (adj.type || '').toUpperCase();
+                                    let adjustmentValue = 0;
+                                    if (type === 'PERCENTAGE' || type === 'PERCENT') {
+                                        adjustmentValue = baseCost * ((adj.value || 0) / 100);
+                                    } else {
+                                        adjustmentValue = (adj.value || 0) * pages * copies;
+                                    }
+                                    if (adjustmentValue > 0) {
+                                        return (
+                                            <div key={idx} className="flex justify-between text-emerald-600">
+                                                <span>{adj.name || 'Market Adjustment'}</span>
+                                                <span className="font-medium">+{formatCurrency(adjustmentValue)}</span>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })}
                                 {(() => {
                                     const profitMargin = displayTotal - baseCost;
                                     if (profitMargin > 0) {
                                         return (
-                                            <div className="mt-2 pt-2 border-t border-indigo-100 flex justify-between items-center">
-                                                <span className="text-sm font-semibold text-emerald-600">Profit Margin</span>
-                                                <span className="text-lg font-bold text-emerald-600">+{formatCurrency(profitMargin)}</span>
+                                            <div className="flex justify-between text-emerald-600">
+                                                <span>Profit Margin</span>
+                                                <span className="font-medium">+{formatCurrency(profitMargin)}</span>
                                             </div>
                                         );
                                     }
                                     return null;
                                 })()}
+                                {roundingResult && roundingResult.wasRounded && (
+                                    <div className="flex justify-between text-emerald-600">
+                                        <span>Rounded</span>
+                                        <span className="font-medium">+{formatCurrency(roundingResult.roundingDifference)}</span>
+                                    </div>
+                                )}
+                                <div className="border-t-2 border-indigo-100 pt-4 flex justify-between items-end">
+                                    <div className="font-bold text-slate-800">Total</div>
+                                    <div className="text-right">
+                                        <div className="text-2xl font-bold text-indigo-600">{formatCurrency(displayTotal)}</div>
+                                        {roundingResult && roundingResult.wasRounded && (
+                                            <div className="text-xs text-emerald-600">via {String(roundingResult.methodUsed)}</div>
+                                        )}
+                                    </div>
+                                </div>
                                 <div className="text-center text-xs text-slate-400">
                                     Per copy: {formatCurrency(displayTotal / copies)}
                                 </div>
@@ -542,38 +554,12 @@ const SmartPricing: React.FC = () => {
                                     Reset
                                 </button>
                                 <button 
-                                    onClick={async () => {
-                                        const jobOrder = {
-                                            id: `JO-${Date.now()}`,
-                                            orderNumber: `JO-${Date.now()}`,
-                                            customerName: 'Direct Job Order',
-                                            customerId: '',
-                                            date: new Date().toISOString(),
-                                            dueDate: new Date().toISOString(),
-                                            status: 'pending',
-                                            items: [{
-                                                id: `ITEM-${Date.now()}`,
-                                                itemId: selectedPaper?.id || '',
-                                                name: `Print Job - ${pages} pages x ${copies} copies`,
-                                                description: `Paper: ${selectedPaper?.name || 'N/A'}, Toner: ${selectedToner?.name || 'N/A'}`,
-                                                quantity: copies,
-                                            unitPrice: (displayTotal / copies),
-                                            total: displayTotal
-                                            }],
-                                            subtotal: finalPrice,
-                                            tax: 0,
-                                            discount: 0,
-                                            total: finalPrice,
-                                            notes: `Finishing: ${finishingOptions.filter(o => o.enabled).map(o => o.name).join(', ') || 'None'}`,
-                                            paymentStatus: 'unpaid',
-                                            createdAt: new Date().toISOString()
-                                        };
-                                        await addJobOrder(jobOrder as any);
-                                        navigate('/sales-flow/job-tickets');
+                                    onClick={() => {
+                                        setShowProductDialog(true);
                                     }}
                                     className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
                                 >
-                                    Create Job Order
+                                    Create Product
                                 </button>
                             </div>
                         </div>
@@ -650,6 +636,159 @@ const SmartPricing: React.FC = () => {
                                 className="flex-1 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"
                             >
                                 Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showProductDialog && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-100">
+                            <h2 className="text-xl font-bold text-slate-800">Create Product from Pricing</h2>
+                            <button onClick={() => { setShowProductDialog(false); setProductName(''); }} className="p-2 hover:bg-slate-100 rounded-lg">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">Product Name</label>
+                                <input
+                                    type="text"
+                                    value={productName}
+                                    onChange={(e) => setProductName(e.target.value)}
+                                    placeholder="e.g. Standard 80-page Book"
+                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                                />
+                            </div>
+                            <div className="p-4 bg-slate-50 rounded-xl space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-600">Pages:</span>
+                                    <span className="font-medium">{pages} pages</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-600">Copies:</span>
+                                    <span className="font-medium">{copies}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-600">Paper:</span>
+                                    <span className="font-medium">{selectedPaper?.name || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-600">Toner:</span>
+                                    <span className="font-medium">{selectedToner?.name || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-600">Finishing:</span>
+                                    <span className="font-medium">{finishingOptions.filter(o => o.enabled).map(o => o.name).join(', ') || 'None'}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-slate-600">Rounding:</span>
+                                    <span className="font-medium">{roundingResult?.methodUsed || 'None'}</span>
+                                </div>
+                                <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between">
+                                    <span className="font-semibold">Total Price:</span>
+                                    <span className="font-bold text-indigo-600">{formatCurrency(displayTotal)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-100 flex gap-3">
+                            <button 
+                                onClick={() => { setShowProductDialog(false); setProductName(''); }}
+                                className="flex-1 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50"
+                                disabled={isCreatingProduct}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={async () => {
+                                    if (!productName.trim()) {
+                                        alert('Please enter a product name');
+                                        return;
+                                    }
+                                    setIsCreatingProduct(true);
+                                    try {
+                                        const productId = `PROD-${Date.now()}`;
+                                        const bomId = `BOM-${Date.now()}`;
+                                        
+                                        const newProduct: Item = {
+                                            id: productId,
+                                            name: productName,
+                                            sku: `SKU-${Date.now()}`,
+                                            type: 'Product',
+                                            category: 'Printed Products',
+                                            unit: 'copy',
+                                            cost: baseCost,
+                                            price: displayTotal,
+                                            selling_price: displayTotal,
+                                            calculated_price: displayTotal,
+                                            stock: 0,
+                                            pages: pages,
+                                            smartPricing: {
+                                                pages,
+                                                copies,
+                                                paperItemId: selectedPaperId,
+                                                tonerItemId: selectedTonerId,
+                                                finishingEnabled: finishingOptions.filter(o => o.enabled).map(o => o.id),
+                                                roundingMethod: roundingResult?.methodUsed,
+                                                roundedPrice: displayTotal,
+                                                originalPrice: finalPrice
+                                            } as any
+                                        };
+                                        
+                                        const components: any[] = [];
+                                        if (selectedPaper) {
+                                            components.push({
+                                                itemId: selectedPaperId,
+                                                name: selectedPaper.name,
+                                                quantityFormula: `${totalSheets}`,
+                                                unit: selectedPaper.unit || 'ream'
+                                            });
+                                        }
+                                        if (selectedToner) {
+                                            components.push({
+                                                itemId: selectedTonerId,
+                                                name: selectedToner.name,
+                                                quantityFormula: `${Math.ceil(totalPages / 20000 * 100)} / 100`,
+                                                unit: selectedToner.unit || 'unit'
+                                            });
+                                        }
+                                        finishingOptions.filter(o => o.enabled).forEach(opt => {
+                                            components.push({
+                                                itemId: opt.id,
+                                                name: opt.name,
+                                                quantityFormula: `${opt.id === 'coverPages' ? copies * 2 : copies}`,
+                                                unit: 'unit'
+                                            });
+                                        });
+                                        
+                                        const newBom: BOMTemplate = {
+                                            id: bomId,
+                                            name: productName,
+                                            type: 'Custom',
+                                            components: components,
+                                            lastUpdated: new Date().toISOString()
+                                        };
+                                        
+                                        await dbService.put('inventory', newProduct);
+                                        await dbService.put('bomTemplates', newBom);
+                                        
+                                        alert(`Product "${productName}" created and saved to inventory with corresponding BOM recipe.`);
+                                        setShowProductDialog(false);
+                                        setProductName('');
+                                        resetCalculator();
+                                    } catch (error) {
+                                        console.error('Failed to create product:', error);
+                                        alert('Failed to create product');
+                                    } finally {
+                                        setIsCreatingProduct(false);
+                                    }
+                                }}
+                                className="flex-1 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50"
+                                disabled={isCreatingProduct}
+                            >
+                                {isCreatingProduct ? 'Creating...' : 'Create Product'}
                             </button>
                         </div>
                     </div>

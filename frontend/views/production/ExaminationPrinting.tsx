@@ -467,6 +467,7 @@ const ExaminationPrinting: React.FC = () => {
       const toner_kg = subjectResults.reduce((sum, result) => sum + (result.toner_kgs || 0), 0);
       const total_cost = subjectResults.reduce((sum, result) => sum + (result.internal_cost || 0), 0);
       const selling_price = total_learners * price_per_learner;
+      // Profit = selling price - total internal cost (this is production cost calculation)
       const profit = selling_price - total_cost;
 
       return {

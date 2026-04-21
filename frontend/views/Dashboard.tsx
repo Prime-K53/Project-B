@@ -981,11 +981,14 @@ const DashboardContent: React.FC = () => {
   const nextSubscription = (() => {
     const activeSubs = (subscriptions as any[]).filter(s => String(s.status || '').toLowerCase() === 'active');
     if (activeSubs.length === 0) return null;
-    return [...activeSubs].sort((a, b) => {
+    const sorted = [...activeSubs].sort((a, b) => {
       const dateA = new Date(a.nextDueDate || a.nextBillingDate || a.dueDate || '9999-12-31').getTime();
       const dateB = new Date(b.nextDueDate || b.nextBillingDate || b.dueDate || '9999-12-31').getTime();
       return dateA - dateB;
-    })[0];
+    });
+    const next = sorted[0];
+    if (!next || (!next.planName && !next.customerName && !next.frequency)) return null;
+    return next;
   })();
 
   const formatSubName = (name: string) => {

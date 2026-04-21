@@ -134,7 +134,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                 <div class="barcode">||| |||| || |||||| |||</div>
                 <div class="footer">
                   <div class="sku">${item.sku}</div>
-                  <div class="price">${currency}${(item.type === 'Material' ? item.cost : item.price || 0).toFixed(2)}</div>
+                  <div class="price">${currency}${(item.type === 'Raw Material' ? item.cost : item.price || 0).toFixed(2)}</div>
                 </div>
               </div>
               <script>
@@ -213,7 +213,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
 
     const lastCost = lastPurchase?.items.find(i => i.itemId === item.id)?.cost || item.cost || 0;
 
-    const netSellingPrice = item.type === 'Material' ? item.cost : item.price;
+    const netSellingPrice = item.type === 'Raw Material' ? item.cost : item.price;
 
     const margin = netSellingPrice > 0 ? ((netSellingPrice - lastCost) / netSellingPrice) * 100 : 0;
 
@@ -363,7 +363,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                             <div className="my-3 font-barcode text-4xl tracking-widest text-center opacity-80">||| |||| || |||||| |||</div>
                             <div className="flex justify-between items-end mt-2">
                                 <p className="font-mono text-sm font-bold">{item.sku}</p>
-                                <p className="font-bold text-2xl">{currency}{(item.type === 'Material' ? item.cost : item.price || 0).toFixed(2)}</p>
+                                <p className="font-bold text-2xl">{currency}{(item.type === 'Raw Material' ? item.cost : item.price || 0).toFixed(2)}</p>
                             </div>
                         </div>
                         <div className="flex gap-3">
@@ -407,9 +407,11 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={() => onAdjust(item)} className="zoho-button-secondary px-3 py-1.5 flex items-center gap-1.5">
-                            <ArrowRightLeft size={14} /> Adjust
-                        </button>
+                        {(item.type === 'Stationery' || item.type === 'Material') && (
+                            <button onClick={() => onAdjust(item)} className="zoho-button-secondary px-3 py-1.5 flex items-center gap-1.5">
+                                <ArrowRightLeft size={14} /> Adjust
+                            </button>
+                        )}
                         <button onClick={() => onEdit(item)} className="zoho-button-secondary px-3 py-1.5 flex items-center gap-1.5">
                             <Edit2 size={14} /> Edit
                         </button>
@@ -475,8 +477,8 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                             <span className="font-bold text-slate-700 finance-nums">{currency}{(lastCost || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-[12px] mt-0.5">
-                            <span className="text-slate-500 font-medium">{item.type === 'Material' ? 'Base Cost:' : 'Price (Inc):'}</span>
-                            <span className="font-black text-slate-900 finance-nums">{currency}{(item.type === 'Material' ? item.cost : item.price || 0).toFixed(2)}</span>
+                            <span className="text-slate-500 font-medium">{item.type === 'Raw Material' ? 'Base Cost:' : 'Price (Inc):'}</span>
+                            <span className="font-black text-slate-900 finance-nums">{currency}{(item.type === 'Raw Material' ? item.cost : item.price || 0).toFixed(2)}</span>
                         </div>
                     </div>
 
@@ -559,8 +561,8 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                             <h3 className="text-label font-bold flex items-center gap-2 uppercase tracking-wider"><DollarSign size={16} className="text-emerald-500" /> Current Pricing</h3>
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center p-3 bg-white/50 rounded-xl border border-slate-100">
-                                    <span className="text-[13px] font-bold text-slate-600">{item.type === 'Material' ? 'Material Cost' : 'Retail Price (Inc)'}</span>
-                                    <span className="font-bold text-slate-900 text-[13px] finance-nums">{currency}{(item.type === 'Material' ? item.cost : item.price || 0).toFixed(2)}</span>
+                                    <span className="text-[13px] font-bold text-slate-600">{item.type === 'Raw Material' ? 'Material Cost' : 'Retail Price (Inc)'}</span>
+                                    <span className="font-bold text-slate-900 text-[13px] finance-nums">{currency}{(item.type === 'Raw Material' ? item.cost : item.price || 0).toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between items-center p-3 border-b border-slate-100/50 last:border-0">
                                     <span className="text-[13px] text-slate-500 font-medium">Net Price (Excl)</span>
@@ -839,7 +841,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                             </div>
 
                             {/* Unit Conversion (For Materials) */}
-                            {item.type === 'Material' && item.purchaseUnit && item.usageUnit && (
+                            {item.type === 'Raw Material' && item.purchaseUnit && item.usageUnit && (
                                 <div className="mt-8 pt-8 border-t border-slate-100">
                                     <h4 className="text-[12px] font-bold text-slate-900 uppercase mb-4 flex items-center gap-2">
                                         <ArrowRightLeft size={16} className="text-blue-500" /> Material Unit Conversion

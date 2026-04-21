@@ -167,8 +167,8 @@ class InventoryAlertService {
         }
       }
 
-      // Check for out of stock
-      if (currentQty <= 0) {
+      // Check for out of stock (only for stock-managed items)
+      if (currentQty <= 0 && (item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material')) {
         const existingAlert = existingAlerts.find(a => 
           a.itemId === item.id && 
           a.alertType === 'critical' &&

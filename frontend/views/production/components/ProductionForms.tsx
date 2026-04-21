@@ -29,7 +29,7 @@ export const BOMForm: React.FC<BOMFormProps> = ({ inventory, workCenters, initia
     const { companyConfig } = useData();
     const currency = companyConfig.currencySymbol;
     const products = inventory.filter(i => i.type === 'Product' || i.type === 'Service');
-    const materials = inventory.filter(i => i.type === 'Material');
+    const materials = inventory.filter(i => i.type === 'Raw Material');
 
     const [selectedProduct, setSelectedProduct] = useState(initialData?.productId || '');
     const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);

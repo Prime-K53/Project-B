@@ -3,6 +3,7 @@ import React from 'react';
 type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> & {
   label?: string;
   error?: string;
+  placeholder?: string;
   options?: Array<{ value: string | number; label: string }>;
   onChange?: (value: any) => void;
 };

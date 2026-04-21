@@ -3,6 +3,7 @@ import { X, Save, User, MapPin, CreditCard, FileText, Building, Truck, Plus, Tra
 import { Customer } from '../../../types';
 import { getDefaultPaymentTermsForSegment } from '../../../utils/helpers';
 import { useData } from '../../../context/DataContext';
+import { getPlaceholder } from '../../../constants/placeholders';
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -214,13 +215,13 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Customer Name / Company</label>
                   <input required type="text" name="name" value={formData.name} onChange={handleChange}
                     className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    placeholder="e.g. Acme Printing Ltd" />
+                    placeholder={getPlaceholder.company()} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Phone Number</label>
                   <input type="tel" name="phone" value={formData.phone} onChange={handleChange}
                     className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                    placeholder="e.g. +265 888 123 456" />
+                    placeholder={getPlaceholder.phone()} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">Segment</label>
@@ -241,7 +242,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                       <label className="block text-sm font-medium text-slate-700 mb-2">Billing Address</label>
                       <textarea name="billingAddress" value={formData.billingAddress} onChange={handleChange} rows={3}
                         className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
-                        placeholder="e.g. 123 Business Rd, Area 47, Lilongwe" />
+                        placeholder={getPlaceholder.address()} />
                     </div>
 
                     <div>
@@ -255,7 +256,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                       {!useBillingForShipping && (
                         <textarea name="shippingAddress" value={formData.shippingAddress} onChange={handleChange} rows={3}
                           className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none"
-                          placeholder="e.g. Plot 47, Sector 2, Blantyre" />
+                          placeholder={`${getPlaceholder.addressLine2()}, ${getPlaceholder.city()}`} />
                       )}
                     </div>
 
@@ -264,7 +265,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                         <label className="block text-sm font-medium text-slate-700 mb-2">City / Region</label>
                         <input type="text" name="city" value={formData.city} onChange={handleChange}
                           className="w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                          placeholder="e.g. Lilongwe" />
+                          placeholder={getPlaceholder.city()} />
                       </div>
                     </div>
                   </div>
@@ -280,7 +281,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">$</span>
                         <input type="number" name="balance" value={formData.balance} onChange={handleChange}
                           className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                          placeholder="0.00" />
+                          placeholder={getPlaceholder.price()} />
                       </div>
                     </div>
 
@@ -290,7 +291,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({ isOpen, onClose, onSav
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 font-bold text-sm">$</span>
                         <input type="number" name="walletBalance" value={formData.walletBalance} onChange={handleChange}
                           className="w-full bg-emerald-50/30 border border-emerald-100 rounded-lg pl-8 pr-4 py-2.5 text-sm font-medium text-emerald-700 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                          placeholder="0.00" />
+                          placeholder={getPlaceholder.price()} />
                       </div>
                     </div>
 

@@ -10,7 +10,8 @@ import { syncMarketAdjustmentsToBackend } from '../../services/examinationSyncSe
 const MARKET_ADJUSTMENTS_CHANGED_EVENT = 'market-adjustments:changed';
 
 const MarketAdjustments: React.FC = () => {
-    const { notify, refreshMarketAdjustments } = useData();
+    const { notify, refreshMarketAdjustments, companyConfig } = useData();
+    const currency = companyConfig?.currencySymbol || '$';
     const refreshInventory = useInventoryStore(state => state.fetchInventory);
     const [adjustments, setAdjustments] = useState<MarketAdjustment[]>([]);
     const [adjustmentStats, setAdjustmentStats] = useState<Map<string, { totalApplied: number; applicationCount: number }>>(new Map());
@@ -210,11 +211,28 @@ const MarketAdjustments: React.FC = () => {
     };
 
     const formatCurrency = (amount: number) => {
-        const currencyCode = currency === '$' ? 'USD' : (currency === 'KES' ? 'KES' : currency === 'ZAR' ? 'ZAR' : currency === 'GBP' ? 'GBP' : currency === 'EUR' ? 'EUR' : currency === 'UGX' ? 'UGX' : currency || 'USD');
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: currencyCode
-        }).format(amount || 0);
+        // Map common currency symbols used in companyConfig to ISO currency codes
+        const symbolToCode: Record<string, string> = {
+            '$': 'USD',
+            'KES': 'KES',
+            'ZAR': 'ZAR',
+            'GBP': 'GBP',
+            'EUR': 'EUR',
+            'UGX': 'UGX',
+            'K': 'MWK' // Common single-letter symbol used in some views -> Malawi Kwacha
+        };
+
+        const currencyCode = symbolToCode[currency] || currency || 'USD';
+
+        try {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currencyCode
+            }).format(amount || 0);
+        } catch (err) {
+            // Fallback: when Intl fails (invalid currency code), return a simple formatted string
+            return `${currency} ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
     };
 
     const toggleActive = async (adjustment: MarketAdjustment) => {

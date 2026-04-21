@@ -1,4 +1,4 @@
-﻿
+
 import React, { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -21,6 +21,7 @@ import { z } from 'zod';
 
 import { api } from '../services/api';
 import { dbService } from '../services/db';
+import { getPlaceholder } from '../constants/placeholders';
 import { isPasswordProtectionEnabled, normalizeSecuritySettings, withNormalizedSecurityConfig } from '../utils/securitySettings';
 import {
     createSharedNumberingConfig,
@@ -688,7 +689,7 @@ const Settings: React.FC = () => {
                                             <input
                                                 type="text"
                                                 className="settings-input"
-                                                placeholder="e.g. +265 888 123 456"
+                                                placeholder={getPlaceholder.phone()}
                                                 value={config.phone}
                                                 onChange={e => setConfig({ ...config, phone: e.target.value })}
                                             />
@@ -706,7 +707,7 @@ const Settings: React.FC = () => {
                                             <label className="settings-label">Primary Office Address</label>
                                             <textarea
                                                 className="settings-input h-20 resize-none py-3"
-                                                placeholder="e.g. 123 Business Park, Area 47"
+                                                placeholder={getPlaceholder.address()}
                                                 value={config.addressLine1}
                                                 onChange={e => setConfig({ ...config, addressLine1: e.target.value })}
                                             />
@@ -716,7 +717,7 @@ const Settings: React.FC = () => {
                                             <input
                                                 type="text"
                                                 className="settings-input"
-                                                placeholder="e.g. Lilongwe"
+                                                placeholder={getPlaceholder.city()}
                                                 value={config.city || ''}
                                                 onChange={e => setConfig({ ...config, city: e.target.value })}
                                             />
@@ -769,7 +770,7 @@ const Settings: React.FC = () => {
                                                         onChange={e => setConfig({ ...config, monthlyRevenueTarget: Number(e.target.value) })}
                                                     />
                                                 </div>
-                                                <p className="text-[10px] text-slate-400 mt-1.5 font-medium italic">Your progress percentage against this Ù‡Ø¯Ù will be tracked on the dashboard.</p>
+                                                <p className="text-[10px] text-slate-400 mt-1.5 font-medium italic">Your progress percentage against this هدف will be tracked on the dashboard.</p>
                                             </div>
                                         </div>
                                     </div>
@@ -3452,7 +3453,7 @@ const Settings: React.FC = () => {
                                                 <h4 className="text-2xl font-bold text-[#393A3D] mb-2">Restore Database</h4>
                                                 <p className="text-sm text-[#6B6C6F] leading-relaxed mb-4 max-w-xs mx-auto">Restore a previously downloaded Prime ERP backup file and reload the full local database state.</p>
                                                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-6">
-                                                    Last restore: {backupStatus.lastRestoreAt ? `${new Date(backupStatus.lastRestoreAt).toLocaleString()}${backupStatus.lastRestoreFile ? ` â€¢ ${backupStatus.lastRestoreFile}` : ''}` : 'No restore executed'}
+                                                    Last restore: {backupStatus.lastRestoreAt ? `${new Date(backupStatus.lastRestoreAt).toLocaleString()}${backupStatus.lastRestoreFile ? ` • ${backupStatus.lastRestoreFile}` : ''}` : 'No restore executed'}
                                                 </div>
                                                 <button
                                                     onClick={handleRestoreBackupRequest}

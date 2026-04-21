@@ -47,7 +47,7 @@ export async function getEffectiveMargin(
     const userRole = localStorage.getItem('prime_user_role') || 'Viewer';
 
     const res = await fetch(
-      `${API_BASE_URL}/api/settings/profit-margins/resolve?${params.toString()}`,
+      `${API_BASE_URL}/settings/profit-margins/resolve?${params.toString()}`,
       {
         headers: {
           'x-user-id':   userId,

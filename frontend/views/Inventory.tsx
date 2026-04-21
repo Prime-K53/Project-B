@@ -373,7 +373,7 @@ const Inventory: React.FC = () => {
                 isOpen={isSmartAdjustOpen}
                 onClose={() => setIsSmartAdjustOpen(false)}
                 onSuccess={handleSmartAdjustSuccess}
-                items={inventory}
+                items={inventory.filter(item => item.type === 'Stationery' || item.type === 'Material')}
             />
 
             {/* Stock Adjustment Modal */}

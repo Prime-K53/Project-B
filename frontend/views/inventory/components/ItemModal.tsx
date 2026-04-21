@@ -312,6 +312,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
     }, [calculatedPrice, formData.pricingConfig?.selectedRoundingMethod, formData.pricingConfig?.customRoundingStep]);
 
     const isServiceType = formData.type === 'Service';
+    const hasStockFunctionality = formData.type === 'Stationery' || formData.type === 'Material';
     const activeMarketAdjustments = useMemo(
         () => marketAdjustments.filter(ma => ma.active ?? ma.isActive),
         [marketAdjustments]
@@ -712,7 +713,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
             newErrors.cost = 'Valid cost price is required';
         }
 
-        if (formData.type !== 'Service' && (formData.stock === undefined || formData.stock < 0)) {
+        if ((formData.type === 'Stationery' || formData.type === 'Material') && (formData.stock === undefined || formData.stock < 0)) {
             newErrors.stock = 'Valid stock quantity is required';
         }
 
@@ -1121,7 +1122,9 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                 ? []
                                 : [
                                     { id: 'pricing', label: 'Pricing', icon: DollarSign },
-                                    { id: 'inventory', label: 'Inventory', icon: Box },
+                                    ...(formData.type === 'Raw Material' || formData.type === 'Stationery'
+                                        ? [{ id: 'inventory' as const, label: 'Inventory' as const, icon: Box as const }]
+                                        : []),
                                     { id: 'variants', label: 'Variants', icon: Layers }
                                 ])
                         ] as { id: 'basic' | 'pricing' | 'inventory' | 'variants'; label: string; icon: any }[]).map(tab => (
@@ -1351,136 +1354,112 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
 
                             {/* Pricing Tab */}
                             {!isServiceType && activeTab === 'pricing' && (
-                                <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
+                                <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
 
-                                    {/* Stationery Pack Conversion Toggle */}
-                                    {formData.type === 'Stationery' && (
-                                        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="p-2 bg-indigo-100 rounded-lg">
-                                                        <Package className="w-5 h-5 text-indigo-600" />
-                                                    </div>
-                                                    <div>
-                                                        <h3 className="text-sm font-bold text-indigo-900">Use Pack-to-Piece Conversion</h3>
-                                                        <p className="text-xs text-indigo-700">Calculate price per piece from pack pricing</p>
-                                                    </div>
+                                    {/* Pricing Summary */}
+                                    <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl p-4 border border-blue-100">
+                                        <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                            <DollarSign className="w-4 h-4 text-blue-600" /> Pricing Summary
+                                        </h3>
+                                        
+                                        {/* Summary Cards */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {/* Total items needed (based on BOM) */}
+                                            <div className="col-span-2 bg-white rounded-lg p-3 border border-slate-200">
+                                                <div className="text-xs text-slate-500 mb-1">Total Items Needed (BOM)</div>
+                                                <div className="text-lg font-bold text-slate-800">
+                                                    {bomTemplates.length > 0 
+                                                        ? bomTemplates.reduce((sum, t) => sum + (t.quantity || 0), 0).toLocaleString()
+                                                        : '0'
+                                                    } units
                                                 </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        className="sr-only peer"
-                                                        checked={usePackConversion}
-                                                        onChange={(e) => {
-                                                            setUsePackConversion(e.target.checked);
-                                                            if (e.target.checked) {
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    isStationeryPack: true,
-                                                                    cost: derivedCostPerPiece,
-                                                                    price: finalPrice
-                                                                }));
-                                                            } else {
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    isStationeryPack: false,
-                                                                    costPerPack: 0,
-                                                                    unitsPerPack: 0
-                                                                }));
-                                                            }
-                                                        }}
-                                                    />
-                                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                                                </label>
                                             </div>
 
-                                            {/* Pack Conversion Fields */}
-                                            {usePackConversion && (
-                                                <div className="mt-4">
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div>
-                                                            <label className="block text-xs font-medium text-indigo-800 mb-1">Cost per Pack</label>
-                                                            <div className="relative">
-                                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400">{currency}</span>
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.01"
-                                                                    min="0"
-                                                                    value={formData.costPerPack || ''}
-                                                                    onChange={(e) => setFormData({
-                                                                        ...formData,
-                                                                        costPerPack: Number(e.target.value),
-                                                                        cost: derivedCostPerPiece
-                                                                    })}
-                                                                    className="w-full pl-8 pr-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                                                    placeholder="e.g. 500.00"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-xs font-medium text-indigo-800 mb-1">Units per Pack</label>
-                                                            <input
-                                                                type="number"
-                                                                min="1"
-                                                                value={formData.unitsPerPack || ''}
-                                                                onChange={(e) => setFormData({
-                                                                    ...formData,
-                                                                    unitsPerPack: Number(e.target.value),
-                                                                    cost: derivedCostPerPiece
-                                                                })}
-                                                                className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                                                placeholder="e.g. 50"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="mt-4">
-                                                        <label className="block text-xs font-medium text-indigo-800 mb-1">Markup (%)</label>
-                                                        <div className="relative">
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                step="0.1"
-                                                                value={formData.pricingConfig?.markup || ''}
-                                                                onChange={(e) => setFormData({
-                                                                    ...formData,
-                                                                    pricingConfig: {
-                                                                        ...formData.pricingConfig!,
-                                                                        markup: Number(e.target.value)
-                                                                    }
-                                                                })}
-                                                                className="w-full px-4 py-2 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                                                placeholder="e.g. 30"
-                                                            />
-                                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400">%</span>
-                                                        </div>
-                                                    </div>
+                                            {/* Total production cost */}
+                                            <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                                <div className="text-xs text-slate-500 mb-1">Production Cost</div>
+                                                <div className="text-lg font-bold text-slate-800">
+                                                    {currency}{formData.cost?.toFixed(2) || '0.00'}
                                                 </div>
-                                            )}
+                                            </div>
 
-                                            {/* Calculated Values Display */}
-                                            {usePackConversion && (
-                                                <div className="mt-4 p-3 bg-white rounded-lg border border-indigo-100 space-y-2">
-                                                    <div className="flex justify-between text-xs">
-                                                        <span className="text-slate-600">Derived Cost per Piece:</span>
-                                                        <span className="font-medium text-slate-800">{currency} {derivedCostPerPiece.toFixed(2)}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-xs">
-                                                        <span className="text-slate-600">Calculated Price:</span>
-                                                        <span className="font-medium text-indigo-600">{currency} {calculatedPrice.toFixed(2)}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-xs">
-                                                        <span className="text-slate-600">Final Price (after rounding):</span>
-                                                        <span className="font-bold text-green-600">{currency} {finalPrice.toFixed(2)}</span>
-                                                    </div>
+                                            {/* Profit Margin */}
+                                            <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                                <div className="text-xs text-slate-500 mb-1">Profit Margin</div>
+                                                <div className={`text-lg font-bold ${
+                                                    formData.cost && formData.price && formData.price > formData.cost
+                                                        ? 'text-green-600' 
+                                                        : 'text-red-600'
+                                                }`}>
+                                                    {formData.cost && formData.price && formData.price > formData.cost
+                                                        ? `${(((formData.price - formData.cost) / formData.cost) * 100).toFixed(1)}%`
+                                                        : '0%'
+                                                    }
                                                 </div>
-                                            )}
+                                            </div>
+
+                                            {/* Total adjustments */}
+                                            <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                                <div className="text-xs text-slate-500 mb-1">Total Adjustments</div>
+                                                <div className="text-lg font-bold text-amber-600">
+                                                    {currency}{
+                                                        (formData.pricingConfig?.selectedAdjustmentIds || []).reduce((sum, adjId) => {
+                                                            const adj = activeMarketAdjustments.find(a => a.id === adjId);
+                                                            if (!adj) return sum;
+                                                            if (adj.type === 'PERCENTAGE' || adj.type === 'PERCENT') {
+                                                                return sum + (formData.cost || 0) * (adj.value / 100);
+                                                            }
+                                                            return sum + adj.value;
+                                                        }, 0).toFixed(2)
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            {/* Rounding up income */}
+                                            <div className="bg-white rounded-lg p-3 border border-slate-200">
+                                                <div className="text-xs text-slate-500 mb-1">Rounding Income</div>
+                                                <div className="text-lg font-bold text-purple-600">
+                                                    {(() => {
+                                                        const roundingResult = applyRoundingToPrice(resolveRoundingBasePrice(), item || undefined);
+                                                        return currency + (roundingResult.roundingDifference > 0 ? roundingResult.roundingDifference : 0).toFixed(2);
+                                                    })()}
+                                                </div>
+                                            </div>
+
+                                            {/* Total Selling price */}
+                                            <div className="col-span-2 bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+                                                <div className="text-xs text-emerald-600 mb-1">Total Selling Price</div>
+                                                <div className="text-2xl font-bold text-emerald-700">
+                                                    {currency}{formData.price?.toFixed(2) || '0.00'}
+                                                </div>
+                                            </div>
                                         </div>
-                                    )}
+                                    </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {/* Cost Price */}
-                                        <div>
+                                    {/* Quick Edit Selling Price */}
+                                    <div className="bg-white rounded-xl p-4 border border-slate-200">
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                                            Quick Edit Selling Price
+                                        </label>
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{currency}</span>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={formData.price || ''}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    price: Number(e.target.value),
+                                                    calculated_price: Number(e.target.value)
+                                                })}
+                                                className="w-full pl-8 pr-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                placeholder="e.g. 25.00"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                                             <label className="block text-sm font-medium text-slate-700 mb-1">
                                                 Cost Price <span className="text-red-500">*</span>
                                             </label>
@@ -1501,30 +1480,6 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                             {usePackConversion && (
                                                 <p className="mt-1 text-xs text-indigo-500">Auto-calculated from pack cost</p>
                                             )}
-                                        </div>
-
-                                        {/* Margin Percentage (Additive Layer) */}
-                                        <div>
-                                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                                                Margin (%)
-                                            </label>
-                                            <div className="relative">
-                                                <input
-                                                    type="number"
-                                                    step="0.1"
-                                                    min="0"
-                                                    value={formData.marginPercent || 0}
-                                                    onChange={(e) => {
-                                                        const margin = Number(e.target.value);
-                                                        if (!isNaN(margin) && margin >= 0) {
-                                                            setFormData({ ...formData, marginPercent: margin });
-                                                        }
-                                                    }}
-                                                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                    placeholder="e.g. 15"
-                                                />
-                                            </div>
-                                            <p className="mt-1 text-[10px] text-slate-500">Base profit layer before adjustments</p>
                                         </div>
 
                                         {/* Selling Price - Hidden for Materials */}
@@ -2049,7 +2004,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                             )}
 
                             {/* Inventory Tab */}
-                            {!isServiceType && activeTab === 'inventory' && (
+                            {hasStockFunctionality && activeTab === 'inventory' && (
                                 <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Stock Quantity */}
@@ -2204,7 +2159,7 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                             )}
 
                             {/* Variants Tab */}
-                            {!isServiceType && activeTab === 'variants' && (
+                            {hasStockFunctionality && activeTab === 'variants' && (
                                 <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
                                     <div className="flex items-center justify-between">
                                         <div>
@@ -2366,23 +2321,6 @@ const [finishingButtons, setFinishingButtons] = useState<Array<{ id: string; nam
                                                         }}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                                         placeholder="e.g. 5.00"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-slate-600 mb-1">Margin (%)</label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.1"
-                                                        min="0"
-                                                        value={newVariant.marginPercent || 0}
-                                                        onChange={(e) => {
-                                                            const margin = Number(e.target.value);
-                                                            if (!isNaN(margin) && margin >= 0) {
-                                                                setNewVariant({ ...newVariant, marginPercent: margin });
-                                                            }
-                                                        }}
-                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                                        placeholder="e.g. 10"
                                                     />
                                                 </div>
                                                 <div>

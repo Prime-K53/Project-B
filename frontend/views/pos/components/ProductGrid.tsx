@@ -119,10 +119,10 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                 key={item.id}
                 onMouseEnter={() => setActiveIndex(idx)}
                 onClick={() => handleItemClick(item)}
-                disabled={item.stock <= 0 && item.type !== 'Service' && !item.isVariantParent}
+                disabled={item.stock <= 0 && (item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material') && !item.isVariantParent}
                 className={`relative bg-white border transition-all group overflow-hidden text-left flex flex-col h-full rounded-xl
                 ${activeIndex === idx ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50' : 'border-slate-200 hover:border-slate-400'}
-                ${item.stock <= 0 && item.type !== 'Service' ? 'opacity-60 grayscale cursor-not-allowed' : 'active:bg-slate-100'}
+                ${item.stock <= 0 && (item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material') ? 'opacity-60 grayscale cursor-not-allowed' : 'active:bg-slate-100'}
                 ${viewMode === 'List' ? 'flex-row items-center p-2 gap-3 min-h-[50px]' : 'p-3'}
             `}
             >
@@ -151,18 +151,18 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                     <div className={`flex items-center justify-between ${viewMode === 'List' ? 'gap-4' : 'mt-2 pt-2 border-t border-[#f4f5f8]'}`}>
                         <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>{currency}{formatNumber(Number(item.selling_price ?? item.price) || 0)}</span>
                         <div className="flex items-center gap-2">
-                            {item.type !== 'Service' && (
+                            {(item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material') && (
                                 <span className={`text-[10px] font-medium ${item.stock <= item.minStockLevel ? 'text-red-600' : 'text-slate-500'}`}>
                                     {item.stock} {item.unit}
                                 </span>
                             )}
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${item.type === 'Material' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${item.type === 'Raw Material' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
                                 {item.type.charAt(0)}
                             </span>
                         </div>
                     </div>
                 </div>
-                {item.stock <= 0 && item.type !== 'Service' && (
+                {item.stock <= 0 && (item.type === 'Stationery' || item.type === 'Material') && (
                     <div className="absolute inset-0 bg-white/60 flex items-center justify-center backdrop-blur-[0.5px] z-10">
                         <span className="bg-red-600 text-white px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider">Out of Stock</span>
                     </div>

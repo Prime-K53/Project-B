@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+// PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
 import { useData } from '../context/DataContext';
 import { useFinance } from '../context/FinanceContext';
 import { CartItem, Item, Sale, PaymentDetail, HeldOrder, ZReport, BOMTemplate } from '../types';
@@ -24,6 +25,7 @@ import { customerNotificationService } from '../services/customerNotificationSer
 import { generateNextId, roundFinancial, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
 import { attachDocumentSecurity } from '../utils/documentSecurity';
 import { getUnitPrice } from '../utils/pricing';
+import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
 
 const POS: React.FC = () => {
   const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
@@ -109,22 +111,37 @@ const POS: React.FC = () => {
     return `${name} (${service.pages || 0} pages x ${service.copies || 0} copies)`;
   };
 
-  const calculateServicePricing = (service: Item, pages: number, copies: number) => {
-    return pricingService.calculateDynamicServicePrice(
-      service,
-      pages,
-      copies,
-      inventory,
-      bomTemplates,
-      marketAdjustments,
-      { useStoredPriceAsFinal: true }
-    );
-  };
-
-  const upsertDynamicServiceInCart = (service: Item, pricing: DynamicServicePricingResult) => {
+  const upsertDynamicServiceInCart = async (service: Item, pricing: DynamicServicePricingResult) => {
     const lineId = `${service.id}::${pricing.pages}`;
     const adjustmentSnapshots = pricing.adjustmentSnapshots || [];
     const adjustmentTotal = adjustmentSnapshots.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0);
+
+    const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive).map((adj: any) => ({
+      name: adj.name,
+      type: adj.type,
+      value: adj.value,
+      percentage: adj.percentage ?? adj.value,
+      adjustmentId: adj.id,
+      isActive: true
+    }));
+
+    const recalculatePricing = async (serviceId: string, categoryId: string, baseCost: number, pages: number, copies: number) => {
+      if (!activeAdjs.length) {
+        const unitPrice = pricing.unitPricePerCopy;
+        const total = unitPrice * copies;
+        return { unitPrice, cost: baseCost, totalPrice: total, adjustmentSnapshots: [], adjustmentTotal: 0 };
+      }
+      return calculateServicePrice({
+        itemId: serviceId,
+        categoryId: categoryId,
+        baseCost: baseCost,
+        pages: pages,
+        copies: copies,
+        adjustments: activeAdjs,
+        marketAdjustments: activeAdjs,
+        context: 'SERVICE'
+      });
+    };
 
     const dynamicLine: CartItem = {
       ...service,
@@ -172,21 +189,28 @@ const POS: React.FC = () => {
         } : i);
       }
 
-      // If not locked, recalculate pricing for the new quantity
-      const recalculated = calculateServicePricing(service, pricing.pages, updatedCopies);
-      const updatedAdjustmentSnapshots = recalculated.adjustmentSnapshots || [];
-      const updatedAdjustmentTotal = updatedAdjustmentSnapshots.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0);
-
+      // For non-locked services, we need to handle async - use existing values as fallback
+      // The actual recalculation will happen via useEffect triggered updates
+      const totalPages = pricing.pages * updatedCopies;
       return prev.map(i => i.id === lineId ? {
         ...i,
-        quantity: recalculated.copies,
-        price: recalculated.unitPricePerCopy,
-        cost: recalculated.unitCostPerCopy,
-        basePrice: recalculated.unitCostPerCopy,
-        pagesOverride: recalculated.pages,
-        adjustmentSnapshots: updatedAdjustmentSnapshots,
-        adjustmentTotal: updatedAdjustmentTotal,
-        serviceDetails: recalculated.serviceDetails
+        quantity: updatedCopies,
+        price: pricing.unitPricePerCopy,
+        cost: pricing.unitCostPerCopy || i.cost,
+        basePrice: pricing.unitCostPerCopy || i.basePrice,
+        pagesOverride: pricing.pages,
+        adjustmentSnapshots,
+        adjustmentTotal: adjustmentTotal,
+        serviceDetails: {
+          pages: pricing.pages,
+          copies: updatedCopies,
+          totalPages,
+          unitCostPerPage: (pricing.unitCostPerCopy || 0) / pricing.pages,
+          unitPricePerCopy: pricing.unitPricePerCopy,
+          unitCostPerCopy: pricing.unitCostPerCopy,
+          totalCost: pricing.unitCostPerCopy * updatedCopies,
+          totalPrice: pricing.unitPricePerCopy * updatedCopies
+        }
       } : i);
     });
   };
@@ -320,61 +344,59 @@ const POS: React.FC = () => {
   }, [cart]);
 
   const addToCart = async (item: any) => {
-    // reserve stock atomically - skip for services as they don't track physical inventory
     if (item.type !== 'Service') {
       updateReservedStock(item.parentId || item.id, item.quantity || 1, 'POS Cart Addition', item.parentId ? item.id : undefined);
     }
 
-    let price = Number((item as any).selling_price ?? item.price) || 0;
-    let adjustmentTotal = item.adjustmentTotal || 0;
-    let adjustmentBreakdown = item.adjustmentBreakdown || [];
-    let adjustmentSnapshots = item.adjustmentSnapshots || [];
-
-    // Calculate snapshots if missing (e.g. legacy items)
-    if (item.type !== 'Service' && (!adjustmentSnapshots || adjustmentSnapshots.length === 0)) {
-      const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
-      const itemCost = item.cost || 0;
-      adjustmentSnapshots = activeAdjs.map((adj: any) => {
-        const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
-        let calcAmount = 0;
-        if (isPercentage) {
-          calcAmount = itemCost * (adj.value / 100);
-        } else {
-          calcAmount = adj.value;
-        }
-        return {
-          name: adj.name,
-          type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
-          value: adj.value,
-          percentage: isPercentage ? adj.value : undefined,
-          calculatedAmount: Number((calcAmount || 0).toFixed(2))
-        };
-      });
-    }
-
-    let productionCostSnapshot = (item as any).productionCostSnapshot;
-
-
-
-    const baseItem = item.parentId ? inventory.find(i => i.id === item.parentId) : item;
+    const baseItem = item.parentId ? inventory.find(i => i.id === item.parentId) || item : item;
     const variantId = item.parentId ? item.id : undefined;
 
+    const existing = cart.find(i => i.id === item.id);
+    const newQty = existing ? (existing.quantity + (item.quantity || 1)) : (item.quantity || 1);
+
+    const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+    const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+      const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+      let calcAmount = 0;
+      if (isPercentage) {
+        calcAmount = Number(baseItem.cost) * (adj.value / 100);
+      } else {
+        calcAmount = adj.value;
+      }
+      return {
+        name: adj.name,
+        type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+        value: adj.value,
+        percentage: isPercentage ? adj.value : undefined,
+        calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+        adjustmentId: adj.id,
+        isActive: true
+      };
+    });
+
+    const pricing = await calculateSellingPrice({
+      itemId: baseItem.id,
+      categoryId: baseItem.category,
+      baseCost: Number(baseItem.cost),
+      quantity: newQty,
+      adjustments: marketAdjustmentsInput,
+      context: 'POS'
+    });
+
+    const resolvedPrice = item.type !== 'Service' ? pricing.unitPrice : pricing.unitPrice;
+    const originalPrice = Number((item as any).selling_price ?? item.price) || 0;
+    let productionCostSnapshot = (item as any).productionCostSnapshot;
+
     setCart(prev => {
-      const existing = prev.find(i => i.id === item.id);
-      const newQty = existing ? (existing.quantity + (item.quantity || 1)) : (item.quantity || 1);
-      const resolvedPrice = getUnitPrice(baseItem, newQty, variantId);
-
-      const originalPrice = Number((item as any).selling_price ?? item.price) || 0;
-
       if (existing) {
         return prev.map(i => i.id === item.id ? {
           ...i,
           quantity: newQty,
           price: resolvedPrice,
           originalPrice,
-          adjustmentTotal,
-          adjustmentBreakdown,
-          adjustmentSnapshots,
+          cost: pricing.cost,
+          adjustmentTotal: pricing.adjustmentTotal,
+          adjustmentSnapshots: pricing.adjustmentSnapshots,
           productionCostSnapshot
         } : i);
       }
@@ -383,9 +405,9 @@ const POS: React.FC = () => {
         quantity: newQty,
         price: resolvedPrice,
         originalPrice,
-        adjustmentTotal,
-        adjustmentBreakdown,
-        adjustmentSnapshots,
+        cost: pricing.cost,
+        adjustmentTotal: pricing.adjustmentTotal,
+        adjustmentSnapshots: pricing.adjustmentSnapshots,
         productionCostSnapshot
       }];
     });
@@ -450,7 +472,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     const newQty = Math.max(1, isAbsolute ? value : oldQty + value);
     if (newQty < 1) return;
 
-    // Dynamic service lines: check if price is locked first
     if ((itemInCart as any).serviceDetails) {
       const cartItem = itemInCart as any;
       const serviceInfo = cartItem.serviceDetails;
@@ -458,7 +479,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       const baseServiceId = cartItem.itemId || itemInCart.id.split('::')[0];
       const baseService = inventory.find(i => i.id === baseServiceId) || ({ ...itemInCart, id: baseServiceId } as Item);
 
-      // If price is locked, maintain the locked unit price without recalculation
       if (cartItem.priceLocked && cartItem.lockedUnitPricePerCopy !== undefined) {
         const lockedAdjustmentTotal = cartItem.adjustmentTotal || 0;
         setCart(prev => prev.map(i => i.id === id ? {
@@ -468,7 +488,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           cost: cartItem.lockedUnitCostPerCopy || i.cost,
           basePrice: cartItem.lockedUnitCostPerCopy || i.basePrice,
           adjustmentTotal: lockedAdjustmentTotal,
-          // Preserve locked price information
           priceLocked: true,
           lockedTotalPrice: cartItem.lockedTotalPrice,
           lockedUnitPricePerCopy: cartItem.lockedUnitPricePerCopy,
@@ -477,21 +496,48 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         return;
       }
 
-      // If not locked, recalculate pricing for the new quantity
-      const pricing = calculateServicePricing(baseService, pages, newQty);
-      const adjustmentSnapshots = pricing.adjustmentSnapshots || [];
-      const adjustmentTotal = adjustmentSnapshots.reduce((sum: number, s: any) => sum + (s.calculatedAmount || 0), 0);
+      const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive).map((adj: any) => ({
+        name: adj.name,
+        type: adj.type,
+        value: adj.value,
+        percentage: adj.percentage ?? adj.value,
+        adjustmentId: adj.id,
+        isActive: true
+      }));
+
+      const baseCost = Number(baseService.cost) || 0;
+      const unitCostPerCopy = newQty > 0 ? roundToCurrency(baseCost / newQty) : baseCost;
+
+      const pricing = await calculateServicePrice({
+        itemId: baseService.id,
+        categoryId: baseService.category,
+        baseCost: baseCost,
+        pages: pages,
+        copies: newQty,
+        adjustments: activeAdjs,
+        marketAdjustments: activeAdjs,
+        context: 'SERVICE'
+      });
 
       setCart(prev => prev.map(i => i.id === id ? {
         ...i,
-        quantity: pricing.copies,
-        price: pricing.unitPricePerCopy,
-        cost: pricing.unitCostPerCopy,
-        basePrice: pricing.unitCostPerCopy,
-        pagesOverride: pricing.pages,
-        adjustmentSnapshots,
-        adjustmentTotal,
-        serviceDetails: pricing.serviceDetails
+        quantity: newQty,
+        price: pricing.unitPrice,
+        cost: pricing.cost,
+        basePrice: pricing.cost,
+        pagesOverride: pages,
+        adjustmentSnapshots: pricing.adjustmentSnapshots,
+        adjustmentTotal: pricing.adjustmentTotal,
+        serviceDetails: {
+          pages,
+          copies: newQty,
+          totalPages: pages * newQty,
+          unitCostPerPage: pricing.cost / pages,
+          unitPricePerCopy: pricing.unitPrice,
+          unitCostPerCopy: pricing.cost,
+          totalCost: baseCost,
+          totalPrice: pricing.totalPrice
+        }
       } : i));
       return;
     }
@@ -503,15 +549,44 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
     const baseItemId = (itemInCart as any).parentId || itemInCart.id.split('::')[0];
     const baseItem = inventory.find(i => i.id === baseItemId) || itemInCart;
-    const vId = (itemInCart as any).parentId ? itemInCart.id : undefined;
-    const resolvedPrice = getUnitPrice(baseItem as Item, newQty, vId);
+
+    const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+    const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+      const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+      let calcAmount = 0;
+      if (isPercentage) {
+        calcAmount = Number(baseItem.cost) * (adj.value / 100);
+      } else {
+        calcAmount = adj.value;
+      }
+      return {
+        name: adj.name,
+        type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+        value: adj.value,
+        percentage: isPercentage ? adj.value : undefined,
+        calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+        adjustmentId: adj.id,
+        isActive: true
+      };
+    });
+
+    const pricing = await calculateSellingPrice({
+      itemId: baseItem.id,
+      categoryId: baseItem.category,
+      baseCost: Number(baseItem.cost),
+      quantity: newQty,
+      adjustments: marketAdjustmentsInput,
+      context: 'POS'
+    });
 
     setCart(prev => prev.map(i => i.id === id ? {
       ...i,
       quantity: newQty,
-      price: resolvedPrice,
+      price: pricing.unitPrice,
+      cost: pricing.cost,
       originalPrice: (itemInCart as any).originalPrice,
-      adjustmentSnapshots: (itemInCart as any).adjustmentSnapshots || [],
+      adjustmentSnapshots: pricing.adjustmentSnapshots,
+      adjustmentTotal: pricing.adjustmentTotal,
       productionCostSnapshot: (itemInCart as any).productionCostSnapshot
     } : i));
   };
@@ -664,8 +739,28 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
          cash_tendered: totalPaid,
          change_due: changeDue,
          adjustmentTotal: totalAdjustment,
-         adjustmentSnapshots: aggregatedSnapshots
-       };
+adjustmentSnapshots: aggregatedSnapshots
+        };
+
+      try {
+        const serverPricing = await calculateSellingPrice({
+          itemId: 'BATCH_SALE',
+          categoryId: null,
+          baseCost: totalCost,
+          quantity: 1,
+          adjustments: aggregatedSnapshots,
+          context: 'POS'
+        });
+        if (Math.abs(serverPricing.totalPrice - payableTotal) > 0.01) {
+          console.warn('⚠️ Price mismatch detected before submit', { 
+            serverPrice: serverPricing.totalPrice, 
+            frontendPrice: payableTotal,
+            diff: serverPricing.totalPrice - payableTotal
+          });
+        }
+      } catch (pricingError) {
+        console.error('[Pricing Integrity Check Failed]', pricingError);
+      }
 
       await api.sales.createSale(saleData);
 
@@ -880,9 +975,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           currencySymbol={currency}
           initialPages={selectedServiceForCalculator.pages || 1}
           initialCopies={1}
-          calculatePricing={(pages, copies) => calculateServicePricing(selectedServiceForCalculator, pages, copies)}
-          onConfirm={(pricing) => {
-            upsertDynamicServiceInCart(selectedServiceForCalculator, pricing);
+          onConfirm={async (pricing) => {
+            await upsertDynamicServiceInCart(selectedServiceForCalculator, pricing);
             setSelectedServiceForCalculator(null);
             notify(`${selectedServiceForCalculator.name} added`, 'success');
           }}

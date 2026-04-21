@@ -17,6 +17,7 @@ import { transactionService } from '../../services/transactionService';
 import { normalizeSignatureDataUrl, validateSignatureUploadFile } from '../../utils/signatureUtils';
 import { attachDocumentSecurity } from '../../utils/documentSecurity';
 import { enrichDocumentCustomerData } from '../../utils/documentCustomerData';
+import { getPlaceholder } from '../../constants/placeholders';
 
 const carriers = ['Own Delivery', 'DHL', 'FedEx', 'UPS', 'Local Courier', 'SpeedAF', 'Fargo Courier'];
 const DELIVERY_POD_RECONCILE_KEY = 'prime_shipping_pod_reconcile_v1';
@@ -784,7 +785,7 @@ const ShippingManager: React.FC = () => {
                                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl text-base font-black outline-none focus:ring-4 focus:ring-blue-500/5 transition-all"
                                         value={recipientPhone}
                                         onChange={e => setRecipientPhone(e.target.value)}
-                                        placeholder="+265..."
+                                        placeholder={`${getPlaceholder.phone().split(' ')[0]}...`}
                                     />
                                 </div>
                                 <div>

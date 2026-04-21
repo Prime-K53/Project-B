@@ -135,9 +135,12 @@ export const calculateExaminationBatchPricing = (
 
     if (totalAdjustments > 0) {
       const roundedFeePerLearner = roundUpToNearest(expectedFeePerLearner, 50);
-      const roundingDiffPerLearner = roundMoney(roundedFeePerLearner - expectedFeePerLearner);
+      // NOTE: Do NOT round the difference per learner - it's too small (e.g., 0.0044)
+      // and would round to 0. Instead, calculate at full precision and round only at the end.
+      const roundingDiffPerLearner = roundedFeePerLearner - expectedFeePerLearner;
 
       if (roundingDiffPerLearner > 0) {
+        // Calculate at full precision first, then round the final result
         const roundingTotalForClass = roundMoney(roundingDiffPerLearner * learners);
         totalAdjustments = roundMoney(totalAdjustments + roundingTotalForClass);
         totalCost = roundMoney(totalBomCost + totalAdjustments);

@@ -52,7 +52,7 @@ const getHeaders = () => ({
 });
 
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API_BASE_URL}/api/settings${path}`, {
+  const res = await fetch(`${API_BASE_URL}/settings${path}`, {
     ...opts,
     headers: { ...getHeaders(), ...(opts.headers || {}) },
   });
