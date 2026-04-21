@@ -5,6 +5,7 @@ import { useSales } from '../../context/SalesContext';
 import { applyProductPriceRounding } from '../../services/pricingRoundingService';
 import { useNavigate } from 'react-router-dom';
 import { dbService } from '../../services/db';
+import { getGlobalDefaultMargin } from '../../services/pricingService';
 import { Item, MarketAdjustment, BOMTemplate } from '../../types';
 
 interface FinishingOption {
@@ -28,6 +29,29 @@ const defaultFinishingOptions: FinishingOption[] = [
 
 const SmartPricing: React.FC = () => {
     const { companyConfig } = useData();
+
+    // Global Default Margin for auto-pricing
+    const [globalMargin, setGlobalMargin] = React.useState<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number } | null>(null);
+    const [globalMarginWarning, setGlobalMarginWarning] = React.useState<string | null>(null);
+
+    // Load Global Default Margin on mount
+    React.useEffect(() => {
+        const loadGlobalMargin = async () => {
+            try {
+                const margin = await getGlobalDefaultMargin();
+                setGlobalMargin(margin);
+                if (!margin || margin.margin_value <= 0) {
+                    setGlobalMarginWarning('No Global Default Margin configured. Configure in Settings > Profit Margin.');
+                } else {
+                    setGlobalMarginWarning(null);
+                }
+            } catch (error) {
+                console.error('Failed to load Global Default Margin:', error);
+                setGlobalMarginWarning('Failed to load Global Default Margin.');
+            }
+        };
+        loadGlobalMargin();
+    }, []);
     const { addJobOrder, jobOrders } = useSales();
     const navigate = useNavigate();
     const currency = companyConfig?.currencySymbol || 'K';
@@ -150,12 +174,24 @@ const SmartPricing: React.FC = () => {
             }, 0)
             : 0;
         
-        const finalPrice = baseCost + marketAdjustmentTotal;
+        const priceAfterMarketAdjustments = baseCost + marketAdjustmentTotal;
         
-        return { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, finalPrice };
+        return { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments };
     };
 
-    const { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, finalPrice } = calculateCosts();
+    const { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments } = calculateCosts();
+
+    // Apply Global Default Margin to get final price
+    const profitMarginAmount = React.useMemo(() => {
+        if (!globalMargin || globalMargin.margin_value <= 0) return 0;
+        if (globalMargin.margin_type === 'percentage') {
+            return priceAfterMarketAdjustments * (globalMargin.margin_value / 100);
+        } else {
+            return globalMargin.margin_value;
+        }
+    }, [globalMargin, priceAfterMarketAdjustments]);
+
+    const finalPrice = priceAfterMarketAdjustments + profitMarginAmount;
 
     const roundingResult = React.useMemo(() => {
         try {
@@ -242,6 +278,11 @@ const SmartPricing: React.FC = () => {
                             <h1 className="text-2xl font-bold text-slate-800">Smart Pricing Engine</h1>
                             <p className="text-slate-500">Calculate print job pricing with BOM cost analysis</p>
                         </div>
+                        {globalMarginWarning && (
+                            <div className="mt-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-center gap-2">
+                                <Info size={16} /> {globalMarginWarning}
+                            </div>
+                        )}
                     </div>
                     <button 
                         onClick={() => {
@@ -497,6 +538,7 @@ const SmartPricing: React.FC = () => {
                                 </div>
                                 {marketAdjustmentEnabled && marketAdjustments.map((adj, idx) => {
                                     const type = (adj.type || '').toUpperCase();
+                                    const category = (adj.adjustmentCategory || adj.category || '').toLowerCase();
                                     let adjustmentValue = 0;
                                     if (type === 'PERCENTAGE' || type === 'PERCENT') {
                                         adjustmentValue = baseCost * ((adj.value || 0) / 100);
@@ -504,8 +546,17 @@ const SmartPricing: React.FC = () => {
                                         adjustmentValue = (adj.value || 0) * pages * copies;
                                     }
                                     if (adjustmentValue > 0) {
+                                        // Color differentiation based on adjustment category
+                                        let colorClass = 'text-emerald-600'; // default green
+                                        if (category.includes('logistics') || category.includes('transport')) {
+                                            colorClass = 'text-blue-600'; // blue for logistics
+                                        } else if (category.includes('waste') || category.includes('wastage')) {
+                                            colorClass = 'text-rose-600'; // red/rose for waste
+                                        } else if (category.includes('overhead') || category.includes('labor') || category.includes('energy')) {
+                                            colorClass = 'text-amber-600'; // amber for overhead
+                                        }
                                         return (
-                                            <div key={idx} className="flex justify-between text-emerald-600">
+                                            <div key={idx} className={`flex justify-between ${colorClass}`}>
                                                 <span>{adj.name || 'Market Adjustment'}</span>
                                                 <span className="font-medium">+{formatCurrency(adjustmentValue)}</span>
                                             </div>
@@ -513,20 +564,14 @@ const SmartPricing: React.FC = () => {
                                     }
                                     return null;
                                 })}
-                                {(() => {
-                                    const profitMargin = displayTotal - baseCost;
-                                    if (profitMargin > 0) {
-                                        return (
-                                            <div className="flex justify-between text-emerald-600">
-                                                <span>Profit Margin</span>
-                                                <span className="font-medium">+{formatCurrency(profitMargin)}</span>
-                                            </div>
-                                        );
-                                    }
-                                    return null;
-                                })()}
+                                {profitMarginAmount > 0 && (
+                                    <div className="flex justify-between text-green-600">
+                                        <span>Profit Margin ({globalMargin?.margin_type === 'percentage' ? `${globalMargin.margin_value}%` : 'Fixed'})</span>
+                                        <span className="font-medium">+{formatCurrency(profitMarginAmount)}</span>
+                                    </div>
+                                )}
                                 {roundingResult && roundingResult.wasRounded && (
-                                    <div className="flex justify-between text-emerald-600">
+                                    <div className="flex justify-between text-purple-600">
                                         <span>Rounded</span>
                                         <span className="font-medium">+{formatCurrency(roundingResult.roundingDifference)}</span>
                                     </div>
@@ -535,9 +580,6 @@ const SmartPricing: React.FC = () => {
                                     <div className="font-bold text-slate-800">Total</div>
                                     <div className="text-right">
                                         <div className="text-2xl font-bold text-indigo-600">{formatCurrency(displayTotal)}</div>
-                                        {roundingResult && roundingResult.wasRounded && (
-                                            <div className="text-xs text-emerald-600">via {String(roundingResult.methodUsed)}</div>
-                                        )}
                                     </div>
                                 </div>
                                 <div className="text-center text-xs text-slate-400">

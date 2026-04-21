@@ -4,6 +4,7 @@ import { roundToCurrency } from '../utils/helpers';
 import { calculateItemFinancials } from '../utils/pricing';
 import { SafeFormulaEngine } from './formulaEngine';
 import { applyProductPriceRounding } from './pricingRoundingService';
+import { dbService } from './db';
 
 export interface PricingResult {
     price: number;
@@ -712,3 +713,110 @@ export const pricingService = {
         return false;
     }
 }
+
+/**
+ * Get the Global Default Margin settings from the database
+ */
+export const getGlobalDefaultMargin = async (): Promise<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number } | null> => {
+    try {
+        const marginSettings = await dbService.getSetting<any[]>('marginSettings');
+        if (!marginSettings || marginSettings.length === 0) return null;
+
+        // Find the global margin setting (scope = 'global')
+        const globalMargin = marginSettings.find((m: any) => m.scope === 'global' && m.is_active && !m.deleted_at);
+        if (!globalMargin) return null;
+
+        return {
+            margin_type: globalMargin.margin_type || 'percentage',
+            margin_value: Number(globalMargin.margin_value) || 0
+        };
+    } catch (error) {
+        console.error('[PricingService] Failed to get global default margin:', error);
+        return null;
+    }
+};
+
+/**
+ * Calculate selling price using Global Default Margin, market adjustments, and VAT
+ */
+export const calculateAutoPrice = async ({
+    cost,
+    includeVat = true,
+    companyConfig,
+    marketAdjustments
+}: {
+    cost: number;
+    includeVat?: boolean;
+    companyConfig?: any;
+    marketAdjustments?: any[];
+}): Promise<{
+    sellingPrice: number;
+    markupApplied: number;
+    marketAdjustmentApplied: number;
+    vatApplied: number;
+    hasGlobalMargin: boolean;
+    warning?: string;
+}> => {
+    const result = {
+        sellingPrice: 0,
+        markupApplied: 0,
+        marketAdjustmentApplied: 0,
+        vatApplied: 0,
+        hasGlobalMargin: false,
+        warning: undefined as string | undefined
+    };
+
+    if (cost <= 0) {
+        result.warning = 'Cost is not set. Please enter a cost price first.';
+        return result;
+    }
+
+    // Get Global Default Margin
+    const globalMargin = await getGlobalDefaultMargin();
+    if (!globalMargin || globalMargin.margin_value <= 0) {
+        result.warning = 'No Global Default Margin configured. Please configure it in Settings > Profit Margin.';
+        return result;
+    }
+
+    // Apply markup
+    let markedUpPrice = cost;
+    if (globalMargin.margin_type === 'percentage') {
+        markedUpPrice = cost * (1 + globalMargin.margin_value / 100);
+        result.markupApplied = markedUpPrice - cost;
+    } else {
+        markedUpPrice = cost + globalMargin.margin_value;
+        result.markupApplied = globalMargin.margin_value;
+    }
+
+    let priceBeforeVat = markedUpPrice;
+
+    // Apply market adjustments (if configured in companyConfig)
+    const activeAdjustments = marketAdjustments?.filter((adj: any) => adj.active ?? adj.isActive) || [];
+    let totalMarketAdjustment = 0;
+    for (const adj of activeAdjustments) {
+        const adjType = (adj.type || '').toUpperCase();
+        if (adjType === 'PERCENTAGE' || adjType === 'PERCENT') {
+            totalMarketAdjustment += markedUpPrice * ((adj.value || 0) / 100);
+        } else {
+            totalMarketAdjustment += (adj.value || 0);
+        }
+    }
+    priceBeforeVat += totalMarketAdjustment;
+    result.marketAdjustmentApplied = totalMarketAdjustment;
+
+    // Apply VAT (if enabled)
+    let vatRate = 0;
+    if (includeVat && companyConfig?.vatRate) {
+        vatRate = Number(companyConfig.vatRate) || 0;
+    }
+    if (includeVat && !vatRate && companyConfig?.taxRate) {
+        vatRate = Number(companyConfig.taxRate) || 0;
+    }
+    if (vatRate > 0) {
+        result.vatApplied = priceBeforeVat * vatRate;
+    }
+
+    result.sellingPrice = priceBeforeVat + result.vatApplied;
+    result.hasGlobalMargin = true;
+    return result;
+};
