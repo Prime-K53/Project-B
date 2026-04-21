@@ -775,7 +775,8 @@ const SmartPricing: React.FC = () => {
                                                 finishingEnabled: finishingOptions.filter(o => o.enabled).map(o => o.id),
                                                 roundingMethod: roundingResult?.methodUsed,
                                                 roundedPrice: displayTotal,
-                                                originalPrice: finalPrice
+                                                originalPrice: finalPrice,
+                                                bomTemplateId: bomId
                                             } as any
                                         };
                                         
