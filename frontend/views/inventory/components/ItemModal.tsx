@@ -321,32 +321,6 @@ const ItemModal: React.FC<ItemModalProps> = ({
         loadGlobalMargin();
     }, []);
 
-    // Calculate BOM costs from stored template
-    const bomCosts = useMemo(() => {
-        if (!formData.smartPricing?.bomTemplateId || !bomTemplates.length) {
-            return { paper: 0, toner: 0, finishing: 0, total: 0 };
-        }
-        const template = bomTemplates.find(b => b.id === formData.smartPricing.bomTemplateId);
-        if (!template?.components?.length) {
-            return { paper: 0, toner: 0, finishing: 0, total: 0 };
-        }
-        let paper = 0, toner = 0, finishing = 0;
-        template.components.forEach(comp => {
-            const item = materials.find(m => m.id === comp.itemId);
-            if (!item) return;
-            const cost = item.cost || 0;
-            const qty = parseFloat(comp.quantityFormula) || 1;
-            if (comp.name?.toLowerCase().includes('paper')) {
-                paper += cost * qty;
-            } else if (comp.name?.toLowerCase().includes('toner')) {
-                toner += cost * qty;
-            } else {
-                finishing += cost * qty;
-            }
-        });
-        return { paper, toner, finishing, total: paper + toner + finishing };
-    }, [formData.smartPricing?.bomTemplateId, bomTemplates, materials]);
-
     // Contextual unit options per type
     const getUnitOptions = () => {
         switch (formData.type) {
@@ -556,6 +530,32 @@ dbService.getAll<BOMTemplate>('bomTemplates')
     const materials = useMemo(() => (inventory || []).filter((i: Item) => i.type === 'Raw Material'), [inventory]);
     const paperMaterials = useMemo(() => materials.filter((i: Item) => i.category?.toLowerCase().includes('paper') || i.name.toLowerCase().includes('paper')), [materials]);
     const tonerMaterials = useMemo(() => materials.filter((i: Item) => i.category?.toLowerCase().includes('toner') || i.category?.toLowerCase().includes('cartridge') || i.name.toLowerCase().includes('toner')), [materials]);
+
+    // Calculate BOM costs from stored template
+    const bomCosts = useMemo(() => {
+        if (!formData.smartPricing?.bomTemplateId || !bomTemplates.length) {
+            return { paper: 0, toner: 0, finishing: 0, total: 0 };
+        }
+        const template = bomTemplates.find(b => b.id === formData.smartPricing.bomTemplateId);
+        if (!template?.components?.length) {
+            return { paper: 0, toner: 0, finishing: 0, total: 0 };
+        }
+        let paper = 0, toner = 0, finishing = 0;
+        template.components.forEach(comp => {
+            const item = materials.find(m => m.id === comp.itemId);
+            if (!item) return;
+            const cost = item.cost || 0;
+            const qty = parseFloat(comp.quantityFormula) || 1;
+            if (comp.name?.toLowerCase().includes('paper')) {
+                paper += cost * qty;
+            } else if (comp.name?.toLowerCase().includes('toner')) {
+                toner += cost * qty;
+            } else {
+                finishing += cost * qty;
+            }
+        });
+        return { paper, toner, finishing, total: paper + toner + finishing };
+    }, [formData.smartPricing?.bomTemplateId, bomTemplates, materials]);
 
     // Helper to calculate cost/price based on pages and config
     const calculateItemFinancials = (pPages: number, pConfig: PricingConfig | undefined, pItemType?: string, pManualCost?: number) => {
