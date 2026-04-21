@@ -409,12 +409,12 @@ const ProfitMarginSettings: React.FC = () => {
           if (globalSetting) {
             await apiFetch(`/profit-margins/${globalSetting.id}`, {
               method: 'PATCH',
-              body: JSON.stringify({ margin_value: val, margin_type: globalType, reason: globalReason || 'Global margin update' }),
+              body: JSON.stringify({ margin_value: val, margin_type: globalType, is_active: true, reason: globalReason || 'Global margin update' }),
             });
           } else {
             await apiFetch('/profit-margins', {
               method: 'POST',
-              body: JSON.stringify({ scope: 'global', scope_ref_id: null, margin_type: globalType, margin_value: val, reason: globalReason || 'Initial global margin' }),
+              body: JSON.stringify({ scope: 'global', scope_ref_id: null, margin_type: globalType, margin_value: val, is_active: true, reason: globalReason || 'Initial global margin' }),
             });
           }
           toast('Global margin saved', 'success');

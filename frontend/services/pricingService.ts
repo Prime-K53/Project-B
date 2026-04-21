@@ -715,15 +715,26 @@ export const pricingService = {
 }
 
 /**
- * Get the Global Default Margin settings from the database
+ * Get the Global Default Margin settings from the backend API
  */
 export const getGlobalDefaultMargin = async (): Promise<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number } | null> => {
     try {
-        const marginSettings = await dbService.getSetting<any[]>('marginSettings');
-        if (!marginSettings || marginSettings.length === 0) return null;
+        const API_BASE_URL = (await import('../config/api.js')).API_BASE_URL;
+        const userId = localStorage.getItem('prime_user_id') || 'unknown';
+        const userRole = localStorage.getItem('prime_user_role') || 'Admin';
 
-        // Find the global margin setting (scope = 'global')
-        const globalMargin = marginSettings.find((m: any) => m.scope === 'global' && m.is_active && !m.deleted_at);
+        const res = await fetch(`${API_BASE_URL}/settings/profit-margins?scope=global`, {
+            headers: {
+                'x-user-id': userId,
+                'x-user-role': userRole,
+            }
+        });
+        if (!res.ok) return null;
+
+        const marginSettings = await res.json();
+        if (!marginSettings || !Array.isArray(marginSettings) || marginSettings.length === 0) return null;
+
+        const globalMargin = marginSettings.find((m: any) => m.scope === 'global' && !m.deleted_at);
         if (!globalMargin) return null;
 
         return {
