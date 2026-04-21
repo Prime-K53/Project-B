@@ -9,6 +9,7 @@ import { dbService } from '../../../services/db';
 import { applyProductPriceRounding, ROUNDING_METHOD_OPTIONS } from '../../../services/pricingRoundingService';
 import { calculateBaseSellingPrice } from '../../../utils/pricing';
 import { calculateSellingPrice } from '../../../utils/pricing/pricingEngine';
+import { getGlobalDefaultMargin } from '../../../services/pricingService';
 
 // Generate a unique ID without external dependency
 const generateId = (): string => {
@@ -303,6 +304,22 @@ const ItemModal: React.FC<ItemModalProps> = ({
         adjustmentSnapshots: any[];
         breakdown: any;
     } | null>(null);
+
+    // Global Default Margin from Settings
+    const [globalMargin, setGlobalMargin] = useState<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number } | null>(null);
+
+    // Load global margin on mount
+    useEffect(() => {
+        const loadGlobalMargin = async () => {
+            try {
+                const margin = await getGlobalDefaultMargin();
+                setGlobalMargin(margin);
+            } catch (err) {
+                console.error('[ItemModal] Failed to load global margin:', err);
+            }
+        };
+        loadGlobalMargin();
+    }, []);
 
     // Contextual unit options per type
     const getUnitOptions = () => {
@@ -1492,88 +1509,80 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                  );
                                                              })}
                                                          </div>
-                                                     </div>
+</div>
 
-                                                     {/* Divider */}
-                                                     <div className="border-t border-slate-100 my-4"></div>
+                                                      {/* Divider */}
+<div className="border-t border-slate-100 my-4"></div>
 
-                                                     {/* Margin & Rounding */}
-                                                     <div>
-                                                         <div className={styles.sectionTitle}>Margin & rounding</div>
-                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                             <div>
-                                                                 <label className={styles.label}>Profit margin</label>
-                                                                 <div className="flex gap-2">
-                                                                     <select className={styles.select}>
-                                                                         <option>Global default %</option>
-                                                                         <option>Custom %</option>
-                                                                         <option>Fixed amount</option>
-                                                                     </select>
-                                                                     <input
-                                                                         type="number"
-                                                                         value={formData.marginPercent || 0}
-                                                                         onChange={(e) => setFormData({ ...formData, marginPercent: Number(e.target.value) })}
-                                                                         className={`${styles.input} flex-1`}
-                                                                         placeholder="e.g. 25"
-                                                                         step="0.1"
-                                                                         min="0"
-                                                                     />
-                                                                     <span className="text-xs text-slate-500 pt-2 self-end">%</span>
-                                                                 </div>
-                                                             </div>
-                                                             <div>
-                                                                 <label className={styles.label}>Rounding selector</label>
-                                                                 <select className={styles.select}>
-                                                                     <option>Nearest K100</option>
-                                                                     <option>Nearest K50</option>
-                                                                     <option>Nearest K10</option>
-                                                                     <option>None</option>
-                                                                 </select>
-                                                             </div>
-                                                         </div>
-                                                     </div>
-
-                                                     {/* Divider */}
-                                                     <div className="border-t border-slate-100 my-4"></div>
-
-                                                     {/* Price Summary */}
-                                                     <div>
-                                                         <div className={styles.sectionTitle}>Price summary</div>
-                                                         <div className="space-y-2">
-                                                             <div className={styles.row}>
-                                                                 <div className="text-sm font-medium text-slate-600">Cost base</div>
-                                                                 <div className="text-sm font-medium text-slate-800">
-                                                                     K{enginePreview?.cost?.toFixed(2) || '0.00'}
-                                                                 </div>
-                                                             </div>
-                                                             <div className={styles.row}>
-                                                                 <div className="text-sm font-medium text-slate-600">Market adjustments (+)</div>
-                                                                 <div className="text-sm font-medium text-green-600">
-                                                                     +K{(enginePreview?.adjustmentTotal - enginePreview?.marginAmount)?.toFixed(2) || '0.00'}
-                                                                 </div>
-                                                             </div>
-                                                             <div className={styles.row}>
-                                                                 <div className="text-sm font-medium text-slate-600">Profit margin (+)</div>
-                                                                 <div className="text-sm font-medium text-green-600">
-                                                                     +K{enginePreview?.marginAmount?.toFixed(2) || '0.00'}
-                                                                 </div>
-                                                             </div>
-                                                             <div className={styles.row}>
-                                                                 <div className="text-sm font-medium text-slate-600">Rounding (±)</div>
-                                                                 <div className={`text-sm font-medium ${enginePreview?.marginAmount ? 'text-purple-600' : 'text-slate-400'}`}>
-                                                                     ±K{(enginePreview?.unitPrice - enginePreview?.cost - (enginePreview?.adjustmentTotal - enginePreview?.marginAmount) - enginePreview?.marginAmount)?.toFixed(2) || '0.00'}
-                                                                 </div>
-                                                             </div>
-                                                             <div className={styles.highlightRow}>
-                                                                 <div className="text-sm font-medium text-slate-800">Selling price</div>
-                                                                 <div className={styles.priceValue}>
-                                                                     K{enginePreview?.unitPrice?.toFixed(2) || '0.00'}
-                                                                 </div>
-                                                             </div>
-                                                         </div>
-                                                     </div>
-                                                 </div>
-                                             </div>
+                                                      {/* Price Summary */}
+                                                      <div>
+                                                          <div className={styles.sectionTitle}>Price summary</div>
+                                                          <div className="space-y-2">
+                                                              {formData.smartPricing ? (
+                                                                  <>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Base cost</div>
+                                                                          <div className="text-sm font-medium text-slate-800">
+                                                                              K{(formData.cost || 0).toFixed(2)}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Profit margin {globalMargin ? `(${globalMargin.margin_value}${globalMargin.margin_type === 'percentage' ? '%' : ' K'})` : ''} (+)</div>
+                                                                          <div className="text-sm font-medium text-green-600">
+                                                                              +K{((enginePreview?.unitPrice || formData.price || 0) - (formData.cost || 0) - (enginePreview?.adjustmentTotal || 0)).toFixed(2)}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Rounding (±)</div>
+                                                                          <div className="text-sm font-medium text-purple-600">
+                                                                              ±K{((formData.smartPricing.roundedPrice || 0) - (formData.smartPricing.originalPrice || 0)).toFixed(2)}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.highlightRow}>
+                                                                          <div className="text-sm font-medium text-slate-800">Selling price</div>
+                                                                          <div className={styles.priceValue}>
+                                                                              K{formData.price?.toFixed(2) || formData.smartPricing?.roundedPrice?.toFixed(2) || '0.00'}
+                                                                          </div>
+                                                                      </div>
+                                                                  </>
+                                                              ) : (
+                                                                  <>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Cost base</div>
+                                                                          <div className="text-sm font-medium text-slate-800">
+                                                                              K{enginePreview?.cost?.toFixed(2) || '0.00'}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Market adjustments (+)</div>
+                                                                          <div className="text-sm font-medium text-green-600">
+                                                                              +K{(enginePreview?.adjustmentTotal - enginePreview?.marginAmount)?.toFixed(2) || '0.00'}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Profit margin (+)</div>
+                                                                          <div className="text-sm font-medium text-green-600">
+                                                                              +K{enginePreview?.marginAmount?.toFixed(2) || '0.00'}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.row}>
+                                                                          <div className="text-sm font-medium text-slate-600">Rounding (±)</div>
+                                                                          <div className={`text-sm font-medium ${enginePreview?.marginAmount ? 'text-purple-600' : 'text-slate-400'}`}>
+                                                                              ±K{(enginePreview?.unitPrice - enginePreview?.cost - (enginePreview?.adjustmentTotal - enginePreview?.marginAmount) - enginePreview?.marginAmount)?.toFixed(2) || '0.00'}
+                                                                          </div>
+                                                                      </div>
+                                                                      <div className={styles.highlightRow}>
+                                                                          <div className="text-sm font-medium text-slate-800">Selling price</div>
+                                                                          <div className={styles.priceValue}>
+                                                                              K{enginePreview?.unitPrice?.toFixed(2) || '0.00'}
+                                                                          </div>
+                                                                      </div>
+                                                                  </>
+                                                              )}
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              </div>
                                          </>
                                      )}
 
@@ -1620,38 +1629,10 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                              <option>Zero-rated</option>
                                                          </select>
                                                      </div>
-                                                 </div>
-                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                     <div>
-                                                         <label className={styles.label}>Profit margin</label>
-                                                         <input
-                                                             type="number"
-                                                             value={formData.marginPercent || 0}
-                                                             onChange={(e) => setFormData({ ...formData, marginPercent: Number(e.target.value) })}
-                                                             className={styles.input}
-                                                             step="0.1"
-                                                             min="0"
-                                                         />
-                                                     </div>
-                                                     <div>
-                                                         <label className={styles.label}>Rounding</label>
-                                                         <select className={styles.select}>
-                                                             <option>Nearest K10</option>
-                                                             <option>Nearest K50</option>
-                                                             <option>Nearest K100</option>
-                                                             <option>None</option>
-                                                         </select>
-                                                     </div>
-                                                 </div>
-                                                 <div className={styles.summaryRow}>
-                                                     <div className="text-sm font-medium text-slate-800">Selling price</div>
-                                                     <div className={styles.priceValue}>
-                                                         K{(formData.cost ? (formData.cost * (1 + (formData.marginPercent || 0) / 100)) : 0).toFixed(2)}
-                                                     </div>
-                                                 </div>
-                                             </div>
-                                         </div>
-                                     )}
+</div>
+                                              </div>
+                                          </div>
+                                      )}
 
                                      {formData.type === 'Raw Material' && (
                                          <div className={styles.card}>
@@ -1799,31 +1780,9 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                  </div>
                                                              );
                                                          })}
-                                                     </div>
-                                                 </div>
-                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                     <div>
-                                                         <label className={styles.label}>Profit margin</label>
-                                                         <input
-                                                             type="number"
-                                                             value={formData.marginPercent || 0}
-                                                             onChange={(e) => setFormData({ ...formData, marginPercent: Number(e.target.value) })}
-                                                             className={styles.input}
-                                                             step="0.1"
-                                                             min="0"
-                                                         />
-                                                     </div>
-                                                     <div>
-                                                         <label className={styles.label}>Rounding</label>
-                                                         <select className={styles.select}>
-                                                             <option>Nearest K10</option>
-                                                             <option>Nearest K50</option>
-                                                             <option>Nearest K100</option>
-                                                             <option>None</option>
-                                                         </select>
-                                                     </div>
-                                                 </div>
-                                                 <div className={styles.summaryRow}>
+</div>
+                                                  </div>
+                                                  <div className={styles.summaryRow}>
                                                      <div className="text-sm font-medium text-slate-600">Cost per item</div>
                                                      <div className="text-sm font-medium text-slate-800">
                                                          K{(derivedCostPerPiece || 0).toFixed(2)}
