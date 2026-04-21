@@ -1400,71 +1400,77 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                  </div>
                              )}
 
-                             {/* Pricing Tab */}
-                             {!isServiceType && activeTab === 'pricing' && (
-                                 <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
-                                     {formData.type === 'Product' && (
-                                         <>
-                                             {/* Smart Pricing Engine Summary */}
-                                             <div className={styles.card}>
-                                                 <h3 className={styles.sectionTitle}>Smart Pricing Engine Summary</h3>
-                                                 <div className="space-y-3">
-                                                     {/* Paper Section */}
-                                                     <div className={styles.row}>
-                                                         <div className="flex items-center gap-3">
-                                                             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                                                             <div>
-                                                                 <div className="text-xs font-medium text-slate-600">Paper</div>
-                                                                 <div className="text-[10px] text-slate-400">
-                                                                     {formData.pricingConfig?.paperId 
-                                                                         ? materials.find(m => m.id === formData.pricingConfig?.paperId)?.name || 'Unknown paper'
-                                                                         : 'No paper selected'}
-                                                                     {formData.pages ? ` • ${formData.pages} pages` : ''}
-                                                                     {formData.smartPricing?.copies ? ` • ${formData.smartPricing.copies} copies` : ''}
-                                                                 </div>
-                                                             </div>
-                                                         </div>
-                                                         <div className="text-sm font-medium text-slate-800">
-                                                             K{enginePreview?.breakdown.baseCost?.toFixed(2) || '0.00'}
-                                                         </div>
-                                                     </div>
+{/* Pricing Tab */}
+                              {!isServiceType && activeTab === 'pricing' && (
+                                  <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
+                                      {formData.type === 'Product' && (
+                                          <>
+                                              {/* Smart Pricing Engine Summary */}
+                                              <div className={styles.card}>
+                                                  <h3 className={styles.sectionTitle}>Smart Pricing Engine Summary</h3>
+                                                  <div className="space-y-3">
+                                                      {/* Paper Section */}
+                                                      <div className={styles.row}>
+                                                          <div className="flex items-center gap-3">
+                                                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                                              <div>
+                                                                  <div className="text-xs font-medium text-slate-600">Paper</div>
+                                                                  <div className="text-[10px] text-slate-400">
+                                                                      {formData.smartPricing?.paperItemId
+                                                                          ? materials.find(m => m.id === formData.smartPricing?.paperItemId)?.name || 'No paper selected'
+                                                                          : formData.pricingConfig?.paperId
+                                                                          ? materials.find(m => m.id === formData.pricingConfig?.paperId)?.name || 'Unknown paper'
+                                                                          : 'No paper selected'}
+                                                                      {formData.smartPricing?.pages || formData.pages ? ` • ${formData.smartPricing?.pages || formData.pages} pages` : ''}
+                                                                      {formData.smartPricing?.copies ? ` • ${formData.smartPricing.copies} copies` : ''}
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                          <div className="text-sm font-medium text-slate-800">
+                                                              K{(enginePreview?.breakdown?.baseCost || formData.cost || 0).toFixed(2)}
+                                                          </div>
+                                                      </div>
 
-                                                     {/* Toner Section */}
-                                                     <div className={styles.row}>
-                                                         <div className="flex items-center gap-3">
-                                                             <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                                                             <div>
-                                                                 <div className="text-xs font-medium text-slate-600">Toner</div>
-                                                                 <div className="text-[10px] text-slate-400">
-                                                                     {formData.pricingConfig?.tonerId 
-                                                                         ? materials.find(m => m.id === formData.pricingConfig?.tonerId)?.name || 'Unknown toner'
-                                                                         : 'No toner selected'}
-                                                                     {formData.pages ? ` • ${formData.pages} total pages` : ''}
-                                                                 </div>
-                                                             </div>
-                                                         </div>
-                                                         <div className="text-sm font-medium text-slate-800">
-                                                             K{(enginePreview?.cost - enginePreview?.breakdown.baseCost)?.toFixed(2) || '0.00'}
-                                                         </div>
-                                                     </div>
+                                                      {/* Toner Section */}
+                                                      <div className={styles.row}>
+                                                          <div className="flex items-center gap-3">
+                                                              <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                                                              <div>
+                                                                  <div className="text-xs font-medium text-slate-600">Toner</div>
+                                                                  <div className="text-[10px] text-slate-400">
+                                                                      {formData.smartPricing?.tonerItemId
+                                                                          ? materials.find(m => m.id === formData.smartPricing?.tonerItemId)?.name || 'No toner selected'
+                                                                          : formData.pricingConfig?.tonerId
+                                                                          ? materials.find(m => m.id === formData.pricingConfig?.tonerId)?.name || 'Unknown toner'
+                                                                          : 'No toner selected'}
+                                                                      {(formData.smartPricing?.pages || formData.pages) ? ` • ${formData.smartPricing?.pages || formData.pages} total pages` : ''}
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                          <div className="text-sm font-medium text-slate-800">
+                                                              K{(enginePreview?.cost - enginePreview?.breakdown?.baseCost || 0).toFixed(2)}
+                                                          </div>
+                                                      </div>
 
-                                                     {/* Finishing Section */}
-                                                     <div className={styles.row}>
-                                                         <div className="flex items-center gap-3">
-                                                             <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                                             <div>
-                                                                 <div className="text-xs font-medium text-slate-600">Finishing</div>
-                                                                 <div className="text-[10px] text-slate-400">
-                                                                     {formData.pricingConfig?.finishingOptions?.length 
-                                                                         ? formData.pricingConfig.finishingOptions.map(opt => opt.name).join(', ')
-                                                                         : 'No finishing options'}
-                                                                 </div>
-                                                             </div>
-                                                         </div>
-                                                         <div className="text-sm font-medium text-slate-800">
-                                                             K{(enginePreview?.adjustmentSnapshots?.find(s => s.name === 'Finishing')?.calculatedAmount || 0).toFixed(2)}
-                                                         </div>
-                                                     </div>
+                                                      {/* Finishing Section */}
+                                                      <div className={styles.row}>
+                                                          <div className="flex items-center gap-3">
+                                                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                                              <div>
+                                                                  <div className="text-xs font-medium text-slate-600">Finishing</div>
+                                                                  <div className="text-[10px] text-slate-400">
+                                                                      {formData.smartPricing?.finishingEnabled?.length
+                                                                          ? formData.smartPricing.finishingEnabled.join(', ') || 'No finishing options'
+                                                                          : formData.pricingConfig?.finishingOptions?.length
+                                                                          ? formData.pricingConfig.finishingOptions.map(opt => opt.name).join(', ')
+                                                                          : 'No finishing options'}
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                          <div className="text-sm font-medium text-slate-800">
+                                                              K{(enginePreview?.adjustmentSnapshots?.find(s => s.name === 'Finishing')?.calculatedAmount || 0).toFixed(2)}
+                                                          </div>
+                                                      </div>
 
                                                      {/* Divider */}
                                                      <div className="border-t border-slate-100 my-4"></div>
