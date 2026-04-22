@@ -776,7 +776,27 @@ const SmartPricing: React.FC = () => {
                                                 roundingMethod: roundingResult?.methodUsed,
                                                 roundedPrice: displayTotal,
                                                 originalPrice: finalPrice,
-                                                bomTemplateId: bomId
+                                                bomTemplateId: bomId,
+                                                // Full price breakdown — kept in sync with Price Summary panel
+                                                paperCost,
+                                                tonerCost,
+                                                finishingCost,
+                                                baseCost,
+                                                marketAdjustmentTotal,
+                                                marketAdjustments: marketAdjustmentEnabled
+                                                    ? marketAdjustments.map(adj => {
+                                                        const type = (adj.type || '').toUpperCase();
+                                                        const value = type === 'PERCENTAGE' || type === 'PERCENT'
+                                                            ? baseCost * ((adj.value || 0) / 100)
+                                                            : (adj.value || 0) * pages * copies;
+                                                        return { id: adj.id, name: adj.name, type: adj.type, value, rawValue: adj.value };
+                                                    })
+                                                    : [],
+                                                profitMarginAmount,
+                                                marginType: globalMargin?.margin_type,
+                                                marginValue: globalMargin?.margin_value,
+                                                roundingDifference: roundingResult?.roundingDifference ?? 0,
+                                                wasRounded: roundingResult?.wasRounded ?? false,
                                             } as any
                                         };
                                         

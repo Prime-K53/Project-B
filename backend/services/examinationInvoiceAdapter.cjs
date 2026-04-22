@@ -1,4 +1,4 @@
-const { toNumericValue, pickPositiveNumber, roundMoney } = require('./examinationSharedUtils');
+const { toNumericValue, pickPositiveNumber, roundMoney } = require('./examinationSharedUtils.cjs');
 
 const EXAMINATION_INVOICE_ORIGIN = 'examination';
 

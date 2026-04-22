@@ -4,7 +4,7 @@ const pricingEngine = require('./examinationPricingEngine.cjs');
 const batchWorkflow = require('./examinationBatchWorkflow.cjs');
 const examinationInvoiceAdapter = require('./examinationInvoiceAdapter.cjs');
 const { auditService } = require('../auditService.cjs');
-const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils');
+const { toNumericValue, pickPositiveNumber } = require('./examinationSharedUtils.cjs');
 
 const PAGES_PER_SHEET = pricingEngine.PAGES_PER_SHEET;
 const TONER_PAGES_PER_KG = pricingEngine.TONER_PAGES_PER_KG;

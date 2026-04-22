@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
-import { X, Save, Plus, Trash2, AlertCircle, Package, DollarSign, Hash, MapPin, Truck, Tag, FileText, Box, Layers, ArrowRight, Wand2, Grid, Scale, RefreshCw, Eye, EyeOff, Info, Check, Edit3 } from 'lucide-react';
+import { X, Save, Plus, Trash2, AlertCircle, Package, DollarSign, Hash, MapPin, Truck, Tag, FileText, Box, Layers, ArrowRight, Wand2, Grid, Scale, RefreshCw, Eye, EyeOff, Info, Check, Edit3, TrendingUp } from 'lucide-react';
 import { Item, Warehouse, ProductVariant, PricingConfig, FinishingOption, AdjustmentSnapshot, BOMTemplate, VolumePricingTier } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { generateAutoSKU, generateAutoBarcode, generateBulkVariants } from '../../../utils/skuGenerator';
@@ -279,6 +279,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
     });
     const [showVariantForm, setShowVariantForm] = useState(false);
     const [expandedVariantPricing, setExpandedVariantPricing] = useState<string | null>(null);
+    // Live price preview for the "Add Variant" form
+    const [variantPreview, setVariantPreview] = useState<ReturnType<typeof calculateSmartVariantPrice>>(null);
 
     // Bulk Variant Generation State
     const [showBulkGenerator, setShowBulkGenerator] = useState(false);
@@ -320,6 +322,93 @@ const ItemModal: React.FC<ItemModalProps> = ({
         };
         loadGlobalMargin();
     }, []);
+
+
+    // ─── Smart Pricing engine helper for variants ───────────────────────────────
+    // Mirrors SmartPricing.tsx calculateCosts() exactly, using the parent product's
+    // smartPricing snapshot (paper/toner/finishing/margin config) with a variant's pages.
+    const calculateSmartVariantPrice = (pages: number, copies: number = 1) => {
+        const sp = formData.smartPricing;
+        if (!sp) return null;
+
+        // Paper cost
+        let paperCost = 0;
+        const paper = inventory.find((i: Item) => i.id === sp.paperItemId);
+        if (paper) {
+            const sheetsPerCopy = Math.ceil(pages / 2);
+            const totalSheets = sheetsPerCopy * copies;
+            const reamSize = Number((paper as any).conversionRate || (paper as any).conversion_rate || 500);
+            const paperUnitCost = Number((paper as any).cost_price || (paper as any).cost_per_unit || paper.cost || 0);
+            const costPerSheet = reamSize > 0 ? paperUnitCost / reamSize : 0;
+            paperCost = Number((totalSheets * costPerSheet).toFixed(2));
+        }
+
+        // Toner cost
+        let tonerCost = 0;
+        const toner = inventory.find((i: Item) => i.id === sp.tonerItemId);
+        if (toner) {
+            const capacity = 20000;
+            const totalPages = pages * copies;
+            const tonerUnitCost = Number((toner as any).cost_price || (toner as any).cost_per_unit || toner.cost || 0);
+            tonerCost = Number((totalPages * (tonerUnitCost / capacity)).toFixed(2));
+        }
+
+        // Finishing cost — reuse saved finishing button costs (same source as SmartPricing)
+        const finishingCost = ((sp.finishingEnabled || []) as string[]).reduce((sum: number, id: string) => {
+            const opt = finishingButtons.find(f => f.id === id);
+            return sum + ((opt?.cost || 0) * copies);
+        }, 0);
+
+        const baseCost = paperCost + tonerCost + finishingCost;
+
+        // Market adjustments — same logic as SmartPricing
+        const adjustmentLines = marketAdjustments.map(adj => {
+            const type = (adj.type || '').toUpperCase();
+            const value = (type === 'PERCENTAGE' || type === 'PERCENT')
+                ? baseCost * ((adj.value || 0) / 100)
+                : (adj.value || 0) * pages * copies;
+            return { id: adj.id, name: adj.name, type: adj.type, value: Number(value.toFixed(2)), rawValue: adj.value };
+        });
+        const marketAdjustmentTotal = adjustmentLines.reduce((s: number, a: any) => s + a.value, 0);
+        const priceAfterAdjustments = baseCost + marketAdjustmentTotal;
+
+        // Profit margin
+        let profitMarginAmount = 0;
+        if (globalMargin && globalMargin.margin_value > 0) {
+            profitMarginAmount = globalMargin.margin_type === 'percentage'
+                ? priceAfterAdjustments * (globalMargin.margin_value / 100)
+                : globalMargin.margin_value;
+        }
+        const priceBeforeRounding = priceAfterAdjustments + profitMarginAmount;
+
+        // Rounding
+        let roundingResult: any;
+        try {
+            roundingResult = applyProductPriceRounding({ calculatedPrice: priceBeforeRounding, companyConfig });
+        } catch {
+            roundingResult = { originalPrice: priceBeforeRounding, roundedPrice: priceBeforeRounding, roundingDifference: 0, wasRounded: false, methodUsed: 'NONE' };
+        }
+
+        return {
+            paperCost,
+            tonerCost,
+            finishingCost,
+            baseCost,
+            marketAdjustments: adjustmentLines,
+            marketAdjustmentTotal,
+            profitMarginAmount,
+            marginType: globalMargin?.margin_type,
+            marginValue: globalMargin?.margin_value,
+            originalPrice: roundingResult.originalPrice,
+            roundedPrice: roundingResult.roundedPrice,
+            roundingDifference: roundingResult.roundingDifference ?? 0,
+            wasRounded: roundingResult.wasRounded ?? false,
+            roundingMethod: roundingResult.methodUsed,
+            pages,
+            copies,
+        };
+    };
+    // ────────────────────────────────────────────────────────────────────────────
 
     // Contextual unit options per type
     const getUnitOptions = () => {
@@ -889,6 +978,10 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             return;
         }
 
+        const variantPages = Number(newVariant.pages) || 1;
+        // Use SmartPricing engine if parent has a smartPricing snapshot
+        const smartResult = calculateSmartVariantPrice(variantPages, 1);
+
         const variant: ProductVariant = {
             id: newVariant.id || generateVariantId(),
             productId: formData.id || generateId(),
@@ -896,18 +989,19 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             sku: newVariant.sku,
             name: newVariant.name,
             attributes: newVariant.attributes || {},
-            price: Number(newVariant.price) || 0,
-            cost: Number(newVariant.cost) || 0,
-            cost_price: Number(newVariant.cost) || 0,
-            calculated_price: Number(newVariant.price) || 0,
-            selling_price: Number(newVariant.price) || 0,
-            rounding_difference: 0,
+            price: smartResult ? smartResult.roundedPrice : (Number(newVariant.price) || 0),
+            cost: smartResult ? smartResult.baseCost : (Number(newVariant.cost) || 0),
+            cost_price: smartResult ? smartResult.baseCost : (Number(newVariant.cost) || 0),
+            calculated_price: smartResult ? smartResult.originalPrice : (Number(newVariant.price) || 0),
+            selling_price: smartResult ? smartResult.roundedPrice : (Number(newVariant.price) || 0),
+            rounding_difference: smartResult ? smartResult.roundingDifference : 0,
+            rounding_method: smartResult ? smartResult.roundingMethod : undefined,
             stock: Number(newVariant.stock) || 0,
-            pages: Number(newVariant.pages) || 1,
-            adjustmentSnapshots: getAdjustmentSnapshots(Number(newVariant.cost) || 0),
-            // Include pricing mode fields
+            pages: variantPages,
+            adjustmentSnapshots: getAdjustmentSnapshots(smartResult ? smartResult.baseCost : (Number(newVariant.cost) || 0)),
             pricingSource: newVariant.pricingSource || 'static',
-            inheritsParentBOM: newVariant.inheritsParentBOM ?? false
+            inheritsParentBOM: newVariant.inheritsParentBOM ?? false,
+            ...(smartResult ? { smartPricingSnapshot: smartResult } : {})
         };
 
         setFormData(prev => ({
@@ -928,6 +1022,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             pricingSource: 'static',
             inheritsParentBOM: false
         });
+        setVariantPreview(null);
         setShowVariantForm(false);
     };
 
@@ -967,101 +1062,85 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             return;
         }
 
-        // Check if variant uses dynamic pricing (has BOM template configured)
+        // ── Smart Pricing path (preferred): parent was created via SmartPricing engine ──
+        const smartResult = calculateSmartVariantPrice(newPages, 1);
+        if (smartResult) {
+            setFormData(prev => ({
+                ...prev,
+                variants: (prev.variants || []).map(v => v.id !== variantId ? v : {
+                    ...v,
+                    pages: newPages,
+                    cost: smartResult.baseCost,
+                    cost_price: smartResult.baseCost,
+                    price: smartResult.roundedPrice,
+                    selling_price: smartResult.roundedPrice,
+                    calculated_price: smartResult.originalPrice,
+                    rounding_difference: smartResult.roundingDifference,
+                    rounding_method: smartResult.roundingMethod,
+                    smartPricingSnapshot: smartResult,
+                    calculatedAt: new Date().toISOString()
+                })
+            }));
+            return;
+        }
+
+        // ── Legacy BOM dynamic path ──────────────────────────────────────────────
         const hasHiddenBOM = formData.smartPricing?.hiddenBOMId || formData.smartPricing?.bomTemplateId;
         const useDynamicPricing = variant?.pricingSource === 'dynamic' ||
             variant?.inheritsParentBOM ||
             (hasHiddenBOM && variant?.pricingSource !== 'static');
 
         if (useDynamicPricing && hasHiddenBOM) {
-            // Dynamic pricing: Calculate from BOM
             try {
                 const result = pricingService.calculateVariantPrice(
                     formData as Item,
                     { ...variant, pages: newPages } as ProductVariant,
-                    1, // Unit quantity
+                    1,
                     inventory,
                     bomTemplates,
                     marketAdjustments
                 );
-
-                setFormData(prev => {
-                    const updatedVariants = (prev.variants || []).map(v => {
-                        if (v.id === variantId) {
-                            // Transform bomBreakdown to ProductionCostSnapshot components format
-                            const components = result.consumption?.bomBreakdown?.map(b => ({
-                                componentId: b.materialId,
-                                name: b.materialName,
-                                quantity: b.quantity,
-                                unit: b.unit,
-                                unitCost: b.cost,
-                                totalCost: b.quantity * b.cost,
-                                costRole: 'production' as const
-                            })) || [];
-
-                            return {
-                                ...v,
-                                pages: newPages,
-                                cost: result.cost,
-                                price: result.price,
-                                adjustmentSnapshots: result.adjustmentSnapshots,
-                                productionCostSnapshot: result.consumption ? {
-                                    baseProductionCost: result.cost,
-                                    components,
-                                    totalPagesUsed: newPages,
-                                    source: 'VARIANT_PRICING' as const,
-                                    createdAt: new Date().toISOString()
-                                } : undefined,
-                                calculatedAt: new Date().toISOString()
-                            };
-                        }
-                        return v;
-                    });
-                    return { ...prev, variants: updatedVariants };
-                });
+                setFormData(prev => ({
+                    ...prev,
+                    variants: (prev.variants || []).map(v => v.id !== variantId ? v : {
+                        ...v,
+                        pages: newPages,
+                        cost: result.cost,
+                        price: result.price,
+                        adjustmentSnapshots: result.adjustmentSnapshots,
+                        calculatedAt: new Date().toISOString()
+                    })
+                }));
             } catch (error) {
                 console.error('Error calculating variant price:', error);
-                // Fallback: just update pages
-                setFormData(prev => {
-                    const updatedVariants = (prev.variants || []).map(v => {
-                        if (v.id === variantId) {
-                            return { ...v, pages: newPages };
-                        }
-                        return v;
-                    });
-                    return { ...prev, variants: updatedVariants };
-                });
+                setFormData(prev => ({
+                    ...prev,
+                    variants: (prev.variants || []).map(v => v.id !== variantId ? v : { ...v, pages: newPages })
+                }));
             }
         } else {
+            // ── Simple fallback ──────────────────────────────────────────────────
             const specs = calculateItemFinancials(newPages, formData.pricingConfig, formData.type, variant.cost);
-
-            // Apply rounding for variants
             let finalPrice = variant.price;
             if (specs) {
                 const roundingResult = applyProductPriceRounding({
-                    calculatedPrice: specs.price,
+                    calculatedPrice: specs.total ?? 0,
                     companyConfig,
                     methodOverride: formData.pricingConfig?.selectedRoundingMethod,
                     customStepOverride: formData.pricingConfig?.customRoundingStep
                 });
                 finalPrice = roundingResult.roundedPrice;
             }
-
-            setFormData(prev => {
-                const updatedVariants = (prev.variants || []).map(v => {
-                    if (v.id === variantId) {
-                        return {
-                            ...v,
-                            pages: newPages,
-                            cost: specs ? specs.cost : v.cost,
-                            price: finalPrice,
-                            adjustmentSnapshots: specs ? specs.adjustmentSnapshots : v.adjustmentSnapshots
-                        };
-                    }
-                    return v;
-                });
-                return { ...prev, variants: updatedVariants };
-            });
+            setFormData(prev => ({
+                ...prev,
+                variants: (prev.variants || []).map(v => v.id !== variantId ? v : {
+                    ...v,
+                    pages: newPages,
+                    cost: specs ? specs.baseCost : v.cost,
+                    price: finalPrice,
+                    adjustmentSnapshots: v.adjustmentSnapshots
+                })
+            }));
         }
     };
 
@@ -1453,7 +1532,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                               </div>
                                                           </div>
                                                           <div className="text-sm font-medium text-slate-800">
-                                                              K{bomCosts.paper.toFixed(2)}
+                                                              K{(formData.smartPricing?.paperCost ?? bomCosts.paper).toFixed(2)}
                                                           </div>
                                                       </div>
 
@@ -1474,7 +1553,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                               </div>
                                                           </div>
                                                           <div className="text-sm font-medium text-slate-800">
-                                                              K{bomCosts.toner.toFixed(2)}
+                                                              K{(formData.smartPricing?.tonerCost ?? bomCosts.toner).toFixed(2)}
                                                           </div>
                                                       </div>
 
@@ -1494,7 +1573,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                               </div>
                                                           </div>
                                                           <div className="text-sm font-medium text-slate-800">
-                                                              K{bomCosts.finishing.toFixed(2)}
+                                                              K{(formData.smartPricing?.finishingCost ?? bomCosts.finishing).toFixed(2)}
                                                           </div>
                                                       </div>
 
@@ -1505,75 +1584,139 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                      <div>
                                                          <div className={styles.sectionTitle}>Market adjustments</div>
                                                          <div className="space-y-2">
-                                                             {activeMarketAdjustments.map(adj => {
-                                                                 const isSelected = formData.pricingConfig?.selectedAdjustmentIds?.includes(adj.id) || false;
-                                                                 const contribution = isSelected 
-                                                                     ? adj.type === 'PERCENTAGE' 
-                                                                         ? `K${(enginePreview?.cost * adj.value / 100)?.toFixed(2) || '0.00'}`
-                                                                         : `K${adj.value.toFixed(2)}`
-                                                                     : 'K0.00';
-                                                                 
-                                                                 return (
+                                                             {formData.smartPricing?.marketAdjustments?.length > 0 ? (
+                                                                 // Show the exact adjustments that were applied in SmartPricing
+                                                                 formData.smartPricing.marketAdjustments.map((adj: any) => (
                                                                      <div key={adj.id} className={styles.row}>
                                                                          <div className="flex items-center gap-3">
-                                                                             <label className="relative inline-flex items-center cursor-pointer">
-                                                                                 <input
-                                                                                     type="checkbox"
-                                                                                     checked={isSelected}
-                                                                                     onChange={() => handleToggleAdjustment(adj.id)}
-                                                                                     className="sr-only peer"
-                                                                                     disabled={isSubmitting}
-                                                                                 />
-                                                                                 <div className={`w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 transition-colors ${isSelected ? 'ring-2 ring-blue-500' : ''}`}></div>
-                                                                                 <div className={`absolute left-[2px] top-[1px] w-3 h-3 rounded-full transition-all ${isSelected ? 'bg-white translate-x-4' : 'bg-slate-400 translate-x-0'}`}></div>
-                                                                             </label>
+                                                                             <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
                                                                              <div className="flex-1">
                                                                                  <div className="text-sm font-medium text-slate-700">{adj.name}</div>
                                                                                  <div className="text-[10px] text-slate-500">
-                                                                                     {adj.type === 'PERCENTAGE' ? `${adj.value}%` : `K${adj.value}`}
+                                                                                     {adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' ? `${adj.rawValue}%` : `K${adj.rawValue} × pages × copies`}
                                                                                  </div>
                                                                              </div>
                                                                          </div>
-                                                                         <div className={`text-sm font-medium ${isSelected ? 'text-green-600' : 'text-slate-400'}`}>
-                                                                             {contribution}
+                                                                         <div className="text-sm font-medium text-emerald-600">
+                                                                             +K{(adj.value || 0).toFixed(2)}
                                                                          </div>
                                                                      </div>
-                                                                 );
-                                                             })}
+                                                                 ))
+                                                             ) : (
+                                                                 // Fallback: show toggleable adjustments if no smartPricing snapshot
+                                                                 activeMarketAdjustments.map(adj => {
+                                                                     const isSelected = formData.pricingConfig?.selectedAdjustmentIds?.includes(adj.id) || false;
+                                                                     const contribution = isSelected
+                                                                         ? adj.type === 'PERCENTAGE'
+                                                                             ? `K${(enginePreview?.cost * adj.value / 100)?.toFixed(2) || '0.00'}`
+                                                                             : `K${adj.value.toFixed(2)}`
+                                                                         : 'K0.00';
+                                                                     return (
+                                                                         <div key={adj.id} className={styles.row}>
+                                                                             <div className="flex items-center gap-3">
+                                                                                 <label className="relative inline-flex items-center cursor-pointer">
+                                                                                     <input
+                                                                                         type="checkbox"
+                                                                                         checked={isSelected}
+                                                                                         onChange={() => handleToggleAdjustment(adj.id)}
+                                                                                         className="sr-only peer"
+                                                                                         disabled={isSubmitting}
+                                                                                     />
+                                                                                     <div className={`w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 transition-colors ${isSelected ? 'ring-2 ring-blue-500' : ''}`}></div>
+                                                                                     <div className={`absolute left-[2px] top-[1px] w-3 h-3 rounded-full transition-all ${isSelected ? 'bg-white translate-x-4' : 'bg-slate-400 translate-x-0'}`}></div>
+                                                                                 </label>
+                                                                                 <div className="flex-1">
+                                                                                     <div className="text-sm font-medium text-slate-700">{adj.name}</div>
+                                                                                     <div className="text-[10px] text-slate-500">
+                                                                                         {adj.type === 'PERCENTAGE' ? `${adj.value}%` : `K${adj.value}`}
+                                                                                     </div>
+                                                                                 </div>
+                                                                             </div>
+                                                                             <div className={`text-sm font-medium ${isSelected ? 'text-green-600' : 'text-slate-400'}`}>
+                                                                                 {contribution}
+                                                                             </div>
+                                                                         </div>
+                                                                     );
+                                                                 })
+                                                             )}
                                                          </div>
-</div>
+                                                     </div>
 
                                                       {/* Divider */}
-<div className="border-t border-slate-100 my-4"></div>
+                                                      <div className="border-t border-slate-100 my-4"></div>
 
-                                                      {/* Price Summary */}
+                                                      {/* Price Summary — mirrors SmartPricing Price Summary panel exactly */}
                                                       <div>
                                                           <div className={styles.sectionTitle}>Price summary</div>
                                                           <div className="space-y-2">
                                                               {formData.smartPricing ? (
                                                                   <>
+                                                                      {/* Paper */}
                                                                       <div className={styles.row}>
-                                                                          <div className="text-sm font-medium text-slate-600">Base cost</div>
+                                                                          <div className="text-sm font-medium text-slate-600">
+                                                                              {materials.find(m => m.id === formData.smartPricing.paperItemId)?.name?.replace(/\s*\d+gsm.*/i, '') || 'Paper'}
+                                                                          </div>
                                                                           <div className="text-sm font-medium text-slate-800">
-                                                                              K{(formData.cost || 0).toFixed(2)}
+                                                                              K{(formData.smartPricing.paperCost ?? 0).toFixed(2)}
                                                                           </div>
                                                                       </div>
+                                                                      {/* Toner */}
                                                                       <div className={styles.row}>
-                                                                          <div className="text-sm font-medium text-slate-600">Profit margin {globalMargin ? `(${globalMargin.margin_value}${globalMargin.margin_type === 'percentage' ? '%' : ' K'})` : ''} (+)</div>
-                                                                          <div className="text-sm font-medium text-green-600">
-                                                                              +K{((enginePreview?.unitPrice || formData.price || 0) - (formData.cost || 0) - (enginePreview?.adjustmentTotal || 0)).toFixed(2)}
+                                                                          <div className="text-sm font-medium text-slate-600">
+                                                                              {materials.find(m => m.id === formData.smartPricing.tonerItemId)?.name?.replace(/\s*Universal\s*/i, '') || 'Toner'}
+                                                                          </div>
+                                                                          <div className="text-sm font-medium text-slate-800">
+                                                                              K{(formData.smartPricing.tonerCost ?? 0).toFixed(2)}
                                                                           </div>
                                                                       </div>
+                                                                      {/* Finishing */}
                                                                       <div className={styles.row}>
-                                                                          <div className="text-sm font-medium text-slate-600">Rounding (±)</div>
-                                                                          <div className="text-sm font-medium text-purple-600">
-                                                                              ±K{((formData.smartPricing.roundedPrice || 0) - (formData.smartPricing.originalPrice || 0)).toFixed(2)}
+                                                                          <div className="text-sm font-medium text-slate-600">Finishing</div>
+                                                                          <div className="text-sm font-medium text-slate-800">
+                                                                              K{(formData.smartPricing.finishingCost ?? 0).toFixed(2)}
                                                                           </div>
                                                                       </div>
+                                                                      {/* Per-adjustment lines */}
+                                                                      {(formData.smartPricing.marketAdjustments || []).map((adj: any, idx: number) =>
+                                                                          adj.value > 0 ? (
+                                                                              <div key={idx} className={styles.row}>
+                                                                                  <div className="text-sm font-medium text-emerald-600">{adj.name}</div>
+                                                                                  <div className="text-sm font-medium text-emerald-600">
+                                                                                      +K{(adj.value).toFixed(2)}
+                                                                                  </div>
+                                                                              </div>
+                                                                          ) : null
+                                                                      )}
+                                                                      {/* Profit Margin */}
+                                                                      {(formData.smartPricing.profitMarginAmount ?? 0) > 0 && (
+                                                                          <div className={styles.row}>
+                                                                              <div className="text-sm font-medium text-green-600">
+                                                                                  Profit Margin ({formData.smartPricing.marginType === 'percentage' ? `${formData.smartPricing.marginValue}%` : 'Fixed'})
+                                                                              </div>
+                                                                              <div className="text-sm font-medium text-green-600">
+                                                                                  +K{(formData.smartPricing.profitMarginAmount).toFixed(2)}
+                                                                              </div>
+                                                                          </div>
+                                                                      )}
+                                                                      {/* Rounding */}
+                                                                      {formData.smartPricing.wasRounded && (formData.smartPricing.roundingDifference ?? 0) !== 0 && (
+                                                                          <div className={styles.row}>
+                                                                              <div className="text-sm font-medium text-purple-600">Rounded</div>
+                                                                              <div className="text-sm font-medium text-purple-600">
+                                                                                  +K{(formData.smartPricing.roundingDifference).toFixed(2)}
+                                                                              </div>
+                                                                          </div>
+                                                                      )}
+                                                                      {/* Total */}
                                                                       <div className={styles.highlightRow}>
-                                                                          <div className="text-sm font-medium text-slate-800">Selling price</div>
+                                                                          <div>
+                                                                              <div className="text-sm font-medium text-slate-800">Total</div>
+                                                                              <div className="text-[10px] text-slate-400">
+                                                                                  Per copy: K{((formData.smartPricing.roundedPrice ?? formData.price ?? 0) / (formData.smartPricing.copies || 1)).toFixed(2)}
+                                                                              </div>
+                                                                          </div>
                                                                           <div className={styles.priceValue}>
-                                                                              K{formData.price?.toFixed(2) || formData.smartPricing?.roundedPrice?.toFixed(2) || '0.00'}
+                                                                              K{(formData.smartPricing.roundedPrice ?? formData.price ?? 0).toFixed(2)}
                                                                           </div>
                                                                       </div>
                                                                   </>
@@ -2039,7 +2182,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowVariantForm(true)}
+                                                    onClick={() => { setShowVariantForm(true); if (formData.smartPricing) { setVariantPreview(calculateSmartVariantPrice(1, 1)); } }}
                                                     className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white hover:bg-blue-700 rounded-xl transition-all text-sm font-medium shadow-sm"
                                                 >
                                                     <Plus className="w-4 h-4" /> Add Variant
@@ -2273,13 +2416,65 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                         <input
                                                             type="number"
                                                             value={newVariant.pages || 1}
-                                                            onChange={(e) => setNewVariant({ ...newVariant, pages: Number(e.target.value) })}
+                                                            onChange={(e) => {
+                                                                const p = Math.max(1, Number(e.target.value) || 1);
+                                                                setNewVariant({ ...newVariant, pages: p });
+                                                                // Live preview using SmartPricing engine
+                                                                if (formData.smartPricing) {
+                                                                    setVariantPreview(calculateSmartVariantPrice(p, 1));
+                                                                }
+                                                            }}
                                                             className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
                                                             placeholder="e.g. 40"
                                                         />
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {/* Smart Pricing live preview */}
+                                            {formData.smartPricing && variantPreview && (
+                                                <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-1.5">
+                                                    <div className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1.5">
+                                                        <TrendingUp className="w-3.5 h-3.5" /> Smart Pricing Preview ({variantPreview.pages} pages)
+                                                    </div>
+                                                    <div className="flex justify-between text-xs text-slate-600">
+                                                        <span>{inventory.find(i => i.id === formData.smartPricing?.paperItemId)?.name?.replace(/\s*\d+gsm.*/i,'') || 'Paper'}</span>
+                                                        <span>{currency}{variantPreview.paperCost.toFixed(2)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-xs text-slate-600">
+                                                        <span>{inventory.find(i => i.id === formData.smartPricing?.tonerItemId)?.name?.replace(/\s*Universal\s*/i,'') || 'Toner'}</span>
+                                                        <span>{currency}{variantPreview.tonerCost.toFixed(2)}</span>
+                                                    </div>
+                                                    {variantPreview.finishingCost > 0 && (
+                                                        <div className="flex justify-between text-xs text-slate-600">
+                                                            <span>Finishing</span>
+                                                            <span>{currency}{variantPreview.finishingCost.toFixed(2)}</span>
+                                                        </div>
+                                                    )}
+                                                    {variantPreview.marketAdjustments.filter((a: any) => a.value > 0).map((a: any, i: number) => (
+                                                        <div key={i} className="flex justify-between text-xs text-emerald-600">
+                                                            <span>{a.name}</span>
+                                                            <span>+{currency}{a.value.toFixed(2)}</span>
+                                                        </div>
+                                                    ))}
+                                                    {variantPreview.profitMarginAmount > 0 && (
+                                                        <div className="flex justify-between text-xs text-green-600">
+                                                            <span>Margin ({variantPreview.marginType === 'percentage' ? `${variantPreview.marginValue}%` : 'Fixed'})</span>
+                                                            <span>+{currency}{variantPreview.profitMarginAmount.toFixed(2)}</span>
+                                                        </div>
+                                                    )}
+                                                    {variantPreview.wasRounded && (
+                                                        <div className="flex justify-between text-xs text-purple-600">
+                                                            <span>Rounded</span>
+                                                            <span>+{currency}{variantPreview.roundingDifference.toFixed(2)}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex justify-between text-sm font-bold text-indigo-700 border-t border-indigo-200 pt-2 mt-1">
+                                                        <span>Selling Price</span>
+                                                        <span>{currency}{variantPreview.roundedPrice.toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             {/* Pricing Mode Selector */}
                                             {((formData.type !== 'Stationery' && (formData.smartPricing?.hiddenBOMId || formData.smartPricing?.bomTemplateId)) || (formData.type === 'Stationery')) && (
@@ -2358,116 +2553,185 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                         </div>
                                     )}
 
-                                    {/* Variants List */}
+                                    {/* Variants List — table layout */}
                                     {formData.variants && formData.variants.length > 0 ? (
                                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                                            <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-4 border-b border-slate-200">
+                                            <div className="bg-gradient-to-r from-slate-50 to-slate-100 px-6 py-3 border-b border-slate-200 flex items-center justify-between">
                                                 <h5 className="font-semibold text-slate-800 text-sm">Active Variants ({formData.variants.length})</h5>
+                                                {formData.smartPricing && (
+                                                    <span className="text-[10px] font-medium px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full flex items-center gap-1">
+                                                        <TrendingUp className="w-3 h-3" /> Smart Pricing
+                                                    </span>
+                                                )}
                                             </div>
-                                            <div className="divide-y divide-slate-100">
-                                                {formData.variants.map((variant, idx) => (
-                                                    <div key={variant.id || idx} className="p-6 hover:bg-slate-50 transition-colors">
-                                                        <div className="flex items-center justify-between mb-4">
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-sm">
-                                                                    {variant.name.charAt(0).toUpperCase()}
-                                                                </div>
-                                                                <div>
-                                                                    <h6 className="font-semibold text-slate-800 text-base">{variant.name}</h6>
-                                                                    <p className="text-sm text-slate-500">SKU: {variant.sku || 'N/A'}</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setExpandedVariantPricing(expandedVariantPricing === variant.id ? null : variant.id)}
-                                                                    className={`p-2.5 rounded-xl transition-all ${expandedVariantPricing === variant.id ? 'bg-blue-100 text-blue-600 shadow-sm' : 'text-slate-400 hover:bg-slate-100'}`}
-                                                                    title="Manage Volume Pricing"
-                                                                >
-                                                                    <Layers className="w-5 h-5" />
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleRemoveVariant(variant.id)}
-                                                                    className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                                                >
-                                                                    <Trash2 className="w-5 h-5" />
-                                                                </button>
-                                                            </div>
-                                                        </div>
 
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            {/* Table */}
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-100">
+                                                            <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Variant</th>
                                                             {formData.type !== 'Stationery' && (
-                                                                <div className="bg-slate-50 rounded-lg p-3">
-                                                                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide block mb-1">Pages</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        value={variant.pages || 0}
-                                                                        onChange={(e) => handleVariantPagesChange(variant.id, Number(e.target.value))}
-                                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                                                    />
-                                                                </div>
+                                                                <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider w-20">Pages</th>
                                                             )}
-                                                            <div className="bg-emerald-50 rounded-lg p-3">
-                                                                <label className="text-xs font-medium text-emerald-600 uppercase tracking-wide block mb-1">Cost</label>
-                                                                <div className="text-lg font-bold text-emerald-700 text-center">{currency}{(variant.cost ?? 0).toFixed(2)}</div>
-                                                            </div>
-                                                            <div className="bg-blue-50 rounded-lg p-3">
-                                                                <label className="text-xs font-medium text-blue-600 uppercase tracking-wide block mb-1">Price</label>
-                                                                <div className="text-lg font-bold text-blue-700 text-center">{currency}{(variant.price ?? 0).toFixed(2)}</div>
-                                                            </div>
-                                                            <div className="bg-purple-50 rounded-lg p-3">
-                                                                <label className="text-xs font-medium text-purple-600 uppercase tracking-wide block mb-1">Stock</label>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    value={variant.stock}
-                                                                    onChange={(e) => {
-                                                                        const newStock = Number(e.target.value);
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            variants: (prev.variants || []).map(v =>
-                                                                                v.id === variant.id ? { ...v, stock: newStock } : v
-                                                                            )
-                                                                        }));
-                                                                    }}
-                                                                    className="w-full px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm font-bold text-center focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                            {expandedVariantPricing === variant.id && (
-                                                            <div className="mt-4 pt-4 border-t border-blue-100 bg-blue-50/30 rounded-lg p-4">
-                                                                <div className="flex items-center gap-2 mb-3">
-                                                                    <Layers className="w-4 h-4 text-blue-600" />
-                                                                    <h6 className="text-sm font-semibold text-blue-800">Volume Pricing</h6>
-                                                                </div>
-                                                                <VolumePricingManager
-                                                                    enabled={Boolean(variant.allowVolumePricing)}
-                                                                    tiers={variant.volumePricing || []}
-                                                                    onToggle={(enabled) => {
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            variants: (prev.variants || []).map(v =>
-                                                                                v.id === variant.id ? { ...v, allowVolumePricing: enabled } : v
-                                                                            )
-                                                                        }));
-                                                                    }}
-                                                                    onChange={(tiers) => {
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            variants: (prev.variants || []).map(v =>
-                                                                                v.id === variant.id ? { ...v, volumePricing: tiers } : v
-                                                                            )
-                                                                        }));
-                                                                    }}
-                                                                    currency={currency}
-                                                                    basePrice={variant.price || 0}
-                                                                    cost={variant.cost || 0}
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
+                                                            {formData.smartPricing && (
+                                                                <>
+                                                                    <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-blue-400 uppercase tracking-wider">Paper</th>
+                                                                    <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-purple-400 uppercase tracking-wider">Toner</th>
+                                                                    <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-green-400 uppercase tracking-wider">Finishing</th>
+                                                                    <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Adjustments</th>
+                                                                    <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-orange-400 uppercase tracking-wider">Margin</th>
+                                                                </>
+                                                            )}
+                                                            {!formData.smartPricing && (
+                                                                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Cost</th>
+                                                            )}
+                                                            <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">Selling Price</th>
+                                                            <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider w-20">Stock</th>
+                                                            <th className="w-20 px-3 py-2.5"></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-50">
+                                                        {formData.variants.map((variant, idx) => {
+                                                            const snap = (variant as any).smartPricingSnapshot;
+                                                            return (
+                                                                <React.Fragment key={variant.id || idx}>
+                                                                    <tr className="hover:bg-slate-50 transition-colors">
+                                                                        {/* Name + SKU */}
+                                                                        <td className="px-4 py-3">
+                                                                            <div className="font-medium text-slate-800">{variant.name}</div>
+                                                                            <div className="text-[10px] text-slate-400">SKU: {variant.sku || 'N/A'}</div>
+                                                                        </td>
+
+                                                                        {/* Pages — editable, triggers reprice */}
+                                                                        {formData.type !== 'Stationery' && (
+                                                                            <td className="px-3 py-3 text-center">
+                                                                                <input
+                                                                                    type="number"
+                                                                                    min="1"
+                                                                                    value={variant.pages || 1}
+                                                                                    onChange={(e) => handleVariantPagesChange(variant.id, Math.max(1, Number(e.target.value) || 1))}
+                                                                                    className="w-16 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-center focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none"
+                                                                                />
+                                                                            </td>
+                                                                        )}
+
+                                                                        {/* Smart pricing breakdown columns */}
+                                                                        {formData.smartPricing && (
+                                                                            <>
+                                                                                <td className="px-3 py-3 text-right text-xs text-slate-600">
+                                                                                    {currency}{(snap?.paperCost ?? 0).toFixed(2)}
+                                                                                </td>
+                                                                                <td className="px-3 py-3 text-right text-xs text-slate-600">
+                                                                                    {currency}{(snap?.tonerCost ?? 0).toFixed(2)}
+                                                                                </td>
+                                                                                <td className="px-3 py-3 text-right text-xs text-slate-600">
+                                                                                    {currency}{(snap?.finishingCost ?? 0).toFixed(2)}
+                                                                                </td>
+                                                                                <td className="px-3 py-3 text-right text-xs text-emerald-600">
+                                                                                    +{currency}{(snap?.marketAdjustmentTotal ?? 0).toFixed(2)}
+                                                                                </td>
+                                                                                <td className="px-3 py-3 text-right text-xs text-orange-600">
+                                                                                    +{currency}{(snap?.profitMarginAmount ?? 0).toFixed(2)}
+                                                                                </td>
+                                                                            </>
+                                                                        )}
+
+                                                                        {/* Cost (non-smart products only) */}
+                                                                        {!formData.smartPricing && (
+                                                                            <td className="px-3 py-3 text-right text-xs font-medium text-emerald-700">
+                                                                                {currency}{(variant.cost ?? 0).toFixed(2)}
+                                                                            </td>
+                                                                        )}
+
+                                                                        {/* Selling price */}
+                                                                        <td className="px-3 py-3 text-right">
+                                                                            <div className="font-bold text-indigo-700 text-sm">{currency}{(variant.price ?? 0).toFixed(2)}</div>
+                                                                            {snap?.wasRounded && (
+                                                                                <div className="text-[10px] text-purple-400">rounded +{currency}{(snap.roundingDifference ?? 0).toFixed(2)}</div>
+                                                                            )}
+                                                                        </td>
+
+                                                                        {/* Stock */}
+                                                                        <td className="px-3 py-3 text-center">
+                                                                            <input
+                                                                                type="number"
+                                                                                min="0"
+                                                                                value={variant.stock}
+                                                                                onChange={(e) => {
+                                                                                    const newStock = Number(e.target.value);
+                                                                                    setFormData(prev => ({
+                                                                                        ...prev,
+                                                                                        variants: (prev.variants || []).map(v =>
+                                                                                            v.id === variant.id ? { ...v, stock: newStock } : v
+                                                                                        )
+                                                                                    }));
+                                                                                }}
+                                                                                className="w-16 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-center focus:ring-2 focus:ring-purple-400 focus:border-purple-400 outline-none"
+                                                                            />
+                                                                        </td>
+
+                                                                        {/* Actions */}
+                                                                        <td className="px-3 py-3 text-center">
+                                                                            <div className="flex items-center justify-center gap-1">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setExpandedVariantPricing(expandedVariantPricing === variant.id ? null : variant.id)}
+                                                                                    className={`p-1.5 rounded-lg transition-all ${expandedVariantPricing === variant.id ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:bg-slate-100'}`}
+                                                                                    title="Volume Pricing"
+                                                                                >
+                                                                                    <Layers className="w-4 h-4" />
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRemoveVariant(variant.id)}
+                                                                                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                                                >
+                                                                                    <Trash2 className="w-4 h-4" />
+                                                                                </button>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+
+                                                                    {/* Volume pricing expander — full-width row */}
+                                                                    {expandedVariantPricing === variant.id && (
+                                                                        <tr>
+                                                                            <td colSpan={99} className="px-6 pb-4 pt-1 bg-blue-50/40">
+                                                                                <div className="flex items-center gap-2 mb-3 pt-2">
+                                                                                    <Layers className="w-4 h-4 text-blue-600" />
+                                                                                    <h6 className="text-sm font-semibold text-blue-800">Volume Pricing</h6>
+                                                                                </div>
+                                                                                <VolumePricingManager
+                                                                                    enabled={Boolean(variant.allowVolumePricing)}
+                                                                                    tiers={variant.volumePricing || []}
+                                                                                    onToggle={(enabled) => {
+                                                                                        setFormData(prev => ({
+                                                                                            ...prev,
+                                                                                            variants: (prev.variants || []).map(v =>
+                                                                                                v.id === variant.id ? { ...v, allowVolumePricing: enabled } : v
+                                                                                            )
+                                                                                        }));
+                                                                                    }}
+                                                                                    onChange={(tiers) => {
+                                                                                        setFormData(prev => ({
+                                                                                            ...prev,
+                                                                                            variants: (prev.variants || []).map(v =>
+                                                                                                v.id === variant.id ? { ...v, volumePricing: tiers } : v
+                                                                                            )
+                                                                                        }));
+                                                                                    }}
+                                                                                    currency={currency}
+                                                                                    basePrice={variant.price || 0}
+                                                                                    cost={variant.cost || 0}
+                                                                                />
+                                                                            </td>
+                                                                        </tr>
+                                                                    )}
+                                                                </React.Fragment>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
                                     ) : (
@@ -2479,7 +2743,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                             <p className="text-sm text-slate-500 mb-6">Start by adding your first product variant</p>
                                             <button
                                                 type="button"
-                                                onClick={() => setShowVariantForm(true)}
+                                                onClick={() => { setShowVariantForm(true); if (formData.smartPricing) { setVariantPreview(calculateSmartVariantPrice(1, 1)); } }}
                                                 className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-medium shadow-sm"
                                             >
                                                 <Plus className="w-4 h-4" /> Create First Variant

@@ -8,7 +8,7 @@ const WORKFLOW_VALIDATION_CODES = {
 
 const STATUS_ORDER = ['Draft', 'Calculated', 'Approved', 'Invoiced'];
 
-const { roundMoney } = require('./examinationSharedUtils');
+const { roundMoney } = require('./examinationSharedUtils.cjs');
 
 const toNumber = (value, fallback = 0) => {
   if (value === null || value === undefined || value === '') return fallback;
