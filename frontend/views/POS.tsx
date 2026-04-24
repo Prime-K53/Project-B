@@ -26,6 +26,7 @@ import { generateNextId, roundFinancial, roundToCurrency, formatNumber, download
 import { attachDocumentSecurity } from '../utils/documentSecurity';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../utils/pricing';
 import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
+import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 const POS: React.FC = () => {
   const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
@@ -291,7 +292,7 @@ const POS: React.FC = () => {
     const seen = new Map<string, number>();
 
     cart.forEach(item => {
-      const snapshots = item.adjustmentSnapshots || [];
+      const snapshots = getMarketAdjustmentSnapshots(item.adjustmentSnapshots || []);
       snapshots.forEach((snapshot: any) => {
         const key = snapshot.adjustmentId || snapshot.name || 'Unknown';
         if (!seen.has(key)) {
@@ -393,7 +394,15 @@ const POS: React.FC = () => {
       resolvedPrice = variantStoredPrice;
       resolvedCost = variantStoredCost;
       resolvedAdjTotal = variantAdjTotal;
+      // Use variant's adjustment data
       resolvedAdjSnaps = variantAdjSnaps;
+    } else if (basePrice != null && basePrice > 0) {
+      // Pricing engine returns empty snapshots when basePrice exists
+      // Use our marketAdjustmentsInput as the adjustment snapshots
+      resolvedPrice = basePrice;
+      resolvedCost = Number(baseItem.cost);
+      resolvedAdjTotal = marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0);
+      resolvedAdjSnaps = marketAdjustmentsInput;
     } else {
       // Non-variant or variant without stored price — run the engine
       const pricing = await calculateSellingPrice({
@@ -724,25 +733,6 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
       const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
       const changeDue = Math.max(totalPaid - payableTotal, 0);
-
-      // Aggregate market adjustments from items
-      const totalAdjustment = cart.reduce((sum, item) => sum + (item.adjustmentTotal || 0) * item.quantity, 0);
-
-      // Aggregate profit margin and rounding from SmartPricing snapshots on cart items
-      const totalProfitMargin = cart.reduce((sum, item) => {
-        const snap = (item as any).smartPricingSnapshot;
-        if (snap?.profitMarginAmount) return sum + snap.profitMarginAmount * item.quantity;
-        // Fallback: infer margin as (price - cost - adjustmentTotal)
-        const inferred = (item.price - (item.cost || 0) - (item.adjustmentTotal || 0));
-        return sum + Math.max(0, inferred) * item.quantity;
-      }, 0);
-
-      const totalRounding = cart.reduce((sum, item) => {
-        const snap = (item as any).smartPricingSnapshot;
-        if (snap?.roundingDifference != null) return sum + snap.roundingDifference * item.quantity;
-        return sum + (Number((item as any).rounding_difference) || 0) * item.quantity;
-      }, 0);
-      const aggregatedSnapshots: any[] = [];
       const processesedItemsWithSnapshots = processedItems.map((item: any) => {
         let snapshots = item.adjustmentSnapshots || [];
 
@@ -768,18 +758,23 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           });
         }
 
-        // Aggregate
-        snapshots.forEach((snap: any) => {
-          const existing = aggregatedSnapshots.find(s => s.name === snap.name);
-          if (existing) {
-            existing.calculatedAmount += snap.calculatedAmount * item.quantity;
-          } else {
-            aggregatedSnapshots.push({ ...snap, calculatedAmount: snap.calculatedAmount * item.quantity });
-          }
-        });
-
         return { ...item, adjustmentSnapshots: snapshots };
       });
+
+      const saleItems = processesedItemsWithSnapshots.map((item: any) => attachPricingBreakdown({
+        ...item,
+        productId: item.productId || item.itemId || item.id,
+        productName: item.name,
+        unitPrice: item.price,
+        subtotal: item.price * item.quantity,
+        discount: 0,
+        productionCostSnapshot: item.productionCostSnapshot,
+        adjustmentSnapshots: item.adjustmentSnapshots,
+        desc: item.desc
+      }));
+      const pricingSummary = summarizePricingBreakdown(saleItems as any[]);
+      const aggregatedSnapshots = aggregateMarketAdjustmentSnapshots(saleItems as any[]);
+      const totalCost = pricingSummary.materialTotal;
 
        const saleData: Sale = {
          id: saleId,
@@ -788,38 +783,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
          totalAmount: payableTotal,
          discount: 0,
          status: 'Paid',
-         items: processesedItemsWithSnapshots.map((item: any) => {
-           const snap = item.smartPricingSnapshot;
-           const pricingBreakdown = snap ? {
-             paperCost: snap.paperCost ?? 0,
-             tonerCost: snap.tonerCost ?? 0,
-             finishingCost: snap.finishingCost ?? 0,
-             baseMaterialCost: snap.baseCost ?? 0,
-             adjustmentTotal: snap.marketAdjustmentTotal ?? 0,
-             adjustmentLines: (snap.marketAdjustments || []).map((a: any) => ({ name: a.name, type: a.type, value: a.value })),
-             profitMarginAmount: snap.profitMarginAmount ?? 0,
-             marginType: snap.marginType,
-             marginValue: snap.marginValue,
-             roundingDifference: snap.roundingDifference ?? 0,
-             wasRounded: snap.wasRounded ?? false,
-             roundingMethod: snap.roundingMethod,
-             sellingPrice: snap.roundedPrice ?? item.price,
-             pages: snap.pages,
-             copies: snap.copies,
-           } : undefined;
-           return {
-             ...item,
-             productId: item.productId || item.id,
-             productName: item.name,
-             unitPrice: item.price,
-             subtotal: item.price * item.quantity,
-             discount: 0,
-             productionCostSnapshot: item.productionCostSnapshot,
-             adjustmentSnapshots: item.adjustmentSnapshots,
-             desc: item.desc,
-             ...(pricingBreakdown ? { pricingBreakdown } : {})
-           };
-         }) as any,
+         items: saleItems as any,
          paymentMethod: payments.length === 1 ? payments[0].method : 'Split',
          payments: payments,
          cashierId: user?.id || 'unknown',
@@ -830,11 +794,12 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
          bill_total: payableTotal,
          cash_tendered: totalPaid,
          change_due: changeDue,
-         adjustmentTotal: totalAdjustment,
+         adjustmentTotal: pricingSummary.adjustmentTotal,
          adjustmentSnapshots: aggregatedSnapshots,
          // SmartPricing revenue analytics fields
-         profitMarginTotal: Number(totalProfitMargin.toFixed(2)),
-         roundingTotal: Number(totalRounding.toFixed(2)),
+         profitMarginTotal: pricingSummary.profitMarginTotal,
+         roundingTotal: pricingSummary.roundingTotal,
+         roundingDifference: pricingSummary.roundingTotal,
         };
 
       try {

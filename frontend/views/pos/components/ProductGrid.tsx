@@ -149,8 +149,17 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                         {viewMode !== 'Small' && <div className="text-[10px] text-slate-500 ml-8">{item.sku}</div>}
                     </div>
 
-                    <div className={`flex items-center justify-between ${viewMode === 'List' ? 'gap-4' : 'mt-2 pt-2 border-t border-[#f4f5f8]'}`}>
-                        <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>{currency}{formatNumber(resolveStoredSellingPrice(item as any) || 0)}</span>
+<div className={`flex items-center justify-between ${viewMode === 'List' ? 'gap-4' : 'mt-2 pt-2 border-t border-[#f4f5f8]'}`}>
+                        {item.isVariantParent ? (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleItemClick(item); }}
+                                className="text-[9px] font-bold px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                            >
+                                View
+                            </button>
+                        ) : (
+                            <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>{currency}{formatNumber(resolveStoredSellingPrice(item as any) || 0)}</span>
+                        )}
                         <div className="flex items-center gap-2">
                             {(item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material') && (
                                 <span className={`text-[10px] font-medium ${item.stock <= item.minStockLevel ? 'text-red-600' : 'text-slate-500'}`}>

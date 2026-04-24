@@ -16,7 +16,7 @@ import QuickPrintModal from '../../../components/QuickPrintModal';
 import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 import { getPlaceholder } from '../../../constants/placeholders';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
-import { attachPricingBreakdown, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
+import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 
@@ -571,7 +571,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
 
             // Calculate totals for summary
             if (currentSnapshots && currentSnapshots.length > 0) {
-                currentSnapshots.forEach((snap: any) => {
+                getMarketAdjustmentSnapshots(currentSnapshots).forEach((snap: any) => {
                     const amount = (snap.calculatedAmount || 0) * item.quantity;
                     const name = snap.name || 'Other Adjustment';
                     adjustmentBreakdown[name] = (adjustmentBreakdown[name] || 0) + amount;
@@ -917,24 +917,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         }
 
         // Aggregate adjustments & consumption from items (Common logic for all types)
-        const aggregatedSnapshots: any[] = [];
         const consumptionSnapshots: any[] = [];
 
         analysis.processedItems.forEach((item: any) => {
-            const adjSnaps = item.adjustmentSnapshots || [];
-            adjSnaps.forEach((snap: any) => {
-                const existing = aggregatedSnapshots.find(s => s.name === snap.name);
-                if (existing) {
-                    existing.calculatedAmount += snap.calculatedAmount * item.quantity;
-                } else {
-                    aggregatedSnapshots.push({ ...snap, calculatedAmount: snap.calculatedAmount * item.quantity });
-                }
-            });
-
             if (item.consumptionSnapshots) {
                 consumptionSnapshots.push(...item.consumptionSnapshots);
             }
         });
+        const aggregatedSnapshots = aggregateMarketAdjustmentSnapshots(analysis.processedItems as any[]);
 
         const finalTotalAmount = analysis.totalAmount;
 
@@ -997,6 +987,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 materialTotal: analysis.pricingSummary.materialTotal,
                 profitMarginTotal: analysis.pricingSummary.profitMarginTotal,
                 roundingTotal: analysis.pricingSummary.roundingTotal,
+                roundingDifference: analysis.pricingSummary.roundingTotal,
                 consumptionSnapshots: consumptionSnapshots,
                 subtotal: finalTotalAmount, // Ensure subtotal is present if required by types
                 tax: analysis.tax,
@@ -1024,6 +1015,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             adjustmentSnapshots: aggregatedSnapshots,
             profitMarginTotal: analysis.pricingSummary.profitMarginTotal,
             roundingTotal: analysis.pricingSummary.roundingTotal,
+            roundingDifference: analysis.pricingSummary.roundingTotal,
             consumptionSnapshots: consumptionSnapshots,
             tax: analysis.tax,
             taxRate: analysis.taxRate,
@@ -1141,7 +1133,12 @@ const handleAddItem = async (item: Item) => {
                 };
             });
 
-            const pricing = await calculateSellingPrice({
+            const pricing = item.price && item.price > 0 ? {
+                unitPrice: item.price,
+                cost: Number(item.cost),
+                adjustmentTotal: marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0),
+                adjustmentSnapshots: marketAdjustmentsInput
+            } : await calculateSellingPrice({
                 itemId: item.id,
                 categoryId: item.category,
                 baseCost: Number(item.cost),
@@ -1414,7 +1411,12 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 };
             });
 
-            const pricing = await calculateSellingPrice({
+            const priceData = Number(newItems[idx].price || baseItem.price) > 0 ? {
+                unitPrice: Number(newItems[idx].price || baseItem.price),
+                cost: Number(newItems[idx].cost || baseItem.cost),
+                adjustmentTotal: marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0),
+                adjustmentSnapshots: marketAdjustmentsInput
+            } : await calculateSellingPrice({
                 itemId: baseItem.id,
                 categoryId: baseItem.category,
                 baseCost: Number(newItems[idx].cost || baseItem.cost) || 0,
@@ -1424,10 +1426,10 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 context: 'ORDER'
             });
 
-            newItems[idx].price = pricing.unitPrice;
-            newItems[idx].cost = pricing.cost;
-            newItems[idx].adjustmentSnapshots = pricing.adjustmentSnapshots;
-            newItems[idx].adjustmentTotal = pricing.adjustmentTotal;
+            newItems[idx].price = priceData.unitPrice;
+            newItems[idx].cost = priceData.cost;
+            newItems[idx].adjustmentSnapshots = priceData.adjustmentSnapshots;
+            newItems[idx].adjustmentTotal = priceData.adjustmentTotal;
         }
 
         // Price stays as inventory price, no recalculation
@@ -2290,18 +2292,27 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                             />
                                                         </td>
                                                         <td className="py-2 px-5 text-right font-normal text-slate-600 font-mono text-[13px]">
-                                                            <input
-                                                                type="number"
-                                                                className="w-full bg-transparent text-right outline-none focus:text-blue-600 font-mono font-normal disabled:text-slate-500"
-                                                                value={item.price}
-                                                                onChange={e => {
-                                                                    if (isPriceLocked || serviceDetails) return;
-                                                                    const newItems = [...formData.items];
-                                                                    newItems[idx].price = roundToCurrency(parseFloat(e.target.value) || 0);
-                                                                    setFormData({ ...formData, items: newItems });
-                                                                }}
-                                                                disabled={isPriceLocked || !!serviceDetails || isExaminationQuotation}
-                                                            />
+                                                            {(item as any).isVariantParent ? (
+                                                                <button
+                                                                    onClick={() => setSelectedProductForVariants(item)}
+                                                                    className="text-[9px] font-normal bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                                                                >
+                                                                    View
+                                                                </button>
+                                                            ) : (
+                                                                <input
+                                                                    type="number"
+                                                                    className="w-full bg-transparent text-right outline-none focus:text-blue-600 font-mono font-normal disabled:text-slate-500"
+                                                                    value={item.price}
+                                                                    onChange={e => {
+                                                                        if (isPriceLocked || serviceDetails) return;
+                                                                        const newItems = [...formData.items];
+                                                                        newItems[idx].price = roundToCurrency(parseFloat(e.target.value) || 0);
+                                                                        setFormData({ ...formData, items: newItems });
+                                                                    }}
+                                                                    disabled={isPriceLocked || !!serviceDetails || isExaminationQuotation}
+                                                                />
+                                                            )}
                                                         </td>
                                                         <td className="py-2 px-5 text-right font-normal text-slate-900 font-mono text-[13px]">
                                                             {currency}{((Number(item.price) || 0) * (Number(item.quantity) || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -2386,13 +2397,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                             );
                                         })}
                                         {(() => {
-                                            const profitMargin = formData.items.reduce((sum, item) => {
-                                                const itemCost = item.cost || 0;
-                                                const itemPrice = item.price || 0;
-                                                const margin = itemPrice - itemCost;
-                                                const qty = item.quantity || 1;
-                                                return sum + (margin > 0 ? margin * qty : 0);
-                                            }, 0);
+                                            const profitMargin = analysis.pricingSummary.profitMarginTotal;
                                             if (profitMargin > 0) {
                                                 return (
                                                     <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
@@ -2405,6 +2410,16 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                             }
                                             return null;
                                         })()}
+                                        {Math.abs(analysis.pricingSummary.roundingTotal) > 0.0001 && (
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-blue-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                                    <Tag size={10} className="text-blue-500" /> â€¢ Round Up
+                                                </span>
+                                                <span className={`font-mono text-[11px] font-semibold ${analysis.pricingSummary.roundingTotal >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                                    {analysis.pricingSummary.roundingTotal >= 0 ? '+' : ''}{currency}{analysis.pricingSummary.roundingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex justify-between items-center pt-4 border-t border-slate-50">
                                         <div className="flex items-center gap-2 text-slate-400 font-normal text-[13px]">
