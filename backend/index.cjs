@@ -296,7 +296,7 @@ const corsOptions = {
     // Not allowed
     return callback(new Error('CORS origin not allowed'));
   },
-  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
