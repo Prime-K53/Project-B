@@ -8,6 +8,7 @@ import PreviewButton from '../../../components/PreviewButton';
 import { useData } from '../../../context/DataContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useHighlight } from '../../../hooks/useHighlight';
+import { formatParentProductPrice, formatMaterialItemCost } from '../../../utils/pricing';
 
 interface ItemTableProps {
     items: Item[];
@@ -254,8 +255,8 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                                 </>
                                             )}
                                         </td>
-                                        <td className={`table-body-cell text-right finance-nums font-bold ${item.type === 'Raw Material' ? 'text-red-600' : 'text-blue-600'}`}>
-                                            {currency}{(item.type === 'Raw Material' ? item.cost : item.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                        <td className={`table-body-cell text-right finance-nums font-bold ${(item.type === 'Raw Material' || item.type === 'Material') ? 'text-red-600' : 'text-green-600'}`}>
+                                            {(item.type === 'Raw Material' || item.type === 'Material') ? formatMaterialItemCost(item, currency) : formatParentProductPrice(item, currency)}
                                         </td>
                                         <td className="table-body-cell text-right">
                                             <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -314,11 +315,13 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                             </td>
                                             <td className="table-body-cell font-mono text-slate-400">{variant.sku}</td>
                                             <td className="table-body-cell text-center finance-nums font-bold text-slate-600">
-                                                {variant.stock.toLocaleString()} <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.unit}</span>
+                                                {(item.type === 'Service' || item.type === 'Product')
+                                                    ? <span className="text-slate-300">-</span>
+                                                    : <>{variant.stock.toLocaleString()} <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.unit}</span></>}
                                             </td>
-                                            <td className={`table-body-cell text-right finance-nums font-bold ${item.type === 'Raw Material' ? 'text-red-600' : 'text-blue-600'}`}>
-                                                {currency}{(item.type === 'Raw Material' ? variant.cost : variant.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </td>
+                                             <td className={`table-body-cell text-right finance-nums font-bold ${(item.type === 'Raw Material' || item.type === 'Material') ? 'text-red-600' : 'text-green-600'}`}>
+                                                {currency}{((item.type === 'Raw Material' || item.type === 'Material') ? variant.cost : variant.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                             </td>
                                             <td className="table-body-cell text-right">
                                                 <div className="flex justify-end gap-1.5 opacity-0 group-hover/variant:opacity-100 transition-opacity">
                                                     <PreviewButton

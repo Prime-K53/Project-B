@@ -310,3 +310,110 @@ export function calculateBaseSellingPrice(
   const margin = marginPercent ?? 0;
   return costPrice * (1 + margin / 100);
 }
+
+/**
+ * Calculate the price display for a parent product with variants.
+ * If all variants have the same price, returns that price.
+ * If variants have different prices, returns a price range "minPrice - maxPrice".
+ * For items without variants, returns the item's own price.
+ */
+export function getParentProductPriceDisplay(item: Item): number | { min: number; max: number } | null {
+  // If not a variant parent or no variants, return the item's own price
+  if (!item.isVariantParent || !item.variants || item.variants.length === 0) {
+    return item.price || null;
+  }
+
+  // Get all variant prices, using resolveStoredSellingPrice for each variant
+  const variantPrices = item.variants
+    .map(variant => resolveStoredSellingPrice(variant as PricingCarrier))
+    .filter(price => price > 0)
+    .sort((a, b) => a - b);
+
+  if (variantPrices.length === 0) {
+    return item.price || null;
+  }
+
+  // If all prices are the same, return the single price
+  const minPrice = variantPrices[0];
+  const maxPrice = variantPrices[variantPrices.length - 1];
+
+  if (minPrice === maxPrice) {
+    return minPrice;
+  }
+
+  // If prices differ, return the range
+  return { min: minPrice, max: maxPrice };
+}
+
+/**
+ * Format the parent product price for display in UI.
+ * Returns a string like "K500" for single price or "K200 - K500" for price range.
+ */
+export function formatParentProductPrice(item: Item, currency: string = 'K'): string {
+  const priceInfo = getParentProductPriceDisplay(item);
+
+  if (priceInfo === null) {
+    return `${currency}0.00`;
+  }
+
+  if (typeof priceInfo === 'number') {
+    return `${currency}${priceInfo.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  }
+
+  const minFormatted = priceInfo.min.toLocaleString(undefined, { minimumFractionDigits: 2 });
+  const maxFormatted = priceInfo.max.toLocaleString(undefined, { minimumFractionDigits: 2 });
+  return `${currency}${minFormatted} - ${currency}${maxFormatted}`;
+}
+
+/**
+ * Get the cost price for material items (Material or Raw Material types).
+ * For variant parents, returns the cost range from variants.
+ * Returns number for single cost or { min, max } for range.
+ */
+export function getMaterialItemCostDisplay(item: Item): number | { min: number; max: number } | null {
+  // If not a variant parent or no variants, return the item's own cost
+  if (!item.isVariantParent || !item.variants || item.variants.length === 0) {
+    return resolveStoredCost(item as PricingCarrier) || null;
+  }
+
+  // Get all variant costs
+  const variantCosts = item.variants
+    .map(variant => resolveStoredCost(variant as PricingCarrier))
+    .filter(cost => cost > 0)
+    .sort((a, b) => a - b);
+
+  if (variantCosts.length === 0) {
+    return resolveStoredCost(item as PricingCarrier) || null;
+  }
+
+  // If all costs are the same, return the single cost
+  const minCost = variantCosts[0];
+  const maxCost = variantCosts[variantCosts.length - 1];
+
+  if (minCost === maxCost) {
+    return minCost;
+  }
+
+  // If costs differ, return the range
+  return { min: minCost, max: maxCost };
+}
+
+/**
+ * Format the material item cost price for display in UI.
+ * Returns a string like "K500" for single cost or "K200 - K500" for cost range.
+ */
+export function formatMaterialItemCost(item: Item, currency: string = 'K'): string {
+  const costInfo = getMaterialItemCostDisplay(item);
+
+  if (costInfo === null) {
+    return `${currency}0.00`;
+  }
+
+  if (typeof costInfo === 'number') {
+    return `${currency}${costInfo.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+  }
+
+  const minFormatted = costInfo.min.toLocaleString(undefined, { minimumFractionDigits: 2 });
+  const maxFormatted = costInfo.max.toLocaleString(undefined, { minimumFractionDigits: 2 });
+  return `${currency}${minFormatted} - ${currency}${maxFormatted}`;
+}
