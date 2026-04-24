@@ -188,6 +188,30 @@ export async function calculateSellingPrice(
   const safeQty = Math.max(1, Math.floor(safeNumber(quantity, 1)));
   const initialBase = safeNumber(basePrice, safeCost);
 
+  // If basePrice is provided (item has a configured selling price), use it as the base.
+  // This ensures inventory items with manually set prices use their own selling price
+  // instead of recalculating from cost + margin.
+  if (basePrice != null && !isNaN(basePrice) && basePrice > 0) {
+    // Use the provided basePrice as unit price directly
+    const unitPrice = applyRounding(basePrice);
+    const totalPrice = roundToCurrency(unitPrice * safeQty);
+    
+    return {
+      unitPrice,
+      totalPrice,
+      cost: safeCost,
+      marginAmount: 0,
+      adjustmentSnapshots: Object.freeze([]),
+      adjustmentTotal: 0,
+      breakdown: {
+        baseCost: safeCost,
+        adjustments: 0,
+        margin: 0
+      },
+      pricingVersion: PRICING_ENGINE_VERSION
+    };
+  }
+
   const normalizedAdjustments = normalizeSnapshots(adjustments, initialBase);
   
   let runningCost = safeCost;
@@ -289,8 +313,8 @@ export async function calculatePOSPrice(
   itemId: string,
   categoryId: string,
   baseCost: number,
-  basePrice: number,
-  quantity: number,
+  basePrice?: number,
+  quantity?: number,
   existingAdjustments?: SnapshotEntry[]
 ): Promise<PricingResult> {
   return calculateSellingPrice({
@@ -308,8 +332,8 @@ export async function calculateOrderPrice(
   itemId: string,
   categoryId: string,
   baseCost: number,
-  basePrice: number,
-  quantity: number,
+  basePrice?: number,
+  quantity?: number,
   existingAdjustments?: SnapshotEntry[]
 ): Promise<PricingResult> {
   return calculateSellingPrice({

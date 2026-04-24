@@ -12,6 +12,7 @@ import { pricingService, DynamicServicePricingResult } from '../../../services/p
 import { dbService } from '../../../services/db';
 import { applyProductPriceRounding } from '../../../services/pricingRoundingService';
 import { calculateServicePrice } from '../../../utils/pricing/pricingEngine';
+import { normalizeStoredPricing, resolveStoredSellingPrice } from '../../../utils/pricing';
 import { getPlaceholder } from '../../../constants/placeholders';
 
 
@@ -967,8 +968,7 @@ export const VariantSelectorModal: React.FC<{
     const currency = companyConfig.currencySymbol;
     const [quantity, setQuantity] = useState(1);
 
-    // Check if this is a Stationery item - skip configure step for stationery
-    const isStationery = product.type === 'Stationery';
+    const isStationery = product.type === 'Stationery' || product.type === 'Product';
 
     // For products with existing variants, we also skip the configure step
     // Users should set the correct pages/price when creating variants in inventory
@@ -976,7 +976,7 @@ export const VariantSelectorModal: React.FC<{
 
     const handleVariantClick = (v: ProductVariant) => {
         // Directly select the variant without configure step for stationery/products with variants
-        onSelect({ ...v, quantity } as any);
+        onSelect({ ...normalizeStoredPricing(v as any), quantity } as any);
     };
 
     return (
@@ -1024,8 +1024,8 @@ export const VariantSelectorModal: React.FC<{
                                 </div>
                             </div>
                             <div className="text-right ml-4">
-                                <div className="text-sm font-bold text-[#0077c5]">{currency}{formatNumber(v.price)}</div>
-                                {(product.type === 'Stationery' || product.type === 'Material' || product.type === 'Raw Material') && (
+                                <div className="text-sm font-bold text-[#0077c5]">{currency}{formatNumber(resolveStoredSellingPrice(v as any))}</div>
+                                {(product.type === 'Stationery' || product.type === 'Material' || product.type === 'Raw Material' || product.type === 'Product') && (
                                     <div className={`text-[10px] font-medium ${v.stock <= 0 ? 'text-[#d52b1e]' : 'text-[#6b6c7f]'}`}>
                                         {v.stock} in stock
                                     </div>

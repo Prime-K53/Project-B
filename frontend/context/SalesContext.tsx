@@ -13,6 +13,7 @@ import { examinationBatchService } from '../services/examinationBatchService';
 import { jobTicketConversionService } from '../services/jobTicketConversionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { addDays, addMonths, addYears, isBefore, parseISO, format, isSameDay } from 'date-fns';
+import { attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 import { customerNotificationService, type NotificationActivityType } from '../services/customerNotificationService';
 
@@ -709,8 +710,6 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // ✅ Aggregate adjustment snapshots from all items for margin tracking
         const allAdjustmentSnapshots: any[] = [];
-        let totalAdjustment = 0;
-
         const invoiceItems = q.items.map(item => {
             // Preserve item-level adjustment snapshots
             const itemSnapshots = (item as any).adjustmentSnapshots || [];
@@ -721,15 +720,15 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 } else {
                     allAdjustmentSnapshots.push({ ...snap });
                 }
-                totalAdjustment += snap.calculatedAmount || 0;
             });
 
-            return {
+            return attachPricingBreakdown({
                 ...item,
                 lineTotalNet: item.lineTotalNet || (item.price * item.quantity)
                 // adjustmentSnapshots preserved via spread operator
-            };
+            });
         });
+        const pricingSummary = summarizePricingBreakdown(invoiceItems as any[]);
 
         const invoice: Invoice = {
             id: invId,
@@ -743,7 +742,10 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             items: invoiceItems,
             // ✅ Add aggregate adjustment data at invoice level for margin reports
             adjustmentSnapshots: allAdjustmentSnapshots,
-            adjustmentTotal: totalAdjustment,
+            adjustmentTotal: (q as any).adjustmentTotal || pricingSummary.adjustmentTotal,
+            materialTotal: (q as any).materialTotal || pricingSummary.materialTotal,
+            profitMarginTotal: (q as any).profitMarginTotal || pricingSummary.profitMarginTotal,
+            roundingTotal: (q as any).roundingTotal || pricingSummary.roundingTotal,
             notes: `Converted from [Quotation] #[${q.id}] on [${new Date().toLocaleDateString()}] as accepted by [${q.customerName}]`,
             tax: q.tax,
             taxRate: q.taxRate,

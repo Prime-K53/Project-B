@@ -15,6 +15,8 @@ import { Loader2 } from 'lucide-react';
 import QuickPrintModal from '../../../components/QuickPrintModal';
 import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 import { getPlaceholder } from '../../../constants/placeholders';
+import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
+import { attachPricingBreakdown, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 
@@ -367,21 +369,25 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
         if (!invItem) return { price: item.price, cost: item.cost || 0, adjustmentSnapshots: item.adjustmentSnapshots };
 
-        // For variants, check pricing mode
+        // For variants, check pricing mode — prefer SmartPricing snapshot
         if (item.parentId && invItem.variants) {
             const variant = invItem.variants.find(v => v.id === item.id);
             if (variant) {
+                const snap = (variant as any).smartPricingSnapshot;
+                const resolvedPrice = resolveStoredSellingPrice(variant as any);
+                const resolvedCost = resolveStoredCost(variant as any);
                 return {
-                    price: Number(variant.selling_price ?? variant.price) || 0,
-                    cost: Number(variant.cost_price ?? variant.cost) || 0,
-                    adjustmentSnapshots: variant.adjustmentSnapshots
+                    price: resolvedPrice,
+                    cost: resolvedCost,
+                    adjustmentSnapshots: variant.adjustmentSnapshots,
+                    smartPricingSnapshot: snap
                 };
             }
         }
 
         return {
-            price: Number(invItem.selling_price ?? invItem.price) || 0,
-            cost: Number(invItem.cost_price ?? invItem.cost) || 0,
+            price: resolveStoredSellingPrice(invItem) || 0,
+            cost: resolveStoredCost(invItem) || 0,
             adjustmentSnapshots: invItem.adjustmentSnapshots
         };
     };
@@ -572,13 +578,15 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 });
             }
 
-            return {
+            return attachPricingBreakdown({
                 ...item,
                 // Attach effective snapshots so they are saved/displayed
                 adjustmentSnapshots: currentSnapshots,
                 lineTotalNet: lineTotal
-            };
+            });
         });
+
+        const pricingSummary = summarizePricingBreakdown(processedItems as any[]);
 
         const currentTaxRate = companyConfig?.taxRate || 0;
         const taxAmount = (companyConfig?.enableTax) ? (totalGross - (formData.discount || 0)) * (currentTaxRate / 100) : 0;
@@ -591,7 +599,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             tax: taxAmount,
             taxRate: currentTaxRate,
             processedItems,
-            adjustmentBreakdown
+            adjustmentBreakdown,
+            pricingSummary
         };
     }, [quotationLineItems, formData.discount, inventory, marketAdjustments, companyConfig]);
 
@@ -908,13 +917,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         }
 
         // Aggregate adjustments & consumption from items (Common logic for all types)
-        let totalAdjustment = 0;
         const aggregatedSnapshots: any[] = [];
         const consumptionSnapshots: any[] = [];
 
         analysis.processedItems.forEach((item: any) => {
-            totalAdjustment += (item.adjustmentTotal || 0) * item.quantity;
-
             const adjSnaps = item.adjustmentSnapshots || [];
             adjSnaps.forEach((snap: any) => {
                 const existing = aggregatedSnapshots.find(s => s.name === snap.name);
@@ -949,7 +955,12 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 total: item.lineTotalNet,
                 discount: item.discount || 0,
                 adjustmentSnapshots: item.adjustmentSnapshots, // Save per-item snapshots
+                adjustmentTotal: item.adjustmentTotal || item.pricingBreakdown?.adjustmentTotal || 0,
+                pricingBreakdown: item.pricingBreakdown,
+                smartPricingSnapshot: item.smartPricingSnapshot,
                 productionCostSnapshot: item.productionCostSnapshot, // If available
+                variantId: item.parentId ? item.id : item.variantId,
+                parentId: item.parentId,
                 serviceDetails: (item as any).serviceDetails
             }));
 
@@ -982,6 +993,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 payments: payments,
                 // Add aggregated snapshots to Order root for reporting
                 adjustmentSnapshots: aggregatedSnapshots,
+                adjustmentTotal: analysis.pricingSummary.adjustmentTotal,
+                materialTotal: analysis.pricingSummary.materialTotal,
+                profitMarginTotal: analysis.pricingSummary.profitMarginTotal,
+                roundingTotal: analysis.pricingSummary.roundingTotal,
                 consumptionSnapshots: consumptionSnapshots,
                 subtotal: finalTotalAmount, // Ensure subtotal is present if required by types
                 tax: analysis.tax,
@@ -1004,8 +1019,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             status: isRecurring
                 ? normalizeRecurringStatus(asDraft ? 'Draft' : formData.status)
                 : (asDraft ? 'Draft' : (formData.status || 'Unpaid')),
-            adjustmentTotal: totalAdjustment,
+            materialTotal: analysis.pricingSummary.materialTotal,
+            adjustmentTotal: analysis.pricingSummary.adjustmentTotal,
             adjustmentSnapshots: aggregatedSnapshots,
+            profitMarginTotal: analysis.pricingSummary.profitMarginTotal,
+            roundingTotal: analysis.pricingSummary.roundingTotal,
             consumptionSnapshots: consumptionSnapshots,
             tax: analysis.tax,
             taxRate: analysis.taxRate,
@@ -1170,8 +1188,11 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 parentId: selectedProductForVariants.id,
                 sku: variant.sku,
                 name: variant.name,
-                price: Number(variant.selling_price ?? variant.price) || 0,
-                cost: Number(variant.cost_price ?? variant.cost) || 0,
+                price: resolveStoredSellingPrice(variant as any) || 0,
+                selling_price: resolveStoredSellingPrice(variant as any) || 0,
+                calculated_price: resolveStoredCalculatedPrice(variant as any) || 0,
+                cost: resolveStoredCost(variant as any) || 0,
+                cost_price: resolveStoredCost(variant as any) || 0,
                 stock: variant.stock,
                 isVariantParent: false,
                 variants: [],
@@ -1205,20 +1226,45 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                 };
             });
 
-            const pricing = await calculateSellingPrice({
-                itemId: variant.id,
-                categoryId: variantItem.category,
-                baseCost: Number(variantItem.cost),
-                quantity: 1,
-                adjustments: marketAdjustmentsInput,
-                context: 'ORDER'
-            });
+            // SmartPricing variants: price is already fully computed by the engine
+            // and stored on the variant. Using calculateSellingPrice with the material
+            // baseCost would re-derive a wrong price (ignores margin + rounding already applied).
+            const snapPrice = resolveStoredSellingPrice(variant as any);
+            const snapCost = resolveStoredCost(variant as any);
+            const snapAdjTotal = Number((variant as any).smartPricingSnapshot?.marketAdjustmentTotal ?? 0);
+            const snapAdjSnaps = (variant as any).adjustmentSnapshots || [];
 
-            variantItem.price = pricing.unitPrice;
-            variantItem.cost = pricing.cost;
-            variantItem.basePrice = pricing.cost;
-            variantItem.adjustmentSnapshots = pricing.adjustmentSnapshots;
-            variantItem.adjustmentTotal = pricing.adjustmentTotal;
+            if (snapPrice > 0) {
+                // Use the stored SmartPricing price directly
+                variantItem.price = snapPrice;
+                variantItem.selling_price = snapPrice;
+                variantItem.calculated_price = resolveStoredCalculatedPrice(variant as any) || snapPrice;
+                variantItem.cost = snapCost;
+                variantItem.cost_price = snapCost;
+                variantItem.basePrice = snapCost;
+                variantItem.adjustmentSnapshots = snapAdjSnaps;
+                variantItem.adjustmentTotal = snapAdjTotal;
+                variantItem.smartPricingSnapshot = (variant as any).smartPricingSnapshot;
+            } else {
+                // Fallback: no stored price — run the engine
+                const pricing = await calculateSellingPrice({
+                    itemId: parentItem.id, // Use parent for margin/category lookup
+                    categoryId: parentItem.category,
+                    baseCost: Number(variantItem.cost) || 0,
+                    basePrice: Number(variantItem.price) || undefined,
+                    quantity: 1,
+                    adjustments: marketAdjustmentsInput,
+                    context: 'ORDER'
+                });
+                variantItem.price = pricing.unitPrice;
+                variantItem.selling_price = pricing.unitPrice;
+                variantItem.calculated_price = pricing.unitPrice;
+                variantItem.cost = pricing.cost;
+                variantItem.cost_price = pricing.cost;
+                variantItem.basePrice = pricing.cost;
+                variantItem.adjustmentSnapshots = pricing.adjustmentSnapshots;
+                variantItem.adjustmentTotal = pricing.adjustmentTotal;
+            }
 
             setFormData((prev: any) => ({
                 ...prev,
@@ -1325,6 +1371,64 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 
         const newItems = [...formData.items];
         newItems[idx].quantity = safeQty;
+
+        // For SmartPricing variants: if price is 0 (e.g. loaded from a saved order before
+        // the fix), restore it from the inventory record's variant snapshot
+        if ((item as any).parentId && (!newItems[idx].price || newItems[idx].price <= 0)) {
+            const parentInv = inventory.find((i: Item) => i.id === (item as any).parentId);
+            const savedVariant = parentInv?.variants?.find((v: any) => v.id === item.id);
+            if (savedVariant) {
+                const restored = resolveStoredSellingPrice(savedVariant as any);
+                if (restored > 0) {
+                    newItems[idx].price = restored;
+                    newItems[idx].selling_price = restored;
+                    newItems[idx].calculated_price = resolveStoredCalculatedPrice(savedVariant as any) || restored;
+                    newItems[idx].cost = resolveStoredCost(savedVariant as any) || 0;
+                    newItems[idx].cost_price = resolveStoredCost(savedVariant as any) || 0;
+                }
+            }
+        }
+
+        // Final fallback: if price is STILL 0 and it's a non-service item, try to recalculate
+        if ((!newItems[idx].price || newItems[idx].price <= 0) && item.type !== 'Service') {
+            const baseItemId = (item as any).parentId || item.id;
+            const baseItem = inventory.find(i => i.id === baseItemId) || item;
+            
+            const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+            const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+                const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+                let calcAmount = 0;
+                if (isPercentage) {
+                    calcAmount = Number(newItems[idx].cost || baseItem.cost) * (adj.value / 100);
+                } else {
+                    calcAmount = adj.value;
+                }
+                return {
+                    name: adj.name,
+                    type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+                    value: adj.value,
+                    percentage: isPercentage ? adj.value : undefined,
+                    calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+                    adjustmentId: adj.id,
+                    isActive: true
+                };
+            });
+
+            const pricing = await calculateSellingPrice({
+                itemId: baseItem.id,
+                categoryId: baseItem.category,
+                baseCost: Number(newItems[idx].cost || baseItem.cost) || 0,
+                basePrice: Number(newItems[idx].price || baseItem.price) || undefined,
+                quantity: safeQty,
+                adjustments: marketAdjustmentsInput,
+                context: 'ORDER'
+            });
+
+            newItems[idx].price = pricing.unitPrice;
+            newItems[idx].cost = pricing.cost;
+            newItems[idx].adjustmentSnapshots = pricing.adjustmentSnapshots;
+            newItems[idx].adjustmentTotal = pricing.adjustmentTotal;
+        }
 
         // Price stays as inventory price, no recalculation
         setFormData({ ...formData, items: newItems });

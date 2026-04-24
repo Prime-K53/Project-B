@@ -6,25 +6,15 @@ import { applyProductPriceRounding } from '../../services/pricingRoundingService
 import { useNavigate } from 'react-router-dom';
 import { dbService } from '../../services/db';
 import { getGlobalDefaultMargin } from '../../services/pricingService';
-import { Item, MarketAdjustment, BOMTemplate } from '../../types';
-
-interface FinishingOption {
-    id: string;
-    name: string;
-    cost: number;
-    enabled: boolean;
-    description?: string;
-    coversPerCopy?: number;
-    materialConversionRate?: number;
-}
+import { Item, MarketAdjustment, BOMTemplate, FinishingOption } from '../../types';
 
 const defaultFinishingOptions: FinishingOption[] = [
-    { id: 'binding', name: 'Binding', cost: 150, enabled: false, description: 'Book binding - comb or spiral', coversPerCopy: 1, materialConversionRate: 1 },
-    { id: 'coverPages', name: 'Cover Pages', cost: 20, enabled: false, description: 'Front and back cover pages per copy', coversPerCopy: 2, materialConversionRate: 1 },
-    { id: 'cutting', name: 'Cutting & Trimming', cost: 30, enabled: false, description: 'Trim edges to clean finish', coversPerCopy: 1, materialConversionRate: 1 },
-    { id: 'holePunch', name: 'Hole Punching', cost: 20, enabled: false, description: 'Punch holes for folder binding', coversPerCopy: 1, materialConversionRate: 1 },
-    { id: 'folding', name: 'Folding', cost: 15, enabled: false, description: 'Fold pages for insertion', coversPerCopy: 1, materialConversionRate: 1 },
-    { id: 'stapling', name: 'Stapling', cost: 10, enabled: false, description: 'Corner or saddle stapling', coversPerCopy: 1, materialConversionRate: 1 },
+    { id: 'binding', name: 'Binding', enabled: false, price: 150, description: 'Book binding - comb or spiral', items: [] },
+    { id: 'coverPages', name: 'Cover Pages', enabled: false, price: 20, description: 'Front and back cover pages per copy', items: [] },
+    { id: 'cutting', name: 'Cutting & Trimming', enabled: false, price: 30, description: 'Trim edges to clean finish', items: [] },
+    { id: 'holePunch', name: 'Hole Punching', enabled: false, price: 20, description: 'Punch holes for folder binding', items: [] },
+    { id: 'folding', name: 'Folding', enabled: false, price: 15, description: 'Fold pages for insertion', items: [] },
+    { id: 'stapling', name: 'Stapling', enabled: false, price: 10, description: 'Corner or saddle stapling', items: [] },
 ];
 
 const SmartPricing: React.FC = () => {
@@ -90,12 +80,16 @@ const SmartPricing: React.FC = () => {
                 setMarketAdjustments(adjustments);
                 setBOMTemplates(templates);
 
-                const savedCosts = await dbService.getSetting<Record<string, number>>('finishingOptionCosts');
-                if (savedCosts) {
-                    setFinishingOptions(prev => prev.map(opt => ({
-                        ...opt,
-                        cost: savedCosts[opt.id] ?? opt.cost
-                    })));
+                if (companyConfig?.productionSettings?.finishingOptions) {
+                    setFinishingOptions(companyConfig.productionSettings.finishingOptions);
+                } else {
+                    const savedCosts = await dbService.getSetting<Record<string, number>>('finishingOptionCosts');
+                    if (savedCosts) {
+                        setFinishingOptions(prev => prev.map(opt => ({
+                            ...opt,
+                            price: savedCosts[opt.id] ?? opt.price
+                        })));
+                    }
                 }
 
                 const paperItems = inv.filter(i => {
@@ -159,10 +153,22 @@ const SmartPricing: React.FC = () => {
         const finishingCost = finishingOptions
             .filter(o => o.enabled)
             .reduce((sum, o) => {
-                return sum + (o.cost * copies);
+                return sum + (o.price * copies);
             }, 0);
 
-        const baseCost = paperCost + tonerCost + finishingCost;
+        const finishingInventoryCost = finishingOptions
+            .filter(o => o.enabled && o.items && o.items.length > 0)
+            .reduce((sum, o) => {
+                const optionInventoryCost = o.items.reduce((itemSum, itemConfig) => {
+                    const item = inventory.find(i => i.id === itemConfig.itemId);
+                    if (!item) return itemSum;
+                    const itemCost = Number(item.cost_price || item.cost_per_unit || item.cost || 0);
+                    return itemSum + (itemCost * itemConfig.quantity * copies);
+                }, 0);
+                return sum + optionInventoryCost;
+            }, 0);
+
+        const baseCost = paperCost + tonerCost + finishingCost + finishingInventoryCost;
         
         const marketAdjustmentTotal = marketAdjustmentEnabled 
             ? marketAdjustments.reduce((sum, adj) => {
@@ -176,10 +182,10 @@ const SmartPricing: React.FC = () => {
         
         const priceAfterMarketAdjustments = baseCost + marketAdjustmentTotal;
         
-        return { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments };
+        return { paperCost, tonerCost, finishingCost, finishingInventoryCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments };
     };
 
-    const { paperCost, tonerCost, finishingCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments } = calculateCosts();
+    const { paperCost, tonerCost, finishingCost, finishingInventoryCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments } = calculateCosts();
 
     // Apply Global Default Margin to get final price
     const profitMarginAmount = React.useMemo(() => {
@@ -245,6 +251,23 @@ const SmartPricing: React.FC = () => {
     const totalPages = pages * copies;
     const totalSheets = Math.ceil(pages / 2) * copies;
 
+    const formatRoundingLabel = (methodUsed: string): string => {
+        if (!methodUsed) return 'rounded';
+
+        // Extract the method type and value from methodUsed
+        if (methodUsed.startsWith('ALWAYS_UP_')) {
+            const step = methodUsed.replace('ALWAYS_UP_', '');
+            return `Rounding up (${step})`;
+        } else if (methodUsed.startsWith('NEAREST_')) {
+            const step = methodUsed.replace('NEAREST_', '');
+            return `nearest ${step}`;
+        } else if (methodUsed === 'PSYCHOLOGICAL') {
+            return 'psychological';
+        }
+
+        return 'rounded';
+    };
+
     const getItemCost = (item: Item | undefined) => {
         if (!item) return 0;
         return Number(item.cost_price || item.cost_per_unit || item.cost || 0);
@@ -287,7 +310,7 @@ const SmartPricing: React.FC = () => {
                     <button 
                         onClick={() => {
                             const costs: { [key: string]: number } = {};
-                            finishingOptions.forEach(opt => { costs[opt.id] = opt.cost; });
+                            finishingOptions.forEach(opt => { costs[opt.id] = opt.price; });
                             setEditingCosts(costs);
                             setShowSettings(true);
                         }}
@@ -456,7 +479,7 @@ const SmartPricing: React.FC = () => {
                                                     <div className="text-xs text-slate-500">{option.description}</div>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <span className="text-sm font-medium text-slate-600">{currency} {option.cost}</span>
+                                                    <span className="text-sm font-medium text-slate-600">{currency} {option.price}</span>
                                                     <input 
                                                         type="checkbox" 
                                                         checked={option.enabled}
@@ -536,12 +559,20 @@ const SmartPricing: React.FC = () => {
                                     <span>Finishing</span>
                                     <span className="font-medium">{formatCurrency(finishingCost)}</span>
                                 </div>
+                                {finishingInventoryCost > 0 && (
+                                    <div className="flex justify-between text-slate-600">
+                                        <span className="pl-4">Finishing Materials</span>
+                                        <span className="font-medium">{formatCurrency(finishingInventoryCost)}</span>
+                                    </div>
+                                )}
                                 {marketAdjustmentEnabled && marketAdjustments.map((adj, idx) => {
                                     const type = (adj.type || '').toUpperCase();
                                     const category = (adj.adjustmentCategory || adj.category || '').toLowerCase();
                                     let adjustmentValue = 0;
+                                    let adjustmentPercentage = 0;
                                     if (type === 'PERCENTAGE' || type === 'PERCENT') {
-                                        adjustmentValue = baseCost * ((adj.value || 0) / 100);
+                                        adjustmentPercentage = adj.value || 0;
+                                        adjustmentValue = baseCost * (adjustmentPercentage / 100);
                                     } else {
                                         adjustmentValue = (adj.value || 0) * pages * copies;
                                     }
@@ -557,7 +588,7 @@ const SmartPricing: React.FC = () => {
                                         }
                                         return (
                                             <div key={idx} className={`flex justify-between ${colorClass}`}>
-                                                <span>{adj.name || 'Market Adjustment'}</span>
+                                                <span>{adj.name || 'Market Adjustment'}{adjustmentPercentage > 0 ? ` (${adjustmentPercentage}%)` : ''}</span>
                                                 <span className="font-medium">+{formatCurrency(adjustmentValue)}</span>
                                             </div>
                                         );
@@ -572,7 +603,7 @@ const SmartPricing: React.FC = () => {
                                 )}
                                 {roundingResult && roundingResult.wasRounded && (
                                     <div className="flex justify-between text-purple-600">
-                                        <span>Rounded</span>
+                                        <span>{formatRoundingLabel(roundingResult.methodUsed)}</span>
                                         <span className="font-medium">+{formatCurrency(roundingResult.roundingDifference)}</span>
                                     </div>
                                 )}
@@ -645,7 +676,7 @@ const SmartPricing: React.FC = () => {
                                         <span className="text-slate-500">{currency}</span>
                                         <input
                                             type="number"
-                                            value={editingCosts[option.id] ?? option.cost}
+                                            value={editingCosts[option.id] ?? option.price}
                                             onChange={(e) => setEditingCosts(prev => ({ ...prev, [option.id]: parseFloat(e.target.value) || 0 }))}
                                             className="w-24 px-3 py-2 border border-slate-200 rounded-lg text-right"
                                             min={0}
@@ -666,12 +697,12 @@ const SmartPricing: React.FC = () => {
                                 onClick={async () => {
                                     const newCosts: Record<string, number> = {};
                                     finishingOptions.forEach(opt => {
-                                        newCosts[opt.id] = editingCosts[opt.id] ?? opt.cost;
+                                        newCosts[opt.id] = editingCosts[opt.id] ?? opt.price;
                                     });
                                     await dbService.saveSetting('finishingOptionCosts', newCosts);
                                     setFinishingOptions(prev => prev.map(opt => ({
                                         ...opt,
-                                        cost: newCosts[opt.id] ?? opt.cost
+                                        price: newCosts[opt.id] ?? opt.price
                                     })));
                                     setShowSettings(false);
                                 }}

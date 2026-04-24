@@ -19,12 +19,7 @@ const MIGRATION_KEY = 'jobTicketsIndexedDbMigrated_v1';
 const SETTINGS_ID = 'default';
 
 const defaultSettings: JobTicketSettings = {
-  bulkDiscounts: [
-    { minQuantity: 1, maxQuantity: 99, discountPercent: 0 },
-    { minQuantity: 100, maxQuantity: 499, discountPercent: 10 },
-    { minQuantity: 500, maxQuantity: 999, discountPercent: 15 },
-    { minQuantity: 1000, maxQuantity: Infinity, discountPercent: 20 },
-  ],
+  defaultRushFeePercent: 25,
   defaultRushFeePercent: 25,
   expressFeePercent: 50,
   urgentFeePercent: 100,
@@ -262,7 +257,9 @@ export const jobTicketService = {
     unitPrice: number,
     priority: JobTicketPriority,
     finishing: JobTicket['finishing'],
-    settings: JobTicketSettings
+    settings: JobTicketSettings,
+    pages: number = 0,
+    ticketType?: JobTicketType
   ) => {
     const subtotal = quantity * unitPrice;
 
@@ -290,18 +287,13 @@ export const jobTicketService = {
     }
 
     const afterRushAndFinishing = subtotal + rushFee + finishingCost;
-    const discount = settings.bulkDiscounts.find(
-      (entry) => quantity >= entry.minQuantity && quantity <= entry.maxQuantity
-    );
-    const discountAmount = afterRushAndFinishing * ((discount?.discountPercent || 0) / 100);
-    const afterDiscount = afterRushAndFinishing - discountAmount;
-    const tax = afterDiscount * 0.15;
-    const total = afterDiscount + tax;
+    const tax = afterRushAndFinishing * 0.15;
+    const total = afterRushAndFinishing + tax;
 
     return {
       rushFee: Math.round(rushFee * 100) / 100,
       finishingCost: Math.round(finishingCost * 100) / 100,
-      discount: Math.round(discountAmount * 100) / 100,
+      discount: 0,
       subtotal: Math.round(afterRushAndFinishing * 100) / 100,
       tax: Math.round(tax * 100) / 100,
       total: Math.round(total * 100) / 100,

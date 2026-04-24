@@ -407,7 +407,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        {(item.type === 'Stationery' || item.type === 'Material') && (
+                        {(item.type === 'Stationery' || item.type === 'Material' || item.type === 'Product') && (
                             <button onClick={() => onAdjust(item)} className="zoho-button-secondary px-3 py-1.5 flex items-center gap-1.5">
                                 <ArrowRightLeft size={14} /> Adjust
                             </button>
@@ -494,7 +494,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
             </div>
 
             {/* 2. Alerts Section */}
-            {(item.stock <= (item.minStockLevel || 0) || stockAvailable < 0) && (
+            {((item.stock <= (item.minStockLevel || 0) || stockAvailable < 0) && !((item as any).printConsumptionEnabled)) && (
                 <div className="px-6 py-3 bg-red-50/80 backdrop-blur border-b border-red-100 flex items-center gap-3 text-xs text-red-800">
                     <AlertTriangle size={14} className="shrink-0" />
                     <span className="font-bold">Low Stock Warning:</span>
@@ -736,8 +736,11 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {variantSalesData.map((v, idx) => {
-                                                    const isLowStock = v.stock <= (item.minStockLevel || 0);
+                                                 {variantSalesData.map((v, idx) => {
+                                                     // If this product or variant uses print consumption, we don't show low-stock warnings
+                                                     const variantObj = variants.find(x => x.id === v.id) || {} as any;
+                                                     const suppressedLowStock = (item as any).printConsumptionEnabled || variantObj.printConsumptionEnabled;
+                                                     const isLowStock = !suppressedLowStock && v.stock <= (item.minStockLevel || 0);
                                                     const isTopSeller = topVariant?.id === v.id;
                                                     return (
                                                         <tr key={v.id} className={`hover:bg-slate-50/50 transition-colors ${isTopSeller ? 'bg-emerald-50/30' : ''}`}>

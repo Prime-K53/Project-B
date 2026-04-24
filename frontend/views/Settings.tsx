@@ -10,7 +10,7 @@ import {
     Globe, Clock, Key, Lock, Gauge, Binary, Plus, X, Percent,
     Cpu, Layers, Smartphone, Layout, Users, ShoppingBag, ShoppingCart, Palette, Monitor,
     Factory, Box, Cloud, Bell, Mail, MessageSquare, ShieldAlert, Webhook, Sun, Moon, Laptop, Info, Undo2,
-    TrendingUp
+    TrendingUp, Package, PlusCircle, Trash
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { CompanyConfig, NumberingRule, PricingRoundingMethod } from '../types';
@@ -158,7 +158,15 @@ const Settings: React.FC = () => {
             defaultWorkCenterId: '',
             defaultExamBomId: '',
             allowOverproduction: false,
-            showKioskSummary: false
+            showKioskSummary: false,
+            finishingOptions: [
+                { id: 'binding', name: 'Binding', enabled: false, price: 150, description: 'Book binding - comb or spiral', items: [] },
+                { id: 'coverPages', name: 'Cover Pages', enabled: false, price: 20, description: 'Front and back cover pages per copy', items: [] },
+                { id: 'cutting', name: 'Cutting & Trimming', enabled: false, price: 30, description: 'Trim edges to clean finish', items: [] },
+                { id: 'holePunch', name: 'Hole Punching', enabled: false, price: 20, description: 'Punch holes for folder binding', items: [] },
+                { id: 'folding', name: 'Folding', enabled: false, price: 15, description: 'Fold pages for insertion', items: [] },
+                { id: 'stapling', name: 'Stapling', enabled: false, price: 10, description: 'Corner or saddle stapling', items: [] },
+            ]
         },
         inventorySettings: {
             valuationMethod: 'FIFO',
@@ -529,15 +537,14 @@ const Settings: React.FC = () => {
                 { id: 'PaymentDetails', icon: Landmark, label: 'Payment Details', desc: 'Bank and mobile money accounts' }
             ]
         },
-        {
-            title: 'Business Modules',
-            items: [
-                { id: 'Modules', icon: Cpu, label: 'Feature Modules', desc: 'Enable/disable ERP modules' },
-                { id: 'SalesModule', icon: ShoppingBag, label: 'Sales & POS', desc: 'Retail and checkout settings' },
-                { id: 'Production', icon: Factory, label: 'Production', desc: 'Manufacturing and work centers' },
-                { id: 'Inventory', icon: Box, label: 'Inventory', desc: 'Stock and unit of measure' }
-            ]
-        },
+         {
+             title: 'Business Modules',
+             items: [
+                 { id: 'Modules', icon: Cpu, label: 'Feature Modules', desc: 'Enable/disable ERP modules' },
+                 { id: 'SalesModule', icon: ShoppingBag, label: 'Sales & POS', desc: 'Retail and checkout settings' },
+                 { id: 'Inventory', icon: Box, label: 'Inventory', desc: 'Stock and unit of measure' }
+             ]
+         },
         {
             title: 'Automation & Templates',
             items: [
@@ -2426,147 +2433,17 @@ const Settings: React.FC = () => {
                                                         />
                                                         <div className="w-14 h-7 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-[#2CA01C]"></div>
                                                     </label>
-                                                </div>
+</div>
                                             ))}
                                         </div>
                                     </div>
                                 </div>
                             )
-                        }
+                            }
 
-                        {
-                            activeTab === 'Production' && (
-                                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4">
-                                    <div className="bg-white rounded-lg border border-[#D4D7DC] p-6 shadow-sm space-y-10">
-                                        <div className="flex items-center gap-3">
-                                            <Factory size={18} className="text-orange-600" />
-                                            <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Manufacturing & Shop Floor</h3>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-10">
-                                            <div className="bg-slate-50/50 p-6 rounded-lg border border-slate-100 space-y-8">
-                                                <div className="flex justify-between items-center group/item">
-                                                    <div>
-                                                        <p className="font-black text-slate-800 uppercase text-sm tracking-tight group-hover/item:text-[#2CA01C] transition-colors">Auto-Consume Materials</p>
-                                                        <p className="text-[10px] text-slate-500 mt-1 font-medium">Deduct BOM components automatically on work order start.</p>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={config.productionSettings?.autoConsumeMaterials}
-                                                            onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, autoConsumeMaterials: e.target.checked } as any })}
-                                                        />
-                                                        <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
-                                                    </label>
-                                                </div>
-                                                <div className="h-px bg-slate-200/50"></div>
-                                                <div className="flex justify-between items-center group/item">
-                                                    <div>
-                                                        <p className="font-black text-slate-800 uppercase text-sm tracking-tight group-hover/item:text-[#2CA01C] transition-colors">Require QA Approval</p>
-                                                        <p className="text-[10px] text-slate-500 mt-1 font-medium">Products must be verified before moving to finished stock.</p>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={config.productionSettings?.requireQAApproval}
-                                                            onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, requireQAApproval: e.target.checked } as any })}
-                                                        />
-                                                        <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
-                                                    </label>
-                                                </div>
-                                                <div className="h-px bg-slate-200/50"></div>
-                                                <div className="flex justify-between items-center group/item">
-                                                    <div>
-                                                        <p className="font-black text-slate-800 uppercase text-sm tracking-tight group-hover/item:text-[#2CA01C] transition-colors">Track Machine Downtime</p>
-                                                        <p className="text-[10px] text-slate-500 mt-1 font-medium">Enable downtime logging for all work centers.</p>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={config.productionSettings?.trackMachineDownTime}
-                                                            onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, trackMachineDownTime: e.target.checked } })}
-                                                        />
-                                                        <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
-                                                    </label>
-                                                </div>
-                                            </div>
-
-                                            <div className="bg-slate-50/50 p-6 rounded-lg border border-slate-100 space-y-8">
-                                                <div>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-1">Default Production Center</label>
-                                                    <select
-                                                        className="w-full bg-white border border-slate-200 rounded-xl px-5 py-4 font-bold text-slate-800 outline-none focus:ring-4 focus:ring-[#2CA01C]/5 focus:border-[#2CA01C] transition-all text-sm shadow-sm appearance-none cursor-pointer"
-                                                        value={config.productionSettings?.defaultWorkCenterId || ''}
-                                                        onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, defaultWorkCenterId: e.target.value } as any })}
-                                                    >
-                                                        <option value="">Select Work Center</option>
-                                                        <option value="wc-1">Main Printing Lab</option>
-                                                        <option value="wc-2">Assembly Area</option>
-                                                        <option value="wc-3">Binding Station</option>
-                                                    </select>
-                                                </div>
-                                                <div className="h-px bg-slate-200/50"></div>
-                                                <div>
-                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-1">Default Exam BOM Template</label>
-                                                    <select
-                                                        className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 font-bold text-slate-800 outline-none focus:ring-4 focus:ring-[#2CA01C]/5 focus:border-[#2CA01C] transition-all text-sm shadow-sm appearance-none cursor-pointer"
-                                                        value={config.productionSettings?.defaultExamBomId || ''}
-                                                        onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, defaultExamBomId: e.target.value } as any })}
-                                                    >
-                                                        <option value="">-- Generic / Default --</option>
-                                                        {bomTemplates
-                                                            .filter((item, index, self) => index === self.findIndex((t) => t.id === item.id))
-                                                            .map((template) => (
-                                                            <option key={template.id} value={template.id}>
-                                                                {template.name} ({template.type})
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                <div className="h-px bg-slate-200/50"></div>
-                                                <div className="flex justify-between items-center group/item">
-                                                    <div>
-                                                        <p className="font-black text-slate-800 uppercase text-sm tracking-tight group-hover/item:text-[#2CA01C] transition-colors">Allow Overproduction</p>
-                                                        <p className="text-[10px] text-slate-500 mt-1 font-medium">Allow completing more units than planned.</p>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={config.productionSettings?.allowOverproduction}
-                                                            onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, allowOverproduction: e.target.checked } as any })}
-                                                        />
-                                                        <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
-                                                    </label>
-                                                </div>
-                                                <div className="h-px bg-slate-200/50"></div>
-                                                <div className="flex justify-between items-center group/item">
-                                                    <div>
-                                                        <p className="font-black text-slate-800 uppercase text-sm tracking-tight group-hover/item:text-[#2CA01C] transition-colors">Show Kiosk Summary</p>
-                                                        <p className="text-[10px] text-slate-500 mt-1 font-medium">Display daily targets on shop floor terminals.</p>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            className="sr-only peer"
-                                                            checked={config.productionSettings?.showKioskSummary}
-                                                            onChange={e => setConfig({ ...config, productionSettings: { ...config.productionSettings, showKioskSummary: e.target.checked } as any })}
-                                                        />
-                                                        <div className="w-12 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )
-                        }
-
-                        {
-                            activeTab === 'Inventory' && (
-                                <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4">
+                            {
+                                activeTab === 'Inventory' && (
+                                    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4">
                                     <div className="bg-white rounded-lg border border-[#D4D7DC] p-6 shadow-sm space-y-10">
                                         <div className="flex items-center gap-3">
                                             <Box size={18} className="text-emerald-600" />

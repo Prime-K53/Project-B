@@ -342,11 +342,7 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
                 </div>
                 <div className="text-right">
                     <div className="font-bold text-slate-800 text-sm">{currency}{formatNumber(item.price * item.quantity)}</div>
-                    {(item as any).originalPrice && (item as any).originalPrice > item.price && (
-                        <div className="text-[9px] text-emerald-600 font-bold leading-none mt-0.5 whitespace-nowrap bg-emerald-50 px-1 py-0.5 rounded inline-block">
-                            Volume Discount
-                        </div>
-                    )}
+
                 </div>
             </div>
         </div>

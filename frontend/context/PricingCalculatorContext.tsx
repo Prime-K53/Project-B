@@ -311,28 +311,8 @@ export const PricingCalculatorProvider: React.FC<{ children: React.ReactNode }> 
             }
         });
 
-        // Apply tiered pricing discounts based on total candidature
-        const totalCandidature = classes.reduce((sum, cls) => sum + (cls.number_of_learners || 0), 0);
         const appliedDiscounts: ExaminationPricingResult['appliedDiscounts'] = [];
 
-        // Tier 1: 100+ learners - 5% discount
-        if (totalCandidature >= 100 && totalCandidature < 250) {
-            const discountAmount = subtotal * 0.05;
-            appliedDiscounts.push({ name: 'Volume Discount (100+)', amount: discountAmount, type: 'PERCENTAGE' });
-            subtotal -= discountAmount;
-        }
-        // Tier 2: 250+ learners - 10% discount
-        else if (totalCandidature >= 250 && totalCandidature < 500) {
-            const discountAmount = subtotal * 0.10;
-            appliedDiscounts.push({ name: 'Volume Discount (250+)', amount: discountAmount, type: 'PERCENTAGE' });
-            subtotal -= discountAmount;
-        }
-        // Tier 3: 500+ learners - 15% discount
-        else if (totalCandidature >= 500) {
-            const discountAmount = subtotal * 0.15;
-            appliedDiscounts.push({ name: 'Volume Discount (500+)', amount: discountAmount, type: 'PERCENTAGE' });
-            subtotal -= discountAmount;
-        }
 
         // Calculate VAT/tax (16% default)
         const taxRate = 0.16;

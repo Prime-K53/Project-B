@@ -266,7 +266,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 reason: reason
             });
 
-            if (item && oldStock + qty <= item.minStockLevel && qty < 0) {
+            // For printed/print-consumption items we suppress low-stock alerts
+            if (item && !(item as any).printConsumptionEnabled && oldStock + qty <= item.minStockLevel && qty < 0) {
                 addAlert({
                     id: `STOCK-LOW-${itemId}-${Date.now()}`,
                     message: `Low Stock: ${item.name} at ${oldStock + qty} units.`,

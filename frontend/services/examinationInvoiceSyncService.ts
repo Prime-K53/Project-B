@@ -69,6 +69,107 @@ const mapLineItems = (payload: ExaminationGeneratedInvoicePayload) => {
   }));
 };
 
+const allocateAmounts = (totals: number[], target: number) => {
+  if (totals.length === 0) return [];
+  const safeTarget = toNumber(target, 0);
+  const baseTotal = totals.reduce((sum, value) => sum + value, 0);
+  let running = 0;
+
+  return totals.map((value, index) => {
+    const allocation = index === totals.length - 1
+      ? Number((safeTarget - running).toFixed(2))
+      : Number(((baseTotal > 0 ? value / baseTotal : 1 / totals.length) * safeTarget).toFixed(2));
+    running = Number((running + allocation).toFixed(2));
+    return allocation;
+  });
+};
+
+const enrichInvoiceWithBatchPricing = (
+  invoice: Invoice & Record<string, unknown>,
+  batch: any
+) => {
+  const classes = Array.isArray(batch?.classes) ? batch.classes : [];
+  const roundingTotal = toNumber(invoice.roundingTotal ?? invoice.roundingDifference, 0);
+  const materialTotal = Number(classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.material_total_cost, 0), 0).toFixed(2));
+  const adjustmentTotal = Number(classes.reduce((sum: number, cls: any) => sum + toNumber(cls?.adjustment_total_cost, 0), 0).toFixed(2));
+  const classTotals = classes.map((cls: any) => {
+    const learners = Math.max(1, toNumber(cls?.number_of_learners, 1));
+    return toNumber(
+      cls?.live_total_preview,
+      toNumber(cls?.final_fee_per_learner ?? cls?.price_per_learner, 0) * learners
+    );
+  });
+  const totalRevenue = Number(classTotals.reduce((sum: number, value: number) => sum + value, 0).toFixed(2));
+  const roundedAllocations = allocateAmounts(classTotals, roundingTotal);
+  const totalAdjustmentBase = adjustmentTotal > 0 ? adjustmentTotal : classTotals.reduce((sum, value) => sum + value, 0);
+  const rawSnapshots = Array.isArray(invoice.adjustmentSnapshots) ? invoice.adjustmentSnapshots : [];
+
+  const items = classes.map((cls: any, index: number) => {
+    const quantity = Math.max(1, toNumber(cls?.number_of_learners, 1));
+    const revenue = Number(classTotals[index].toFixed(2));
+    const material = Number(toNumber(cls?.material_total_cost, 0).toFixed(2));
+    const adjustment = Number(toNumber(cls?.adjustment_total_cost, 0).toFixed(2));
+    const rounding = Number((roundedAllocations[index] || 0).toFixed(2));
+    const profit = Number((revenue - material - adjustment - rounding).toFixed(2));
+    const adjustmentWeight = totalAdjustmentBase > 0
+      ? adjustment / totalAdjustmentBase
+      : (totalRevenue > 0 ? revenue / totalRevenue : 0);
+    const scaledAdjustmentSnapshots = rawSnapshots.map((snapshot: any) => ({
+      ...snapshot,
+      calculatedAmount: Number((toNumber(snapshot?.calculatedAmount ?? snapshot?.amount ?? snapshot?.value, 0) * adjustmentWeight).toFixed(2))
+    }));
+
+    return {
+      id: String(cls?.id || `EXM-ITEM-${invoice.id}-${index + 1}`),
+      itemId: String(cls?.id || `EXM-ITEM-${invoice.id}-${index + 1}`),
+      name: String(cls?.class_name || `Class ${index + 1}`),
+      sku: `EXM-CLASS-${String(cls?.id || index + 1)}`,
+      description: `${Array.isArray(cls?.subjects) ? cls.subjects.length : 0} subject(s)`,
+      category: 'Examination',
+      type: 'Service' as const,
+      unit: 'learner',
+      minStockLevel: 0,
+      stock: 0,
+      reserved: 0,
+      price: Number((quantity > 0 ? revenue / quantity : revenue).toFixed(2)),
+      cost: Number((quantity > 0 ? material / quantity : material).toFixed(2)),
+      quantity,
+      total: revenue,
+      adjustmentSnapshots: scaledAdjustmentSnapshots,
+      adjustmentTotal: Number((quantity > 0 ? adjustment / quantity : adjustment).toFixed(2)),
+      pricingBreakdown: {
+        paperCost: 0,
+        tonerCost: 0,
+        finishingCost: 0,
+        baseMaterialCost: Number((quantity > 0 ? material / quantity : material).toFixed(2)),
+        adjustmentTotal: Number((quantity > 0 ? adjustment / quantity : adjustment).toFixed(2)),
+        adjustmentLines: scaledAdjustmentSnapshots.map((snapshot: any) => ({
+          name: String(snapshot?.name || 'Adjustment'),
+          type: String(snapshot?.type || 'FIXED'),
+          value: toNumber(snapshot?.value ?? snapshot?.percentage ?? snapshot?.calculatedAmount, 0)
+        })),
+        profitMarginAmount: Number((quantity > 0 ? profit / quantity : profit).toFixed(2)),
+        marginType: 'fixed_amount' as const,
+        marginValue: Number((quantity > 0 ? profit / quantity : profit).toFixed(2)),
+        roundingDifference: Number((quantity > 0 ? rounding / quantity : rounding).toFixed(2)),
+        wasRounded: Math.abs(rounding) > 0.0001,
+        roundingMethod: String(invoice.roundingMethod || 'nearest_50'),
+        sellingPrice: Number((quantity > 0 ? revenue / quantity : revenue).toFixed(2)),
+        copies: quantity
+      }
+    };
+  });
+
+  return {
+    ...invoice,
+    items,
+    materialTotal,
+    adjustmentTotal,
+    profitMarginTotal: Number((totalRevenue - materialTotal - adjustmentTotal - roundingTotal).toFixed(2)),
+    roundingTotal
+  };
+};
+
 export const mapExaminationPayloadToInvoice = (
   payload: ExaminationGeneratedInvoicePayload
 ): Invoice & Record<string, unknown> => {
@@ -94,6 +195,12 @@ export const mapExaminationPayloadToInvoice = (
     adjustmentTotal: toNumber(payload?.adjustmentTotal, 0),
     adjustmentSnapshots: Array.isArray(payload?.adjustmentSnapshots) ? payload.adjustmentSnapshots : [],
     roundingDifference: toNumber(payload?.roundingDifference, 0),
+    roundingTotal: toNumber(payload?.roundingDifference, 0),
+    profitMarginTotal: Number((
+      toNumber(payload?.preRoundingTotalAmount, totalAmount)
+      - toNumber(payload?.materialTotal, 0)
+      - toNumber(payload?.adjustmentTotal, 0)
+    ).toFixed(2)),
     roundingMethod: payload?.roundingMethod || 'nearest_50',
     applyRounding: Boolean(payload?.applyRounding),
     classBreakdown: Array.isArray(payload?.classBreakdown) ? payload.classBreakdown : [],
@@ -132,7 +239,14 @@ export const persistExaminationInvoiceToFinance = async (
     return { synced: false, fallbackUsed: false, invoiceId: null, message: 'No invoice payload to sync.' };
   }
 
-  const invoice = mapExaminationPayloadToInvoice(payload);
+  let invoice = mapExaminationPayloadToInvoice(payload);
+  const batchId = String(payload?.batchId || payload?.origin_batch_id || '').trim();
+  if (batchId) {
+    const localBatch = await dbService.get<any>('examinationBatches', batchId);
+    if (localBatch) {
+      invoice = enrichInvoiceWithBatchPricing(invoice, localBatch);
+    }
+  }
 
   try {
     await api.finance.saveInvoice(invoice as any);

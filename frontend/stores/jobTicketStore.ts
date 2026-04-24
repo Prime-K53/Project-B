@@ -26,12 +26,7 @@ interface JobTicketState {
 }
 
 const defaultSettings: JobTicketSettings = {
-  bulkDiscounts: [
-    { minQuantity: 1, maxQuantity: 99, discountPercent: 0 },
-    { minQuantity: 100, maxQuantity: 499, discountPercent: 10 },
-    { minQuantity: 500, maxQuantity: 999, discountPercent: 15 },
-    { minQuantity: 1000, maxQuantity: Infinity, discountPercent: 20 },
-  ],
+  defaultRushFeePercent: 25,
   defaultRushFeePercent: 25,
   expressFeePercent: 50,
   urgentFeePercent: 100,

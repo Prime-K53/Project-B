@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ArrowRightLeft, Warehouse as WarehouseIcon, ClipboardCheck, AlertCircle, Sparkles, Loader2, Settings } from 'lucide-react';
+import { Plus, ArrowRightLeft, Warehouse as WarehouseIcon, ClipboardCheck, AlertCircle, Sparkles, Loader2, Settings, RefreshCw } from 'lucide-react';
 import { useData, REFRESH_INTERVAL } from '../context/DataContext';
 import { useModuleRefresh } from '../hooks/useModuleRefresh';
 import { useFinance } from '../context/FinanceContext';
@@ -13,6 +13,7 @@ import SmartAdjustModal from './inventory/components/SmartAdjustModal';
 import StockAdjustmentModal from './inventory/components/StockAdjustmentModal';
 import { useLocation } from 'react-router-dom';
 import { suggestRestock } from '../services/geminiService';
+import { repairVariantPricing } from '@/utils/pricing/recalculateVariants';
 
 const Inventory: React.FC = () => {
     const { fetchInventory, fetchProcurementData } = useInventory();
@@ -25,7 +26,7 @@ const Inventory: React.FC = () => {
             fetchProcurementData(),
             refreshAllData()
         ]);
-    }, { interval: REFRESH_INTERVAL });
+    }, { interval: null }); // Disable polling to avoid race condition with lazy loading
     const { inventory, warehouses, addItem, updateItem, transferStock, updateStock, addWarehouse, deleteItem, isLoading, reconcileInventory } = useInventory();
     const { postJournalEntry } = useFinance();
     const { companyConfig, addAuditLog, notify, suppliers } = useData();
@@ -48,10 +49,11 @@ const Inventory: React.FC = () => {
         }
         return sum + (item.price * item.stock);
     }, 0);
-    const lowStockCount = inventory.filter(item => item.stock <= (item.minStockLevel || 0)).length;
+    // Exclude printed/print-consumption items from low stock alerts
+    const lowStockCount = inventory.filter(item => !(item as any).printConsumptionEnabled && item.stock <= (item.minStockLevel || 0)).length;
     const totalStockUnits = inventory.reduce((sum, item) => sum + item.stock, 0);
 
-    const [activeView, setActiveView] = useState<'Items' | 'Stationery' | 'Warehouses'>('Items');
+    const [activeView, setActiveView] = useState<'Items' | 'Stock' | 'Warehouses'>('Items');
 
     const [viewMode, setViewMode] = useState<'List' | 'Detail'>('List');
     const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -78,6 +80,33 @@ const Inventory: React.FC = () => {
 
 
     const [initialSearch, setInitialSearch] = useState('');
+    const [isRepairing, setIsRepairing] = useState(false);
+    const { marketAdjustments, bomTemplates } = useData();
+
+    const handleRepairPricing = async () => {
+        if (!window.confirm("This will scan your entire inventory for variants with missing or zero prices and attempt to fix them based on current SmartPricing rules. Proceed?")) return;
+        
+        setIsRepairing(true);
+        try {
+            const result = await repairVariantPricing(inventory, marketAdjustments, bomTemplates);
+            if (result.updatedVariants > 0) {
+                notify(`Successfully updated ${result.updatedVariants} variants across ${result.updatedItems} items.`, "success");
+                await fetchInventory(); // Refresh view
+            } else if (result.errors.length > 0) {
+                notify(`Repair completed with ${result.errors.length} errors.`, "warning");
+            } else {
+                notify("No variants required repair.", "info");
+            }
+            
+            if (result.errors.length > 0) {
+                console.warn('[Pricing Repair] Errors:', result.errors);
+            }
+        } catch (error: any) {
+            notify(`Repair failed: ${error.message}`, "error");
+        } finally {
+            setIsRepairing(false);
+        }
+    };
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -228,6 +257,19 @@ const Inventory: React.FC = () => {
                     <p className="text-xs text-slate-500 mt-0.5">Multi-location tracking and master data list</p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
+                    <button 
+                        onClick={handleRepairPricing}
+                        disabled={isRepairing}
+                        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                            isRepairing 
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
+                        title="Repair Zero Pricing (K0)"
+                    >
+                        {isRepairing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        <span>{isRepairing ? 'Repairing...' : 'Repair Pricing'}</span>
+                    </button>
                     <button
                         onClick={handleOpenAddModal}
                         className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-blue-700 text-sm shadow-sm transition-all"
@@ -330,8 +372,8 @@ const Inventory: React.FC = () => {
                 <button onClick={() => setActiveView('Items')} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${activeView === 'Items' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
                     Master List
                 </button>
-                <button onClick={() => setActiveView('Stationery')} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${activeView === 'Stationery' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
-                    Stationery
+                <button onClick={() => setActiveView('Stock')} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${activeView === 'Stock' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
+                    Stock Items
                 </button>
                 <button onClick={() => setActiveView('Warehouses')} className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${activeView === 'Warehouses' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}>
                     Warehouses
@@ -345,7 +387,7 @@ const Inventory: React.FC = () => {
                     <WarehouseGrid warehouses={warehouses} inventory={inventory} />
                 ) : (
                     <ItemTable
-                        items={activeView === 'Stationery' ? inventory.filter(i => i.type === 'Stationery') : inventory}
+                        items={activeView === 'Stock' ? inventory.filter(i => i.type === 'Stationery' || i.type === 'Material' || i.type === 'Product') : inventory}
                         warehouses={warehouses}
                         onEdit={handleOpenEditModal}
                         onView={handleViewDetails}
@@ -373,7 +415,7 @@ const Inventory: React.FC = () => {
                 isOpen={isSmartAdjustOpen}
                 onClose={() => setIsSmartAdjustOpen(false)}
                 onSuccess={handleSmartAdjustSuccess}
-                items={inventory.filter(item => item.type === 'Stationery' || item.type === 'Material')}
+                items={inventory.filter(item => item.type === 'Stationery' || item.type === 'Material' || item.type === 'Product')}
             />
 
             {/* Stock Adjustment Modal */}

@@ -1,4 +1,117 @@
-import type { Item, VolumePricingTier, ProductVariant } from '../types';
+import type { Item, ProductVariant } from '../types';
+
+type VolumePricingTierLike = {
+  minQty: number;
+  price: number;
+};
+
+type PricingCarrier = {
+  price?: number | null;
+  selling_price?: number | null;
+  calculated_price?: number | null;
+  cost?: number | null;
+  cost_price?: number | null;
+  rounding_difference?: number | null;
+  smartPricingSnapshot?: {
+    roundedPrice?: number | null;
+    originalPrice?: number | null;
+    baseCost?: number | null;
+  } | null;
+};
+
+const hasFiniteNumber = (value: unknown): boolean => Number.isFinite(Number(value));
+
+const toFiniteNumber = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const pickPreferredNumber = (...values: Array<number | undefined>): number => {
+  const positive = values.find((value) => value !== undefined && value > 0);
+  if (positive !== undefined) return positive;
+
+  const finite = values.find((value) => value !== undefined);
+  return finite ?? 0;
+};
+
+export function resolveStoredSellingPrice(source?: PricingCarrier | null): number {
+  if (!source) return 0;
+
+  return pickPreferredNumber(
+    toFiniteNumber(source.smartPricingSnapshot?.roundedPrice),
+    toFiniteNumber(source.selling_price),
+    toFiniteNumber(source.price),
+    toFiniteNumber(source.calculated_price)
+  );
+}
+
+export function resolveStoredCalculatedPrice(source?: PricingCarrier | null): number {
+  if (!source) return 0;
+
+  const roundedPrice = resolveStoredSellingPrice(source);
+  const persistedDifference = toFiniteNumber(source.rounding_difference);
+  const inferredCalculated = roundedPrice > 0 && persistedDifference !== undefined
+    ? roundedPrice - persistedDifference
+    : undefined;
+
+  return pickPreferredNumber(
+    toFiniteNumber(source.smartPricingSnapshot?.originalPrice),
+    toFiniteNumber(source.calculated_price),
+    inferredCalculated,
+    roundedPrice
+  );
+}
+
+export function resolveStoredCost(source?: PricingCarrier | null): number {
+  if (!source) return 0;
+
+  return pickPreferredNumber(
+    toFiniteNumber(source.smartPricingSnapshot?.baseCost),
+    toFiniteNumber(source.cost_price),
+    toFiniteNumber(source.cost)
+  );
+}
+
+export function normalizeStoredPricing<T extends PricingCarrier>(source: T): T {
+  if (!source) return source;
+
+  const sellingPrice = resolveStoredSellingPrice(source);
+  const calculatedPrice = resolveStoredCalculatedPrice(source);
+  const cost = resolveStoredCost(source);
+
+  const normalized = { ...source } as T;
+  const hasAnyPrice = hasFiniteNumber(source.price) || hasFiniteNumber(source.selling_price) || hasFiniteNumber(source.smartPricingSnapshot?.roundedPrice);
+  const hasAnyCalculated = hasFiniteNumber(source.calculated_price) || hasFiniteNumber(source.smartPricingSnapshot?.originalPrice);
+  const hasAnyCost = hasFiniteNumber(source.cost) || hasFiniteNumber(source.cost_price) || hasFiniteNumber(source.smartPricingSnapshot?.baseCost);
+
+  if (hasAnyPrice) {
+    normalized.price = sellingPrice as T['price'];
+    normalized.selling_price = sellingPrice as T['selling_price'];
+  }
+
+  if (hasAnyCalculated || hasAnyPrice) {
+    normalized.calculated_price = calculatedPrice as T['calculated_price'];
+  }
+
+  if (hasAnyCost) {
+    normalized.cost = cost as T['cost'];
+    normalized.cost_price = cost as T['cost_price'];
+  }
+
+  return normalized;
+}
+
+export function normalizeInventoryItemPricing(item: Item): Item {
+  const normalizedItem = normalizeStoredPricing(item);
+  if (!item.variants || item.variants.length === 0) {
+    return normalizedItem;
+  }
+
+  return {
+    ...normalizedItem,
+    variants: item.variants.map((variant) => normalizeStoredPricing(variant as ProductVariant))
+  };
+}
 
 /**
  * Resolve unit price given item, quantity and optional variant.
@@ -14,34 +127,30 @@ export function getUnitPrice(
 ): number {
   const minThreshold = options?.minimumCostThreshold ?? 0;
 
-  // defensive defaults
   if (!item) return 0;
-  let basePrice = Number(item.price ?? 0);
-  let tiers: VolumePricingTier[] | undefined = item.volumePricing;
+  let basePrice = resolveStoredSellingPrice(item);
+  let tiers: VolumePricingTierLike[] | undefined = item.volumePricing;
 
   if (variantId && item.variants && item.variants.length > 0) {
     const variant = (item.variants as ProductVariant[]).find(v => v.id === variantId);
     if (variant) {
-      basePrice = Number(variant.price ?? basePrice);
+      basePrice = resolveStoredSellingPrice(variant as any) || basePrice;
       tiers = variant.volumePricing ?? item.volumePricing;
     }
   }
 
-  // No volume pricing enabled or no tiers available -> return base price
   if (!item.allowVolumePricing || !tiers || tiers.length === 0) {
     return basePrice;
   }
 
   if (!Number.isFinite(quantity) || quantity <= 0) return basePrice;
 
-  // Find highest minQty <= quantity
   const applicable = tiers
     .filter(t => Number.isFinite(t.minQty) && quantity >= t.minQty)
     .sort((a, b) => b.minQty - a.minQty)[0];
 
   const resolved = applicable ? Number(applicable.price) : basePrice;
 
-  // Enforce minimum cost threshold
   if (Number.isFinite(minThreshold) && resolved < minThreshold) {
     return minThreshold;
   }
@@ -57,7 +166,6 @@ export function formatVolumePricingHint(item: Item, variantId?: string): string 
   }
   if (!tiers || tiers.length === 0) return null;
 
-  // Sort by minQty asc
   const sorted = [...tiers].sort((a, b) => a.minQty - b.minQty);
   const parts = sorted.map((t, idx) => {
     const next = sorted[idx + 1];

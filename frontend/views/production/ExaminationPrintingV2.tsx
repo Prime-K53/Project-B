@@ -1386,7 +1386,7 @@ const ExaminationPrintingV2: React.FC = () => {
                         value={editingJob.override_reason || ''}
                         onChange={e => setJobField('override_reason', e.target.value)}
                         className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2 text-sm"
-                        placeholder="e.g. Bulk discount for partner school"
+                        placeholder="e.g. Special price for partner school"
                       />
                     </label>
                   )}

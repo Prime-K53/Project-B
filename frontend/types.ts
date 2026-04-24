@@ -17,10 +17,7 @@ export interface NumberingRule {
   resetInterval?: 'Never' | 'Daily' | 'Monthly' | 'Yearly';
 }
 
-export interface VolumePricingTier {
-  minQty: number;
-  price: number;
-}
+
 
 export interface TransactionSettingsConfig {
   // Basic transaction controls
@@ -247,10 +244,6 @@ export interface CompanyConfig {
       markup: number;
       roundingMethod?: string;
     }>;
-    bulkDiscounts: Array<{
-      minQty: number;
-      discountPercent: number;
-    }>;
     seasonalAdjustments: Array<{
       startDate: string;
       endDate: string;
@@ -414,14 +407,8 @@ export interface JobTicket {
   updatedAt?: string;
 }
 
-export interface JobTicketBulkDiscount {
-  minQuantity: number;
-  maxQuantity: number;
-  discountPercent: number;
-}
 
 export interface JobTicketSettings {
-  bulkDiscounts: JobTicketBulkDiscount[];
   defaultRushFeePercent: number;
   expressFeePercent: number;
   urgentFeePercent: number;
@@ -481,8 +468,6 @@ export interface Item {
   profitPerPiece?: number;
   markup_percent?: number;
   manual_override?: boolean;
-  allowVolumePricing?: boolean;
-  volumePricing?: VolumePricingTier[];
   [key: string]: any;
 }
 export type User = any; // TIER 2: Added as any due to missing definitions
@@ -534,11 +519,29 @@ export type OrderPayment = any; // TIER 2: Added as any due to missing definitio
 export type OrderItem = any; // TIER 2: Added as any due to missing definitions
 export type Quotation = any; // TIER 2: Added as any due to missing definitions
 export type BOMTemplate = any; // TIER 2: Added as any due to missing definitions
+export interface FinishingItemConfig {
+  itemId: string;
+  quantity: number;
+}
+
 export interface FinishingOption {
   id: string;
-  type: 'Binding' | 'Stapling' | 'Covers' | string;
-  materialId: string;
-  quantity: number;
+  name: string;
+  enabled: boolean;
+  price: number;
+  description?: string;
+  items: FinishingItemConfig[];
+}
+
+export interface ProductionSettingsConfig {
+  autoConsumeMaterials: boolean;
+  requireQAApproval: boolean;
+  trackMachineDownTime: boolean;
+  defaultWorkCenterId: string;
+  defaultExamBomId: string;
+  allowOverproduction: boolean;
+  showKioskSummary: boolean;
+  finishingOptions: FinishingOption[];
 }
 export type SubcontractOrder = any; // TIER 2: Added as any due to missing definitions
 export type Supplier = any; // TIER 2: Added as any due to missing definitions
@@ -595,11 +598,14 @@ export interface ProductVariant {
   sku: string;
   cost: number;
   marginPercent?: number;
+  adjustmentPercent?: number;
   price: number;
   stock: number;
+  pages?: number;
   inheritsParentBOM?: boolean;
   pricingSource?: 'dynamic' | 'static';
-  volumePricing?: VolumePricingTier[];
+  priceLocked?: boolean;
+  priceLockKey?: string;
   [key: string]: any;
 }
 export type PricingSettings = any; // TIER 2: Added as any due to missing definitions
@@ -663,7 +669,46 @@ export interface SmartPricingConfig {
   roundingMethod?: string;
   roundedPrice?: number;
   originalPrice?: number;
+  // Full price breakdown fields (set by SmartPricing engine)
+  paperCost?: number;
+  tonerCost?: number;
+  finishingCost?: number;
+  baseCost?: number;
+  marketAdjustments?: Array<{ id: string; name: string; type: string; value: number; rawValue: number }>;
+  marketAdjustmentTotal?: number;
+  profitMarginAmount?: number;
+  marginType?: 'percentage' | 'fixed_amount';
+  marginValue?: number;
+  roundingDifference?: number;
+  wasRounded?: boolean;
   [key: string]: any;
+}
+
+/**
+ * Snapshot of the full SmartPricing breakdown captured at point-of-sale.
+ * Stored on each SaleItem so Revenue Analysis can report on each component.
+ */
+export interface PricingBreakdownSnapshot {
+  // Material costs
+  paperCost: number;
+  tonerCost: number;
+  finishingCost: number;
+  baseMaterialCost: number;
+  // Market adjustments
+  adjustmentTotal: number;
+  adjustmentLines: Array<{ name: string; type: string; value: number }>;
+  // Profit margin
+  profitMarginAmount: number;
+  marginType?: 'percentage' | 'fixed_amount';
+  marginValue?: number;
+  // Rounding
+  roundingDifference: number;
+  wasRounded: boolean;
+  roundingMethod?: string;
+  // Totals
+  sellingPrice: number;
+  pages?: number;
+  copies?: number;
 }
 export type SidebarStyle = any;
 export type AVCOValuationMethod = any;

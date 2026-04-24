@@ -47,6 +47,8 @@ const initDb = () => {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         material TEXT,
+        type TEXT CHECK(type IN ('stationery', 'material', 'product', 'service')) DEFAULT 'material',
+        is_stock_tracked INTEGER GENERATED ALWAYS AS (CASE WHEN type IN ('stationery', 'material') THEN 1 ELSE 0 END) VIRTUAL,
         quantity INTEGER NOT NULL DEFAULT 0,
         cost_per_unit REAL NOT NULL,
         conversion_rate REAL DEFAULT 500,

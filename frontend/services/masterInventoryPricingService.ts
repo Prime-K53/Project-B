@@ -1,7 +1,7 @@
 import { AdjustmentSnapshot, BOMTemplate, CompanyConfig, Item, MarketAdjustment, PricingRoundingMethod, ProductVariant } from '../types';
 import { dbService } from './db';
 import { pricingService } from './pricingService';
-import { calculateItemFinancials } from '../utils/pricing';
+import { calculateItemFinancials, resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../utils/pricing';
 import { roundToCurrency } from '../utils/helpers';
 import { applyProductPriceRounding } from './pricingRoundingService';
 import { logRoundingEvents, LogRoundingEventInput } from './roundingAnalyticsService';
@@ -119,8 +119,8 @@ const applyRoundedFieldsToVariant = (
     companyConfig?: CompanyConfig
 ): void => {
     const normalizedCalculatedPrice = roundToCurrency(Number(calculatedPrice || 0));
-    const existingRoundedPrice = Number(sourceVariant.selling_price ?? sourceVariant.price ?? 0);
-    const existingCalculatedPrice = Number(sourceVariant.calculated_price ?? sourceVariant.price ?? 0);
+    const existingRoundedPrice = resolveStoredSellingPrice(sourceVariant);
+    const existingCalculatedPrice = resolveStoredCalculatedPrice(sourceVariant);
     const existingDifference = resolveRoundingDifference(
         existingCalculatedPrice,
         existingRoundedPrice,
@@ -151,8 +151,8 @@ const applyRoundedFieldsToItem = (
     companyConfig?: CompanyConfig
 ): void => {
     const normalizedCalculatedPrice = roundToCurrency(Number(calculatedPrice || 0));
-    const existingRoundedPrice = Number(sourceItem.selling_price ?? sourceItem.price ?? 0);
-    const existingCalculatedPrice = Number(sourceItem.calculated_price ?? sourceItem.price ?? 0);
+    const existingRoundedPrice = resolveStoredSellingPrice(sourceItem);
+    const existingCalculatedPrice = resolveStoredCalculatedPrice(sourceItem);
     const existingDifference = resolveRoundingDifference(
         existingCalculatedPrice,
         existingRoundedPrice,
@@ -192,13 +192,13 @@ const repriceVariant = (
         parentItem.smartPricing?.bomTemplateId
     );
 
-    let nextCost = roundToCurrency(variant.cost_price ?? variant.cost ?? 0);
-    let nextCalculatedPrice = roundToCurrency(variant.calculated_price ?? variant.price ?? 0);
+    let nextCost = roundToCurrency(resolveStoredCost(variant));
+    let nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(variant));
     let nextSnapshots: AdjustmentSnapshot[] = [...(variant.adjustmentSnapshots || [])];
 
     if (variant.pricingSource === 'static' || parentItem.pricingConfig?.manualOverride) {
-        nextCost = roundToCurrency(variant.cost_price ?? variant.cost ?? 0);
-        nextCalculatedPrice = roundToCurrency(variant.calculated_price ?? variant.price ?? 0);
+        nextCost = roundToCurrency(resolveStoredCost(variant));
+        nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(variant));
         nextSnapshots = variant.adjustmentSnapshots || [];
     } else if (hasDynamicSource && hasBomSource) {
         const dynamicResult = pricingService.calculateVariantPrice(
@@ -227,7 +227,7 @@ const repriceVariant = (
             nextSnapshots = staticSpec.adjustmentSnapshots || [];
         }
     } else {
-        const baseCost = roundToCurrency(variant.cost_price ?? variant.cost ?? 0);
+        const baseCost = roundToCurrency(resolveStoredCost(variant));
         const snapshots = buildSnapshotsFromBaseCost(baseCost, applicableAdjustments);
         nextCost = baseCost;
         nextCalculatedPrice = roundToCurrency(baseCost + sumSnapshotAmounts(snapshots));
@@ -263,8 +263,8 @@ const repriceVariant = (
         productName: parentItem.name,
         variantId: nextVariant.id,
         variantName: nextVariant.name,
-        calculatedPrice: roundToCurrency(nextVariant.calculated_price ?? 0),
-        roundedPrice: roundToCurrency(nextVariant.selling_price ?? nextVariant.price ?? 0),
+        calculatedPrice: roundToCurrency(resolveStoredCalculatedPrice(nextVariant)),
+        roundedPrice: roundToCurrency(resolveStoredSellingPrice(nextVariant)),
         roundingDifference: roundToCurrency(nextVariant.rounding_difference ?? 0),
         roundingMethod: nextVariant.rounding_method || DEFAULT_ROUNDING_METHOD,
         date: new Date().toISOString()
@@ -282,16 +282,16 @@ const repriceItem = (
 ): { item: Item; changed: boolean; variantChanges: number; roundingLogs: LogRoundingEventInput[] } => {
     const applicableAdjustments = getApplicableAdjustments(item.category, allAdjustments);
     const nextItem: Item = { ...item };
-    let nextCost = roundToCurrency(item.cost_price ?? item.cost ?? 0);
-    let nextCalculatedPrice = roundToCurrency(item.calculated_price ?? item.price ?? 0);
+    let nextCost = roundToCurrency(resolveStoredCost(item));
+    let nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(item));
     let nextSnapshots: AdjustmentSnapshot[] = [...(item.adjustmentSnapshots || [])];
     const nextPricingConfig = item.pricingConfig ? { ...item.pricingConfig } : item.pricingConfig;
     let variantChanges = 0;
     const roundingLogs: LogRoundingEventInput[] = [];
 
     if (item.pricingConfig?.manualOverride) {
-        nextCost = roundToCurrency(item.cost_price ?? item.cost ?? 0);
-        nextCalculatedPrice = roundToCurrency(item.calculated_price ?? item.price ?? 0);
+        nextCost = roundToCurrency(resolveStoredCost(item));
+        nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(item));
         nextSnapshots = item.adjustmentSnapshots || [];
     } else if (item.pricingConfig && !item.pricingConfig.manualOverride) {
         const spec = calculateItemFinancials(
@@ -320,8 +320,8 @@ const repriceItem = (
             bomTemplates,
             applicableAdjustments
         );
-        nextCost = roundToCurrency(serviceResult.unitCostPerCopy || item.cost || 0);
-        nextCalculatedPrice = roundToCurrency(serviceResult.calculatedTotalPrice ?? serviceResult.totalPrice ?? item.price ?? 0);
+        nextCost = roundToCurrency(serviceResult.unitCostPerCopy || resolveStoredCost(item));
+        nextCalculatedPrice = roundToCurrency(serviceResult.calculatedTotalPrice ?? serviceResult.totalPrice ?? resolveStoredSellingPrice(item));
         nextSnapshots = serviceResult.adjustmentSnapshots || [];
 
         if (nextPricingConfig) {
@@ -350,11 +350,11 @@ const repriceItem = (
             applicableAdjustments
         );
 
-        nextCost = roundToCurrency(bomResult.cost || item.cost || 0);
-        nextCalculatedPrice = roundToCurrency(bomResult.price || item.price || 0);
+        nextCost = roundToCurrency(bomResult.cost || resolveStoredCost(item));
+        nextCalculatedPrice = roundToCurrency(bomResult.price || resolveStoredSellingPrice(item));
         nextSnapshots = bomResult.adjustmentSnapshots || [];
     } else {
-        const baseCost = roundToCurrency(item.cost_price ?? item.cost ?? 0);
+        const baseCost = roundToCurrency(resolveStoredCost(item));
         const snapshots = buildSnapshotsFromBaseCost(baseCost, applicableAdjustments);
         nextCost = baseCost;
         nextCalculatedPrice = roundToCurrency(baseCost + sumSnapshotAmounts(snapshots));
@@ -367,8 +367,10 @@ const repriceItem = (
 
     if (item.type === 'Material') {
         // Materials are cost-only entities in this workflow.
-        nextItem.calculated_price = roundToCurrency(item.calculated_price ?? item.price ?? nextCost);
-        nextItem.selling_price = roundToCurrency(item.selling_price ?? item.price ?? nextItem.calculated_price);
+        const storedCalculatedPrice = resolveStoredCalculatedPrice(item);
+        const storedRoundedPrice = resolveStoredSellingPrice(item);
+        nextItem.calculated_price = roundToCurrency(storedCalculatedPrice > 0 ? storedCalculatedPrice : nextCost);
+        nextItem.selling_price = roundToCurrency(storedRoundedPrice > 0 ? storedRoundedPrice : nextItem.calculated_price);
         nextItem.rounding_difference = resolveRoundingDifference(
             nextItem.calculated_price,
             nextItem.selling_price,
@@ -415,8 +417,8 @@ const repriceItem = (
         roundingLogs.push({
             productId: nextItem.id,
             productName: nextItem.name,
-            calculatedPrice: roundToCurrency(nextItem.calculated_price ?? 0),
-            roundedPrice: roundToCurrency(nextItem.selling_price ?? nextItem.price ?? 0),
+            calculatedPrice: roundToCurrency(resolveStoredCalculatedPrice(nextItem)),
+            roundedPrice: roundToCurrency(resolveStoredSellingPrice(nextItem)),
             roundingDifference: roundToCurrency(nextItem.rounding_difference ?? 0),
             roundingMethod: nextItem.rounding_method || DEFAULT_ROUNDING_METHOD,
             date: new Date().toISOString()

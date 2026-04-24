@@ -6,6 +6,7 @@ import { dbService } from '../services/db';
 import { INITIAL_INVENTORY, MOCK_WAREHOUSES } from '../constants';
 import { generateNextId } from '../utils/helpers';
 import { transactionService } from '../services/transactionService';
+import { normalizeInventoryItemPricing } from '../utils/pricing';
 import {
   recalculatePrice as recalculateProductPrice,
   repriceMasterInventoryFromAdjustments
@@ -48,7 +49,14 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
         for (const i of INITIAL_INVENTORY) await dbService.put('inventory', i);
         for (const w of MOCK_WAREHOUSES) await dbService.put('warehouses', w);
       } else {
-        set({ inventory: loadedItems, warehouses: loadedWarehouses });
+        const normalizedItems = loadedItems.map(normalizeInventoryItemPricing);
+        const repairedItems = normalizedItems.filter((item, index) => JSON.stringify(item) !== JSON.stringify(loadedItems[index]));
+
+        if (repairedItems.length > 0) {
+          await Promise.all(repairedItems.map((item) => dbService.put('inventory', item)));
+        }
+
+        set({ inventory: normalizedItems, warehouses: loadedWarehouses });
       }
     } catch (error) {
       console.error('Inventory Load Error:', error);

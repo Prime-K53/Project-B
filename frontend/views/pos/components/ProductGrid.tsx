@@ -7,6 +7,7 @@ import { useKeyboardListNavigation } from '../../../hooks/useKeyboardListNavigat
 import { VariantSelectorModal, PrintingVariantModal } from './PosModals';
 
 import { formatNumber } from '../../../utils/helpers';
+import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
 
 interface ProductGridProps {
     inventory: Item[];
@@ -72,11 +73,11 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
             parentId: selectedProductForVariants.id,
             sku: variant.sku,
             name: variant.name,
-            price: Number(variant.selling_price ?? variant.price) || 0,
-            cost: Number(variant.cost_price ?? variant.cost) || 0,
-            cost_price: variant.cost_price,
-            calculated_price: variant.calculated_price,
-            selling_price: variant.selling_price ?? variant.price,
+            price: resolveStoredSellingPrice(variant as any) || 0,
+            cost: resolveStoredCost(variant as any) || 0,
+            cost_price: resolveStoredCost(variant as any) || 0,
+            calculated_price: resolveStoredCalculatedPrice(variant as any) || 0,
+            selling_price: resolveStoredSellingPrice(variant as any) || 0,
             rounding_difference: variant.rounding_difference,
             rounding_method: variant.rounding_method,
             stock: variant.stock,
@@ -149,7 +150,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                     </div>
 
                     <div className={`flex items-center justify-between ${viewMode === 'List' ? 'gap-4' : 'mt-2 pt-2 border-t border-[#f4f5f8]'}`}>
-                        <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>{currency}{formatNumber(Number(item.selling_price ?? item.price) || 0)}</span>
+                        <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>{currency}{formatNumber(resolveStoredSellingPrice(item as any) || 0)}</span>
                         <div className="flex items-center gap-2">
                             {(item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material') && (
                                 <span className={`text-[10px] font-medium ${item.stock <= item.minStockLevel ? 'text-red-600' : 'text-slate-500'}`}>

@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
       'https://prime-printing-service.onrender.com';
     return {
       server: {
-        port: 3003,
+        port: 3005,
         host: '0.0.0.0',
         proxy: {
           '/api': {

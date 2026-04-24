@@ -5,6 +5,7 @@ import { useAuth } from './AuthContext';
 import { useSales } from './SalesContext';
 import { generateNextId } from '../utils/helpers';
 import { customerNotificationService } from '../services/customerNotificationService';
+import { attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 interface OrdersContextType {
   orders: Order[];
@@ -99,7 +100,14 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         };
       });
 
-      const subtotal = mappedItems.reduce((sum, it) => sum + (toNum(it.subtotal)), 0);
+      const normalizedMappedItems = mappedItems.map((item: any) => attachPricingBreakdown({
+        ...item,
+        variantId: item.parentId ? item.productId : item.variantId,
+        pricingBreakdown: item.pricingBreakdown,
+        smartPricingSnapshot: item.smartPricingSnapshot
+      }));
+      const pricingSummary = summarizePricingBreakdown(normalizedMappedItems as any[]);
+      const subtotal = normalizedMappedItems.reduce((sum, it) => sum + (toNum(it.subtotal)), 0);
       const discount = 0;
       const totalAmount = subtotal - discount;
 
@@ -113,7 +121,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         subtotal,
         totalAmount,
         discount,
-        items: mappedItems,
+        items: normalizedMappedItems,
         payments: [],
         paidAmount: 0,
         remainingBalance: totalAmount,
@@ -124,6 +132,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           quotation.notes
         ].filter(Boolean).join('\n'),
         conversionDetails,
+        adjustmentSnapshots: (quotation as any).adjustmentSnapshots || [],
+        adjustmentTotal: (quotation as any).adjustmentTotal || pricingSummary.adjustmentTotal,
+        materialTotal: (quotation as any).materialTotal || pricingSummary.materialTotal,
+        profitMarginTotal: (quotation as any).profitMarginTotal || pricingSummary.profitMarginTotal,
+        roundingTotal: (quotation as any).roundingTotal || pricingSummary.roundingTotal,
         tax: quotation.tax,
         taxRate: quotation.taxRate
       };
@@ -159,6 +172,14 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const subtotal = data.items.reduce((sum: number, it: any) => sum + (toNum(it.subtotal || (toNum(it.quantity || it.qty) * toNum(it.unitPrice || it.price || it.cost)))), 0);
       const discount = toNum(data.discount);
       const totalAmount = subtotal - discount;
+      const normalizedItems = data.items.map((item: any) => attachPricingBreakdown({
+        ...item,
+        orderId: '',
+        quantity: toNum(item.quantity || item.qty),
+        unitPrice: toNum(item.unitPrice || item.price || item.cost),
+        subtotal: toNum(item.subtotal || (toNum(item.quantity || item.qty) * toNum(item.unitPrice || item.price || item.cost)))
+      }));
+      const pricingSummary = summarizePricingBreakdown(normalizedItems as any[]);
 
       const newOrder: Order = {
         id: generateNextId('ORD', orders),
@@ -170,13 +191,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         subtotal,
         totalAmount,
         discount,
-        items: data.items.map((item: any) => ({
-          ...item,
-          orderId: '',
-          quantity: toNum(item.quantity || item.qty),
-          unitPrice: toNum(item.unitPrice || item.price || item.cost),
-          subtotal: toNum(item.subtotal || (toNum(item.quantity || item.qty) * toNum(item.unitPrice || item.price || item.cost)))
-        })),
+        items: normalizedItems,
         payments: [],
         paidAmount: 0,
         remainingBalance: totalAmount,
@@ -184,6 +199,11 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         notes: data.notes,
         shippingAddress: data.shippingAddress,
         billingAddress: data.billingAddress,
+        adjustmentSnapshots: data.adjustmentSnapshots || [],
+        adjustmentTotal: data.adjustmentTotal || pricingSummary.adjustmentTotal,
+        materialTotal: data.materialTotal || pricingSummary.materialTotal,
+        profitMarginTotal: data.profitMarginTotal || pricingSummary.profitMarginTotal,
+        roundingTotal: data.roundingTotal || pricingSummary.roundingTotal,
       };
 
       await addOrder(newOrder);

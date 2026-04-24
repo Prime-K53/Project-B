@@ -372,21 +372,9 @@ const PricingCalculator: React.FC<PricingCalculatorProps> = () => {
                                 <span className="text-sm font-semibold text-slate-800">{formatCurrency(examinationPricingResult.subtotal)}</span>
                             </div>
 
-                            {/* Applied Discounts */}
-                            {examinationPricingResult.appliedDiscounts.length > 0 && (
-                                <div className="mt-3 space-y-2">
-                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Volume Discounts</p>
-                                    {examinationPricingResult.appliedDiscounts.map((discount, idx) => (
-                                        <div key={idx} className="flex justify-between items-center py-1 text-emerald-600">
-                                            <span className="text-sm">{discount.name}</span>
-                                            <span className="text-sm font-medium">-{formatCurrency(discount.amount)}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
                             {/* Tax Breakdown */}
                             {examinationPricingResult.taxBreakdown.length > 0 && (
+
                                 <div className="mt-3 space-y-2">
                                     <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Taxes</p>
                                     {examinationPricingResult.taxBreakdown.map((tax, idx) => (
