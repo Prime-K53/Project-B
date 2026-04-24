@@ -8,6 +8,7 @@ import { VariantSelectorModal, PrintingVariantModal } from './PosModals';
 
 import { formatNumber } from '../../../utils/helpers';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
+import { getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots } from '../../../utils/pricingBreakdown';
 
 interface ProductGridProps {
     inventory: Item[];
@@ -65,6 +66,13 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
     const handleVariantSelect = (variant: ProductVariant) => {
         if (!selectedProductForVariants) return;
 
+        const adjustmentSnapshots = resolveItemAdjustmentSnapshots(variant as any);
+        const adjustmentTotal = Number(
+            (variant as any).smartPricingSnapshot?.marketAdjustmentTotal
+            ?? (variant as any).adjustmentTotal
+            ?? adjustmentSnapshots.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+        );
+
         // Convert variant to Item with parentId for stock reservation
         // Include variant-specific adjustment data for margin tracking
         const variantItem: any = {
@@ -84,8 +92,9 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
             isVariantParent: false,
             variants: [],
             // ✅ Variant-specific adjustment data
-            adjustmentSnapshots: variant.adjustmentSnapshots || [],
-            adjustmentTotal: variant.adjustmentTotal || 0,
+            adjustmentSnapshots,
+            adjustmentTotal,
+            smartPricingSnapshot: (variant as any).smartPricingSnapshot,
             productionCostSnapshot: variant.productionCostSnapshot,
             pagesOverride: variant.pages,
             pricingSource: variant.pricingSource,

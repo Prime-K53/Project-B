@@ -338,7 +338,6 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
 
         if (docType === 'EXAMINATION_INVOICE') {
             const classBreakdownRaw = Array.isArray(item.classBreakdown) ? item.classBreakdown : [];
-            const adjustmentSnapshotsRaw = Array.isArray(item.adjustmentSnapshots) ? item.adjustmentSnapshots : [];
 
             const examData = {
                 ...financialData,
@@ -348,26 +347,6 @@ export const mapToInvoiceData = (item: any, companyConfig: any, targetType?: str
                 term: item.term || '',
                 examType: item.examType || item.exam_type || '',
                 subAccountName: item.subAccountName || item.sub_account_name || '',
-                materialTotal: toNum(item.materialTotal ?? item.calculated_material_total ?? 0),
-                adjustmentTotal: toNum(item.adjustmentTotal ?? item.calculated_adjustment_total ?? 0),
-                preRoundingTotalAmount: toNum(
-                    item.preRoundingTotalAmount
-                    ?? item.pre_rounding_total_amount
-                    ?? financialData.subtotal
-                ),
-                roundingDifference: toNum(
-                    item.roundingDifference
-                    ?? item.rounding_difference
-                    ?? item.rounding_adjustment_total
-                    ?? 0
-                ),
-                roundingMethod: String(item.roundingMethod || item.rounding_method || 'nearest_50'),
-                adjustmentSnapshots: adjustmentSnapshotsRaw.map((snapshot: any) => ({
-                    name: String(snapshot?.name || 'Adjustment'),
-                    type: String(snapshot?.type || 'FIXED'),
-                    value: toNum(snapshot?.value),
-                    calculatedAmount: toNum(snapshot?.calculatedAmount ?? snapshot?.calculated_amount)
-                })),
                 classBreakdown: classBreakdownRaw.map((cls: any) => ({
                     className: String(cls?.className || cls?.class_name || 'Class'),
                     subjects: Array.isArray(cls?.subjects) ? cls.subjects.map((subject: any) => String(subject)) : [],

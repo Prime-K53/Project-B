@@ -6,28 +6,125 @@ const roundMoney = (value: unknown): number => {
   return Math.round((parsed + Number.EPSILON) * 100) / 100;
 };
 
+const PROFIT_MARGIN_LABEL = 'profit margin';
+
+const toFiniteAmount = (value: unknown): number | undefined => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const toPositiveQuantity = (value: unknown): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 1;
   return parsed;
 };
 
+const normalizeSnapshotName = (snapshot: any): string =>
+  String(snapshot?.name || snapshot?.adjustmentName || '').trim().toLowerCase();
+
+export const isProfitMarginSnapshot = (snapshot: any): boolean =>
+  normalizeSnapshotName(snapshot) === PROFIT_MARGIN_LABEL;
+
+export const getSnapshotCalculatedAmount = (snapshot: any): number => {
+  const explicitAmount = [
+    snapshot?.calculatedAmount,
+    snapshot?.amount,
+    snapshot?.appliedAmount,
+    snapshot?.totalApplied
+  ]
+    .map(toFiniteAmount)
+    .find((value) => value !== undefined);
+
+  if (explicitAmount !== undefined) {
+    return roundMoney(explicitAmount);
+  }
+
+  const snapshotType = String(snapshot?.type || '').trim().toUpperCase();
+  const snapshotValue = toFiniteAmount(snapshot?.value);
+  const rawValue = toFiniteAmount(snapshot?.rawValue);
+
+  if (snapshotValue !== undefined && (rawValue !== undefined || (snapshotType && !snapshotType.startsWith('PERCENT')))) {
+    return roundMoney(snapshotValue);
+  }
+
+  return 0;
+};
+
+export const getMarketAdjustmentSnapshots = <T extends Record<string, any>>(snapshots: T[] = []): T[] => {
+  return (Array.isArray(snapshots) ? snapshots : []).filter((snapshot) => !isProfitMarginSnapshot(snapshot));
+};
+
+export const getProfitMarginAmountFromSnapshots = (snapshots: any[] = []): number | undefined => {
+  const profitSnapshots = (Array.isArray(snapshots) ? snapshots : []).filter(isProfitMarginSnapshot);
+  if (profitSnapshots.length === 0) return undefined;
+  return roundMoney(
+    profitSnapshots.reduce((sum, snapshot) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+  );
+};
+
+const normalizeAdjustmentSnapshot = (snapshot: any, index: number) => ({
+  ...snapshot,
+  adjustmentId: snapshot?.adjustmentId || snapshot?.id || `ADJ-${index}`,
+  name: String(snapshot?.name || snapshot?.adjustmentName || 'Adjustment'),
+  type: String(snapshot?.type || 'FIXED'),
+  calculatedAmount: getSnapshotCalculatedAmount(snapshot)
+});
+
+const buildSmartPricingAdjustmentSnapshots = (smartPricingSnapshot: any): any[] => {
+  const marketAdjustments = Array.isArray(smartPricingSnapshot?.marketAdjustments)
+    ? smartPricingSnapshot.marketAdjustments
+    : [];
+
+  return marketAdjustments.map((snapshot: any, index: number) => {
+    const snapshotType = String(snapshot?.type || 'FIXED').toUpperCase();
+    const rawValue = snapshot?.rawValue ?? snapshot?.value ?? 0;
+
+    return normalizeAdjustmentSnapshot({
+      ...snapshot,
+      type: snapshotType,
+      value: Number(rawValue),
+      percentage: snapshotType.startsWith('PERCENT') ? Number(rawValue) : undefined,
+      calculatedAmount: snapshot?.value
+    }, index);
+  });
+};
+
+export const resolveItemAdjustmentSnapshots = (item: any): any[] => {
+  const directSnapshots = (Array.isArray(item?.adjustmentSnapshots) ? item.adjustmentSnapshots : [])
+    .map((snapshot: any, index: number) => normalizeAdjustmentSnapshot(snapshot, index));
+
+  const directTotal = roundMoney(
+    getMarketAdjustmentSnapshots(directSnapshots).reduce((sum, snapshot) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+  );
+
+  const smartSnapshots = buildSmartPricingAdjustmentSnapshots(item?.smartPricingSnapshot);
+  const smartTotal = roundMoney(
+    smartSnapshots.reduce((sum, snapshot) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+  );
+
+  const explicitSmartTotal = roundMoney(item?.smartPricingSnapshot?.marketAdjustmentTotal ?? 0);
+
+  if (
+    smartSnapshots.length > 0
+    && (directSnapshots.length === 0 || (directTotal === 0 && (smartTotal > 0 || explicitSmartTotal > 0)))
+  ) {
+    return smartSnapshots;
+  }
+
+  return directSnapshots;
+};
+
 const toAdjustmentAmount = (snapshots: any[] = []): number => {
   return roundMoney(
-    snapshots.reduce((sum, snapshot) => sum + Number(snapshot?.calculatedAmount || 0), 0)
+    getMarketAdjustmentSnapshots(snapshots).reduce((sum, snapshot) => sum + getSnapshotCalculatedAmount(snapshot), 0)
   );
 };
 
 const toAdjustmentLines = (snapshots: any[] = []) => {
-  return snapshots.map((snapshot: any) => ({
+  return getMarketAdjustmentSnapshots(snapshots).map((snapshot: any) => ({
     name: String(snapshot?.name || 'Adjustment'),
     type: String(snapshot?.type || 'FIXED'),
-    value: roundMoney(
-      snapshot?.value
-      ?? snapshot?.percentage
-      ?? snapshot?.calculatedAmount
-      ?? 0
-    )
+    value: getSnapshotCalculatedAmount(snapshot)
   }));
 };
 
@@ -58,7 +155,7 @@ export const buildPricingBreakdownSnapshot = (
   }
 
   const smartSnapshot = item.smartPricingSnapshot;
-  const adjustmentSnapshots = Array.isArray(item.adjustmentSnapshots) ? item.adjustmentSnapshots : [];
+  const adjustmentSnapshots = resolveItemAdjustmentSnapshots(item);
   const sellingPrice = roundMoney(
     item.price
     ?? item.unitPrice
@@ -74,10 +171,13 @@ export const buildPricingBreakdownSnapshot = (
     ?? item.productionCostSnapshot?.baseProductionCost
     ?? 0
   );
+  const explicitMarketAdjustmentTotal = [
+    smartSnapshot?.marketAdjustmentTotal,
+    item.marketAdjustmentTotal
+  ].find((value) => Number.isFinite(Number(value)));
   const adjustmentTotal = roundMoney(
-    smartSnapshot?.marketAdjustmentTotal
-    ?? item.adjustmentTotal
-    ?? toAdjustmentAmount(adjustmentSnapshots)
+    explicitMarketAdjustmentTotal
+    ?? (adjustmentSnapshots.length > 0 ? toAdjustmentAmount(adjustmentSnapshots) : item.adjustmentTotal)
   );
   const roundingDifference = roundMoney(
     smartSnapshot?.roundingDifference
@@ -89,6 +189,7 @@ export const buildPricingBreakdownSnapshot = (
   const explicitMargin = Number(
     smartSnapshot?.profitMarginAmount
     ?? item.profitMarginAmount
+    ?? getProfitMarginAmountFromSnapshots(adjustmentSnapshots)
   );
   const profitMarginAmount = Number.isFinite(explicitMargin)
     ? roundMoney(explicitMargin)
@@ -174,3 +275,64 @@ export const summarizePricingBreakdown = (items: any[] = []) => {
   });
 };
 
+export const aggregateMarketAdjustmentSnapshots = (items: any[] = []) => {
+  const map = new Map<string, any>();
+
+  items.forEach((rawItem) => {
+    const item = attachPricingBreakdown(rawItem);
+    const quantity = toPositiveQuantity(item.quantity);
+    const snapshots = getMarketAdjustmentSnapshots(resolveItemAdjustmentSnapshots(item));
+
+    snapshots.forEach((snapshot: any, index: number) => {
+      const key = String(snapshot?.adjustmentId || snapshot?.name || `ADJ-${index}`);
+      const existing = map.get(key);
+      const calculatedAmount = roundMoney(getSnapshotCalculatedAmount(snapshot) * quantity);
+
+      if (existing) {
+        existing.calculatedAmount = roundMoney(existing.calculatedAmount + calculatedAmount);
+        return;
+      }
+
+      map.set(key, {
+        ...snapshot,
+        adjustmentId: snapshot?.adjustmentId || key,
+        name: snapshot?.name || 'Adjustment',
+        calculatedAmount
+      });
+    });
+  });
+
+  return Array.from(map.values());
+};
+
+export const resolveTransactionPricingSummary = (transaction: any) => {
+  const normalizedItems = Array.isArray(transaction?.items)
+    ? transaction.items.map((item: any) => attachPricingBreakdown(item))
+    : [];
+  const derivedSummary = summarizePricingBreakdown(normalizedItems);
+
+  const pickMetric = (rootValue: unknown, derivedValue: number) => {
+    if (Math.abs(derivedValue) > 0.0001) {
+      return roundMoney(derivedValue);
+    }
+
+    const parsedRoot = Number(rootValue);
+    return Number.isFinite(parsedRoot) ? roundMoney(parsedRoot) : 0;
+  };
+
+  const rootSnapshots = Array.isArray(transaction?.adjustmentSnapshots)
+    ? getMarketAdjustmentSnapshots(transaction.adjustmentSnapshots).map((snapshot: any) => ({
+        ...snapshot,
+        calculatedAmount: getSnapshotCalculatedAmount(snapshot)
+      }))
+    : [];
+
+  return {
+    items: normalizedItems,
+    materialTotal: pickMetric(transaction?.materialTotal, derivedSummary.materialTotal),
+    adjustmentTotal: pickMetric(transaction?.adjustmentTotal, derivedSummary.adjustmentTotal),
+    profitMarginTotal: pickMetric(transaction?.profitMarginTotal ?? transaction?.profitAdjustment, derivedSummary.profitMarginTotal),
+    roundingTotal: pickMetric(transaction?.roundingTotal ?? transaction?.roundingDifference, derivedSummary.roundingTotal),
+    adjustmentSnapshots: rootSnapshots.length > 0 ? rootSnapshots : aggregateMarketAdjustmentSnapshots(normalizedItems)
+  };
+};

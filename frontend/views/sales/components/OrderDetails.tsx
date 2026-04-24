@@ -10,6 +10,7 @@ import { useData } from '../../../context/DataContext';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 import { useLocation } from 'react-router-dom';
 import DocLink from '../../../components/DocLink';
+import TransactionPricingInsights from './TransactionPricingInsights';
 
 interface OrderDetailsProps {
     order: Order;
@@ -176,6 +177,8 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order: initialOrder,
                                             </div>
                                         </div>
                                     </div>
+
+                                    <TransactionPricingInsights transaction={order} currencySymbol={currency} />
                                 </div>
                             )}
 

@@ -11,6 +11,7 @@ import { useData } from '../../../context/DataContext';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 
 import { AuditTimeline } from '../../shared/components/AuditTimeline';
+import TransactionPricingInsights from './TransactionPricingInsights';
 
 interface QuotationDetailsProps {
   quotation: Quotation;
@@ -174,54 +175,7 @@ export const QuotationDetails: React.FC<QuotationDetailsProps> = ({ quotation: i
                   </div>
                 </div>
 
-                {/* Market Adjustments */}
-                {((quotation as any).adjustmentSnapshots && (quotation as any).adjustmentSnapshots.length > 0) || ((quotation as any).adjustmentBreakdown && (quotation as any).adjustmentBreakdown.length > 0) ? (
-                  <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-                    <div className="px-6 py-4 border-b border-slate-100 bg-indigo-50/30 flex justify-between items-center">
-                      <h3 className="font-bold text-indigo-900 text-xs uppercase tracking-widest flex items-center gap-2">
-                        <TrendingUp size={16} /> Market Adjustments
-                      </h3>
-                      <span className="text-xs font-black text-indigo-600">Total: {currency}{((quotation as any).adjustmentTotal || 0).toLocaleString()}</span>
-                    </div>
-                    <div className="p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {((quotation as any).adjustmentSnapshots || []).map((snap: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center p-4 bg-indigo-50/30 border border-indigo-100/50 rounded-2xl">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
-                                {snap.type === 'PERCENTAGE' ? <Percent size={18} /> : <DollarSign size={18} />}
-                              </div>
-                              <div>
-                                <p className="text-sm font-bold text-slate-700">{snap.name}</p>
-                                <p className="text-[11px] text-slate-500 font-medium">
-                                  {snap.type === 'PERCENTAGE' ? `${snap.value}% Adjustment` : `Fixed Amount`}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-black text-slate-900">+{currency}{snap.calculatedAmount.toLocaleString()}</p>
-                            </div>
-                          </div>
-                        ))}
-                        {(!((quotation as any).adjustmentSnapshots) || (quotation as any).adjustmentSnapshots.length === 0) && ((quotation as any).adjustmentBreakdown || []).map((adj: any, idx: number) => (
-                          <div key={idx} className="flex justify-between items-center p-4 bg-indigo-50/30 border border-indigo-100/50 rounded-2xl">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
-                                <TrendingUp size={18} />
-                              </div>
-                              <div>
-                                <p className="text-sm font-bold text-slate-700">{adj.category}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-black text-slate-900">+{currency}{adj.amount.toLocaleString()}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
+                <TransactionPricingInsights transaction={quotation} currencySymbol={currency} />
 
                 {/* Notes */}
                 {quotation.notes && (

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     ArrowLeft, ArrowRight, Edit2, Printer, Activity, Package, DollarSign,
     TrendingUp, AlertTriangle, Factory, Truck, ShoppingCart,
@@ -36,12 +36,38 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
     // Variant Detection
     const hasVariants = item.isVariantParent && item.variants && item.variants.length > 0;
     const variants = item.variants || [];
+    const normalizedItemType = String(item.type || '');
+    const supportsStockRecords = normalizedItemType === 'Stationery' || normalizedItemType === 'Raw Material' || normalizedItemType === 'Material';
+    const visibleTabs = useMemo(() => {
+        const baseTabs: Array<'Overview' | 'Variants' | 'Logistics' | 'Sales History' | 'Purchase History' | 'Analytics' | 'Security'> = [
+            'Overview',
+            'Variants',
+            'Logistics',
+            'Sales History',
+            'Purchase History',
+            'Analytics',
+            'Security'
+        ];
+
+        if (supportsStockRecords) {
+            return [...baseTabs.slice(0, 5), 'Stock Log', ...baseTabs.slice(5)] as Array<'Overview' | 'Variants' | 'Logistics' | 'Sales History' | 'Purchase History' | 'Stock Log' | 'Analytics' | 'Security'>;
+        }
+
+        return baseTabs;
+    }, [supportsStockRecords]);
+
+    useEffect(() => {
+        if (!visibleTabs.includes(activeTab)) {
+            setActiveTab('Overview');
+        }
+    }, [activeTab, visibleTabs]);
 
     // Calculate aggregated stock from variants
     const variantTotalStock = useMemo(() => {
+        if (!supportsStockRecords) return 0;
         if (!hasVariants) return item.stock;
         return variants.reduce((sum, v) => sum + (v.stock || 0), 0);
-    }, [hasVariants, variants, item.stock]);
+    }, [hasVariants, item.stock, supportsStockRecords, variants]);
 
     // Variant Sales Analytics
     const variantSalesData = useMemo(() => {
@@ -56,7 +82,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                 revenue: 0,
                 name: v.name,
                 sku: v.sku,
-                stock: v.stock || 0,
+                stock: supportsStockRecords ? (v.stock || 0) : 0,
                 cost: v.cost || 0,
                 price: v.price || 0
             };
@@ -80,21 +106,21 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
             profit: data.revenue - (data.unitsSold * data.cost),
             margin: data.revenue > 0 ? ((data.revenue - (data.unitsSold * data.cost)) / data.revenue) * 100 : 0
         })).sort((a, b) => b.unitsSold - a.unitsSold);
-    }, [hasVariants, variants, sales]);
+    }, [hasVariants, sales, supportsStockRecords, variants]);
 
     // Top performing variant
     const topVariant = variantSalesData.length > 0 ? variantSalesData[0] : null;
 
     // Variant Stock Distribution for Pie Chart
     const variantStockChartData = useMemo(() => {
-        if (!hasVariants) return [];
+        if (!hasVariants || !supportsStockRecords) return [];
         const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
         return variants.map((v, idx) => ({
             name: v.name,
             value: v.stock || 0,
             color: colors[idx % colors.length]
         }));
-    }, [hasVariants, variants]);
+    }, [hasVariants, supportsStockRecords, variants]);
 
     // Variant Sales Chart Data
     const variantSalesChartData = useMemo(() => {
@@ -177,14 +203,14 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
 
     // 1. Inventory Logic
     const stockOnOrder = purchases
-        .filter(p => p.status === 'Ordered' || p.status === 'Partially Received')
+        .filter(p => supportsStockRecords && (p.status === 'Ordered' || p.status === 'Partially Received'))
         .reduce((sum, p) => {
             const line = p.items.find(i => i.itemId === item.id);
             return sum + (line ? (line.quantity - (line.receivedQty || 0)) : 0);
         }, 0);
 
     const stockAllocated = workOrders
-        .filter(wo => ['Scheduled', 'In Progress'].includes(wo.status))
+        .filter(wo => supportsStockRecords && ['Scheduled', 'In Progress'].includes(wo.status))
         .reduce((sum, wo) => {
             const bom = boms.find(b => b.id === wo.bomId);
             const comp = bom?.components.find(c => c.materialId === item.id);
@@ -194,7 +220,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
             return sum;
         }, 0);
 
-    const stockAvailable = item.stock - stockAllocated;
+    const stockAvailable = supportsStockRecords ? item.stock - stockAllocated : 0;
 
     // Logistics & Supply Chain Info
     const logisticsData = [
@@ -246,6 +272,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
 
     // 3. Activity Timeline
     const stockLog = useMemo(() => {
+        if (!supportsStockRecords) return [];
         const events: any[] = [];
         sales.forEach(s => {
             const line = s.items.find(i => i.id === item.id);
@@ -283,7 +310,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
             }
         });
         return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [sales, purchases, batches, item.id, boms, item.cost]);
+    }, [batches, boms, item.cost, item.id, purchases, sales, supportsStockRecords]);
 
     const salesHistory = useMemo(() => stockLog.filter(l => l.type === 'Sale'), [stockLog]);
     const purchaseHistory = useMemo(() => stockLog.filter(l => l.type === 'Purchase'), [stockLog]);
@@ -295,6 +322,12 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
     const totalUnitsSold = itemSales.reduce((sum, i) => sum + i.quantity, 0);
     const estCOGS = totalUnitsSold * lastCost;
     const grossProfit = totalNetRevenue - estCOGS;
+    const averageVariantPrice = variants.length > 0
+        ? variants.reduce((sum, variant) => sum + (variant.price || 0), 0) / variants.length
+        : 0;
+    const variantPriceBands = [...variants]
+        .sort((a, b) => (b.price || 0) - (a.price || 0))
+        .slice(0, 6);
 
     const linkedBom = boms.find(b => b.productId === item.id);
 
@@ -407,7 +440,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        {(item.type === 'Stationery' || item.type === 'Material' || item.type === 'Product') && (
+                        {supportsStockRecords && (
                             <button onClick={() => onAdjust(item)} className="zoho-button-secondary px-3 py-1.5 flex items-center gap-1.5">
                                 <ArrowRightLeft size={14} /> Adjust
                             </button>
@@ -444,31 +477,49 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
-                        <div className="text-label uppercase mb-1 tracking-wider">Available Stock</div>
-                        <div className="flex items-baseline gap-1">
-                            <span className={`text-[20px] font-black finance-nums ${stockAvailable <= (item.minStockLevel || 0) ? 'text-red-600' : 'text-slate-900'}`}>
-                                {stockAvailable}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-medium">{item.unit}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5 finance-nums">Total On Hand: {item.stock}</div>
-                    </div>
+                    {supportsStockRecords ? (
+                        <>
+                            <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
+                                <div className="text-label uppercase mb-1 tracking-wider">Available Stock</div>
+                                <div className="flex items-baseline gap-1">
+                                    <span className={`text-[20px] font-black finance-nums ${stockAvailable <= (item.minStockLevel || 0) ? 'text-red-600' : 'text-slate-900'}`}>
+                                        {stockAvailable}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-medium">{item.unit}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5 finance-nums">Total On Hand: {item.stock}</div>
+                            </div>
 
-                    <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
-                        <div className="text-label uppercase mb-1 tracking-wider">Allocated / On Order</div>
-                        <div className="flex justify-between items-center mt-1">
-                            <div className="text-center">
-                                <div className="text-[13px] font-bold text-amber-600 finance-nums">{stockAllocated}</div>
-                                <div className="text-[9px] text-slate-400 font-medium">Reserved</div>
+                            <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
+                                <div className="text-label uppercase mb-1 tracking-wider">Allocated / On Order</div>
+                                <div className="flex justify-between items-center mt-1">
+                                    <div className="text-center">
+                                        <div className="text-[13px] font-bold text-amber-600 finance-nums">{stockAllocated}</div>
+                                        <div className="text-[9px] text-slate-400 font-medium">Reserved</div>
+                                    </div>
+                                    <div className="w-px h-6 bg-slate-200/50"></div>
+                                    <div className="text-center">
+                                        <div className="text-[13px] font-bold text-blue-600 finance-nums">{stockOnOrder}</div>
+                                        <div className="text-[9px] text-slate-400 font-medium">Inbound</div>
+                                    </div>
+                                </div>
                             </div>
-                            <div className="w-px h-6 bg-slate-200/50"></div>
-                            <div className="text-center">
-                                <div className="text-[13px] font-bold text-blue-600 finance-nums">{stockOnOrder}</div>
-                                <div className="text-[9px] text-slate-400 font-medium">Inbound</div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
+                                <div className="text-label uppercase mb-1 tracking-wider">Stock Records</div>
+                                <div className="text-[20px] font-black text-slate-900">Disabled</div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">This {item.type.toLowerCase()} is price-tracked only.</div>
                             </div>
-                        </div>
-                    </div>
+
+                            <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
+                                <div className="text-label uppercase mb-1 tracking-wider">Inventory Policy</div>
+                                <div className="text-[13px] font-bold text-slate-700">No stock log or quantity adjustments</div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">Use variants and pricing only.</div>
+                            </div>
+                        </>
+                    )}
 
                     <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
                         <div className="text-label uppercase mb-1 tracking-wider">Pricing</div>
@@ -494,7 +545,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
             </div>
 
             {/* 2. Alerts Section */}
-            {((item.stock <= (item.minStockLevel || 0) || stockAvailable < 0) && !((item as any).printConsumptionEnabled)) && (
+            {(supportsStockRecords && (item.stock <= (item.minStockLevel || 0) || stockAvailable < 0) && !((item as any).printConsumptionEnabled)) && (
                 <div className="px-6 py-3 bg-red-50/80 backdrop-blur border-b border-red-100 flex items-center gap-3 text-xs text-red-800">
                     <AlertTriangle size={14} className="shrink-0" />
                     <span className="font-bold">Low Stock Warning:</span>
@@ -515,9 +566,15 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                     <span className="text-[12px] font-bold text-blue-700">
                         This product has {variants.length} variant{variants.length > 1 ? 's' : ''}
                     </span>
-                    <span className="text-[11px] text-blue-500">
-                        Total Stock: {variantTotalStock.toLocaleString()} {item.unit}
-                    </span>
+                    {supportsStockRecords ? (
+                        <span className="text-[11px] text-blue-500">
+                            Total Stock: {variantTotalStock.toLocaleString()} {item.unit}
+                        </span>
+                    ) : (
+                        <span className="text-[11px] text-blue-500">
+                            Stock records are disabled for {item.type.toLowerCase()} items
+                        </span>
+                    )}
                     {topVariant && (
                         <span className="ml-auto flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
                             <Award size={12} /> Top Seller: {topVariant.name} ({topVariant.unitsSold} units)
@@ -528,7 +585,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
 
             {/* 3. Tabs Navigation */}
             <div className="flex gap-1 px-6 pt-4 bg-transparent overflow-x-auto no-scrollbar">
-                {['Overview', 'Variants', 'Logistics', 'Sales History', 'Purchase History', 'Stock Log', 'Analytics', 'Security'].map(tab => (
+                {visibleTabs.map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab as any)}
@@ -589,9 +646,21 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                     {variants.slice(0, 4).map((v, idx) => (
                                         <div key={v.id} className="bg-white/70 p-4 rounded-xl border border-blue-100">
                                             <div className="text-[11px] font-bold text-slate-500 truncate">{v.name}</div>
-                                            <div className="text-[18px] font-black text-slate-900 finance-nums mt-1">{v.stock || 0}</div>
-                                            <div className="text-[10px] text-slate-400">in stock</div>
-                                            <div className="text-[12px] font-bold text-blue-600 mt-2 finance-nums">{currency}{(v.price || 0).toFixed(2)}</div>
+                                            {supportsStockRecords ? (
+                                                <>
+                                                    <div className="text-[18px] font-black text-slate-900 finance-nums mt-1">{v.stock || 0}</div>
+                                                    <div className="text-[10px] text-slate-400">in stock</div>
+                                                    <div className="text-[12px] font-bold text-blue-600 mt-2 finance-nums">{currency}{(v.price || 0).toFixed(2)}</div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="text-[18px] font-black text-blue-600 finance-nums mt-1">{currency}{(v.price || 0).toFixed(2)}</div>
+                                                    <div className="text-[10px] text-slate-400">selling price</div>
+                                                    <div className="text-[11px] text-slate-500 mt-2 truncate">
+                                                        {Object.values(v.attributes || {}).join(' / ') || 'No attribute'}
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     ))}
                                     {variants.length > 4 && (
@@ -629,8 +698,10 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                         <div className="text-[24px] font-black text-slate-900">{variants.length}</div>
                                     </div>
                                     <div className="bg-white/70 backdrop-blur-xl p-4 rounded-2xl border border-white/60">
-                                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Combined Stock</div>
-                                        <div className="text-[24px] font-black text-blue-600 finance-nums">{variantTotalStock.toLocaleString()}</div>
+                                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{supportsStockRecords ? 'Combined Stock' : 'Average Price'}</div>
+                                        <div className="text-[24px] font-black text-blue-600 finance-nums">
+                                            {supportsStockRecords ? variantTotalStock.toLocaleString() : `${currency}${averageVariantPrice.toFixed(2)}`}
+                                        </div>
                                     </div>
                                     <div className="bg-white/70 backdrop-blur-xl p-4 rounded-2xl border border-white/60">
                                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Units Sold</div>
@@ -661,40 +732,60 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
 
                                 {/* Variant Charts Row */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    {/* Stock Distribution Pie Chart */}
-                                    <div className="bg-white/70 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-white/60">
-                                        <h4 className="text-label font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
-                                            <PieChartIcon size={14} className="text-blue-500" /> Stock Distribution
-                                        </h4>
-                                        <div style={{ width: '100%', height: 200, minHeight: 150 }}>
-                                            <ResponsiveContainer width="100%" height="100%" minHeight={150} minWidth={0}>
-                                                <PieChart>
-                                                    <Pie
-                                                        data={variantStockChartData}
-                                                        cx="50%"
-                                                        cy="50%"
-                                                        innerRadius={50}
-                                                        outerRadius={80}
-                                                        paddingAngle={2}
-                                                        dataKey="value"
-                                                    >
-                                                        {variantStockChartData.map((entry, index) => (
-                                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                                        ))}
-                                                    </Pie>
-                                                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
-                                                </PieChart>
-                                            </ResponsiveContainer>
+                                    {supportsStockRecords ? (
+                                        <div className="bg-white/70 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-white/60">
+                                            <h4 className="text-label font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
+                                                <PieChartIcon size={14} className="text-blue-500" /> Stock Distribution
+                                            </h4>
+                                            <div style={{ width: '100%', height: 200, minHeight: 150 }}>
+                                                <ResponsiveContainer width="100%" height="100%" minHeight={150} minWidth={0}>
+                                                    <PieChart>
+                                                        <Pie
+                                                            data={variantStockChartData}
+                                                            cx="50%"
+                                                            cy="50%"
+                                                            innerRadius={50}
+                                                            outerRadius={80}
+                                                            paddingAngle={2}
+                                                            dataKey="value"
+                                                        >
+                                                            {variantStockChartData.map((entry, index) => (
+                                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                                            ))}
+                                                        </Pie>
+                                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
+                                                    </PieChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 mt-4">
+                                                {variantStockChartData.slice(0, 6).map((entry, idx) => (
+                                                    <div key={idx} className="flex items-center gap-1.5 text-[10px]">
+                                                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                                                        <span className="text-slate-600 truncate max-w-[80px]">{entry.name}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-2 mt-4">
-                                            {variantStockChartData.slice(0, 6).map((entry, idx) => (
-                                                <div key={idx} className="flex items-center gap-1.5 text-[10px]">
-                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                                                    <span className="text-slate-600 truncate max-w-[80px]">{entry.name}</span>
-                                                </div>
-                                            ))}
+                                    ) : (
+                                        <div className="bg-white/70 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-white/60">
+                                            <h4 className="text-label font-bold mb-4 flex items-center gap-2 uppercase tracking-wider">
+                                                <DollarSign size={14} className="text-blue-500" /> Variant Pricing
+                                            </h4>
+                                            <div className="space-y-3">
+                                                {variantPriceBands.length > 0 ? variantPriceBands.map((variant) => (
+                                                    <div key={variant.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white/60 px-4 py-3">
+                                                        <div>
+                                                            <div className="text-[12px] font-bold text-slate-800">{variant.name}</div>
+                                                            <div className="text-[10px] text-slate-400">{Object.values(variant.attributes || {}).join(' / ') || 'No attribute'}</div>
+                                                        </div>
+                                                        <div className="text-[13px] font-black text-blue-600 finance-nums">{currency}{(variant.price || 0).toFixed(2)}</div>
+                                                    </div>
+                                                )) : (
+                                                    <div className="text-[13px] text-slate-400 italic">No variant pricing data yet.</div>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
                                     {/* Sales by Variant Bar Chart */}
                                     <div className="bg-white/70 backdrop-blur-xl p-6 rounded-2xl shadow-sm border border-white/60">
@@ -727,7 +818,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                             <thead>
                                                 <tr className="bg-slate-50/50">
                                                     <th className="table-header py-3 px-4">Variant</th>
-                                                    <th className="table-header py-3 px-4 text-center">Stock</th>
+                                                    {supportsStockRecords && <th className="table-header py-3 px-4 text-center">Stock</th>}
                                                     <th className="table-header py-3 px-4 text-right">Cost</th>
                                                     <th className="table-header py-3 px-4 text-right">Price</th>
                                                     <th className="table-header py-3 px-4 text-right">Units Sold</th>
@@ -740,7 +831,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                                      // If this product or variant uses print consumption, we don't show low-stock warnings
                                                      const variantObj = variants.find(x => x.id === v.id) || {} as any;
                                                      const suppressedLowStock = (item as any).printConsumptionEnabled || variantObj.printConsumptionEnabled;
-                                                     const isLowStock = !suppressedLowStock && v.stock <= (item.minStockLevel || 0);
+                                                     const isLowStock = supportsStockRecords && !suppressedLowStock && v.stock <= (item.minStockLevel || 0);
                                                     const isTopSeller = topVariant?.id === v.id;
                                                     return (
                                                         <tr key={v.id} className={`hover:bg-slate-50/50 transition-colors ${isTopSeller ? 'bg-emerald-50/30' : ''}`}>
@@ -753,12 +844,14 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="table-body-cell py-3 px-4 text-center">
-                                                                <span className={`font-bold finance-nums ${isLowStock ? 'text-red-600' : 'text-slate-700'}`}>
-                                                                    {v.stock.toLocaleString()}
-                                                                </span>
-                                                                {isLowStock && <AlertTriangle size={12} className="inline ml-1 text-red-500" />}
-                                                            </td>
+                                                            {supportsStockRecords && (
+                                                                <td className="table-body-cell py-3 px-4 text-center">
+                                                                    <span className={`font-bold finance-nums ${isLowStock ? 'text-red-600' : 'text-slate-700'}`}>
+                                                                        {v.stock.toLocaleString()}
+                                                                    </span>
+                                                                    {isLowStock && <AlertTriangle size={12} className="inline ml-1 text-red-500" />}
+                                                                </td>
+                                                            )}
                                                             <td className="table-body-cell py-3 px-4 text-right finance-nums">{currency}{v.cost.toFixed(2)}</td>
                                                             <td className="table-body-cell py-3 px-4 text-right font-bold text-blue-600 finance-nums">{currency}{v.price.toFixed(2)}</td>
                                                             <td className="table-body-cell py-3 px-4 text-right font-bold finance-nums">{v.unitsSold.toLocaleString()}</td>
@@ -826,20 +919,27 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                                     <h4 className="text-[12px] font-bold text-blue-700 uppercase mb-4 flex items-center gap-2">
                                         <Truck size={14} /> Supply Chain Health
                                     </h4>
-                                    <div className="space-y-4">
-                                        <div className="flex justify-between items-center text-[13px]">
-                                            <span className="text-slate-500">Reorder Level:</span>
-                                            <span className="font-bold text-slate-900 finance-nums">{item.reorderPoint || 0} {item.unit}</span>
+                                    {supportsStockRecords ? (
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-center text-[13px]">
+                                                <span className="text-slate-500">Reorder Level:</span>
+                                                <span className="font-bold text-slate-900 finance-nums">{item.reorderPoint || 0} {item.unit}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[13px]">
+                                                <span className="text-slate-500">Min Stock Level:</span>
+                                                <span className="font-bold text-slate-900 finance-nums">{item.minStockLevel || 0} {item.unit}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-[13px]">
+                                                <span className="text-slate-500">Typical Lead Time:</span>
+                                                <span className="font-bold text-blue-600 finance-nums">{item.leadTimeDays || 0} Days</span>
+                                            </div>
                                         </div>
-                                        <div className="flex justify-between items-center text-[13px]">
-                                            <span className="text-slate-500">Min Stock Level:</span>
-                                            <span className="font-bold text-slate-900 finance-nums">{item.minStockLevel || 0} {item.unit}</span>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <p className="text-[13px] font-bold text-slate-800">Stock records are disabled for {item.type.toLowerCase()} items.</p>
+                                            <p className="text-[12px] text-slate-500">This view keeps pricing and reference data, but it won’t track stock movements, reorder levels, or quantity adjustments.</p>
                                         </div>
-                                        <div className="flex justify-between items-center text-[13px]">
-                                            <span className="text-slate-500">Typical Lead Time:</span>
-                                            <span className="font-bold text-blue-600 finance-nums">{item.leadTimeDays || 0} Days</span>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
                             </div>
 

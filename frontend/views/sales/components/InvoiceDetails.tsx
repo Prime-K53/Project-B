@@ -10,6 +10,7 @@ import {
 import { Invoice, CustomerPayment, InvoiceAllocation } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
+import TransactionPricingInsights from './TransactionPricingInsights';
 
 interface InvoiceDetailsProps {
     invoice: Invoice;
@@ -301,53 +302,7 @@ export const InvoiceDetails: React.FC<InvoiceDetailsProps> = ({ invoice: initial
 
                     {activeTab === 'Financials' && (
                         <div className="space-y-6 animate-in fade-in duration-300">
-                            {(invoice.adjustmentSnapshots && invoice.adjustmentSnapshots.length > 0) || (invoice.adjustmentBreakdown && invoice.adjustmentBreakdown.length > 0) ? (
-                                <div className="bg-white rounded-[1.25rem] border border-slate-200 overflow-hidden shadow-sm">
-                                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                                        <h3 className="font-semibold text-slate-700 flex items-center gap-2 tracking-tight text-[13.5px]">
-                                            <TrendingUp size={18} className="text-indigo-600" /> Market Adjustments
-                                        </h3>
-                                        <span className="text-[12px] font-bold text-indigo-600">Total: {currency}{(invoice.adjustmentTotal || 0).toLocaleString()}</span>
-                                    </div>
-                                    <div className="p-6">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {(invoice.adjustmentSnapshots || []).map((snap: any, idx: number) => (
-                                                <div key={idx} className="flex justify-between items-center p-3 bg-indigo-50/30 border border-indigo-100/50 rounded-xl">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
-                                                            {snap.type === 'PERCENTAGE' ? <Percent size={14} /> : <DollarSign size={14} />}
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[13px] font-bold text-slate-700">{snap.name}</p>
-                                                            <p className="text-[11px] text-slate-500 font-medium">
-                                                                {snap.type === 'PERCENTAGE' ? `${snap.value}% Adjustment` : `Fixed Amount`}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-[13px] font-black text-slate-900">+{currency}{snap.calculatedAmount.toLocaleString()}</p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {(!invoice.adjustmentSnapshots || invoice.adjustmentSnapshots.length === 0) && (invoice.adjustmentBreakdown || []).map((adj: any, idx: number) => (
-                                                <div key={idx} className="flex justify-between items-center p-3 bg-indigo-50/30 border border-indigo-100/50 rounded-xl">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
-                                                            <TrendingUp size={14} />
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-[13px] font-bold text-slate-700">{adj.category}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <p className="text-[13px] font-black text-slate-900">+{currency}{adj.amount.toLocaleString()}</p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : null}
+                            <TransactionPricingInsights transaction={invoice} currencySymbol={currency} />
 
                             <div className="bg-white rounded-[1.25rem] border border-slate-200 overflow-hidden shadow-sm">
                                 <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">

@@ -3,8 +3,9 @@
 // backend/frontend boundary. If logic changes, update both files.
 export function extractProfitMargin(trans: any): number {
   const snapshot = trans?.adjustmentSnapshots?.find((adj: any) => adj?.name === 'Profit Margin');
-  if (snapshot && typeof snapshot.amount === 'number') {
-    return snapshot.amount;
+  const snapshotAmount = snapshot?.calculatedAmount ?? snapshot?.amount;
+  if (typeof snapshotAmount === 'number') {
+    return snapshotAmount;
   }
 
   if (typeof trans?.profitAdjustment === 'number') {

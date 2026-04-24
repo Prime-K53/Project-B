@@ -5,7 +5,7 @@ import { useAuth } from './AuthContext';
 import { useSales } from './SalesContext';
 import { generateNextId } from '../utils/helpers';
 import { customerNotificationService } from '../services/customerNotificationService';
-import { attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
+import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 interface OrdersContextType {
   orders: Order[];
@@ -111,7 +111,7 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const discount = 0;
       const totalAmount = subtotal - discount;
 
-      const newOrder: Order & Record<string, any> = {
+        const newOrder: Order & Record<string, any> = {
         id: generateNextId('ORD', orders),
         orderNumber,
         customerId: '', // Quotation might not have customerId directly, we might need to look it up by name
@@ -132,11 +132,12 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           quotation.notes
         ].filter(Boolean).join('\n'),
         conversionDetails,
-        adjustmentSnapshots: (quotation as any).adjustmentSnapshots || [],
+        adjustmentSnapshots: aggregateMarketAdjustmentSnapshots(normalizedMappedItems as any[]),
         adjustmentTotal: (quotation as any).adjustmentTotal || pricingSummary.adjustmentTotal,
         materialTotal: (quotation as any).materialTotal || pricingSummary.materialTotal,
         profitMarginTotal: (quotation as any).profitMarginTotal || pricingSummary.profitMarginTotal,
         roundingTotal: (quotation as any).roundingTotal || pricingSummary.roundingTotal,
+        roundingDifference: (quotation as any).roundingDifference || pricingSummary.roundingTotal,
         tax: quotation.tax,
         taxRate: quotation.taxRate
       };
@@ -199,11 +200,12 @@ export const OrdersProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         notes: data.notes,
         shippingAddress: data.shippingAddress,
         billingAddress: data.billingAddress,
-        adjustmentSnapshots: data.adjustmentSnapshots || [],
+        adjustmentSnapshots: data.adjustmentSnapshots || aggregateMarketAdjustmentSnapshots(normalizedItems as any[]),
         adjustmentTotal: data.adjustmentTotal || pricingSummary.adjustmentTotal,
         materialTotal: data.materialTotal || pricingSummary.materialTotal,
         profitMarginTotal: data.profitMarginTotal || pricingSummary.profitMarginTotal,
         roundingTotal: data.roundingTotal || pricingSummary.roundingTotal,
+        roundingDifference: data.roundingDifference || pricingSummary.roundingTotal,
       };
 
       await addOrder(newOrder);

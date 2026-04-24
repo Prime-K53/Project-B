@@ -26,7 +26,7 @@ import { generateNextId, roundFinancial, roundToCurrency, formatNumber, download
 import { attachDocumentSecurity } from '../utils/documentSecurity';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../utils/pricing';
 import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
-import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
+import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 const POS: React.FC = () => {
   const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
@@ -292,7 +292,7 @@ const POS: React.FC = () => {
     const seen = new Map<string, number>();
 
     cart.forEach(item => {
-      const snapshots = getMarketAdjustmentSnapshots(item.adjustmentSnapshots || []);
+      const snapshots = getMarketAdjustmentSnapshots(resolveItemAdjustmentSnapshots(item));
       snapshots.forEach((snapshot: any) => {
         const key = snapshot.adjustmentId || snapshot.name || 'Unknown';
         if (!seen.has(key)) {
@@ -305,12 +305,12 @@ const POS: React.FC = () => {
           });
         }
         const idx = seen.get(key)!;
-        summary[idx].totalAmount += (snapshot.calculatedAmount || 0) * (item.quantity || 1);
+        summary[idx].totalAmount += getSnapshotCalculatedAmount(snapshot) * (item.quantity || 1);
         summary[idx].itemCount += item.quantity || 1;
       });
     });
 
-    return summary;
+    return summary.filter((entry) => Math.abs(entry.totalAmount) > 0.0001);
   }, [cart]);
 
   const roundingAccumulation = useMemo(() => {
@@ -354,6 +354,7 @@ const POS: React.FC = () => {
 
     const existing = cart.find(i => i.id === item.id);
     const newQty = existing ? (existing.quantity + (item.quantity || 1)) : (item.quantity || 1);
+    const basePrice = resolveStoredSellingPrice(baseItem as any);
 
     const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
     const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
@@ -381,8 +382,12 @@ const POS: React.FC = () => {
     const isVariant = Boolean(item.parentId);
     const variantStoredPrice = resolveStoredSellingPrice(item as any);
     const variantStoredCost = resolveStoredCost(item as any);
-    const variantAdjTotal = Number((item as any).smartPricingSnapshot?.marketAdjustmentTotal ?? (item as any).adjustmentTotal ?? 0);
-    const variantAdjSnaps = (item as any).adjustmentSnapshots || [];
+    const variantAdjSnaps = resolveItemAdjustmentSnapshots(item);
+    const variantAdjTotal = Number(
+      (item as any).smartPricingSnapshot?.marketAdjustmentTotal
+      ?? (item as any).adjustmentTotal
+      ?? variantAdjSnaps.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+    );
 
     let resolvedPrice: number;
     let resolvedCost: number;
@@ -614,6 +619,12 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     // from parent cost which is 0 for SmartPricing products.
     const isCartItemVariant = Boolean((itemInCart as any).parentId);
     const cartVariantStoredPrice = resolveStoredSellingPrice(itemInCart as any);
+    const cartVariantAdjustmentSnapshots = resolveItemAdjustmentSnapshots(itemInCart);
+    const cartVariantAdjustmentTotal = Number(
+      (itemInCart as any).smartPricingSnapshot?.marketAdjustmentTotal
+      ?? (itemInCart as any).adjustmentTotal
+      ?? cartVariantAdjustmentSnapshots.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+    );
 
     if (isCartItemVariant && cartVariantStoredPrice > 0) {
       // Keep existing variant price — only update quantity
@@ -624,6 +635,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         selling_price: cartVariantStoredPrice,
         cost_price: resolveStoredCost(itemInCart as any),
         originalPrice: (itemInCart as any).originalPrice,
+        adjustmentSnapshots: cartVariantAdjustmentSnapshots,
+        adjustmentTotal: cartVariantAdjustmentTotal,
         productionCostSnapshot: (itemInCart as any).productionCostSnapshot
       } : i));
       return;
@@ -734,7 +747,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
       const changeDue = Math.max(totalPaid - payableTotal, 0);
       const processesedItemsWithSnapshots = processedItems.map((item: any) => {
-        let snapshots = item.adjustmentSnapshots || [];
+        let snapshots = resolveItemAdjustmentSnapshots(item);
 
         // Fallback calculation for held orders or legacy items
         if ((!snapshots || snapshots.length === 0) && item.type !== 'Service') {

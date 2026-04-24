@@ -54,6 +54,7 @@ const LegacyDataAggregator: React.FC<{ children: React.ReactNode }> = ({ childre
         quotations: [],
         recurringInvoices: [],
         batches: [],
+        examinationBatches: [],
         boms: [],
         workCenters: [],
         resources: [],
@@ -88,7 +89,15 @@ const LegacyDataAggregator: React.FC<{ children: React.ReactNode }> = ({ childre
         return merged;
     };
 
-    const combinedValue = mergeContexts(auth, finance, inventory, production, sales, procurement, orders);
+    const combinedValue = {
+        ...mergeContexts(auth, finance, inventory, production, sales, procurement, orders),
+        examination,
+        examinationBatches: examination?.batches || [],
+        examinationJobs: examination?.jobs || [],
+        examinationGroups: examination?.groups || [],
+        examinationRecurringProfiles: examination?.recurringProfiles || [],
+        examinationBatchLoadError: examination?.batchLoadError || null,
+    };
     const refreshInFlightRef = useRef(false);
     const queuedRefreshRef = useRef(false);
     const refreshTimerRef = useRef<number | null>(null);

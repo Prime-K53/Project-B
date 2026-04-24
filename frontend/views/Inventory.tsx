@@ -52,6 +52,10 @@ const Inventory: React.FC = () => {
     // Exclude printed/print-consumption items from low stock alerts
     const lowStockCount = inventory.filter(item => !(item as any).printConsumptionEnabled && item.stock <= (item.minStockLevel || 0)).length;
     const totalStockUnits = inventory.reduce((sum, item) => sum + item.stock, 0);
+    const stockTrackedItems = inventory.filter(item => {
+        const type = String(item.type || '');
+        return type === 'Stationery' || type === 'Material' || type === 'Raw Material';
+    });
 
     const [activeView, setActiveView] = useState<'Items' | 'Stock' | 'Warehouses'>('Items');
 
@@ -387,7 +391,7 @@ const Inventory: React.FC = () => {
                     <WarehouseGrid warehouses={warehouses} inventory={inventory} />
                 ) : (
                     <ItemTable
-                        items={activeView === 'Stock' ? inventory.filter(i => i.type === 'Stationery' || i.type === 'Material' || i.type === 'Product') : inventory}
+                        items={activeView === 'Stock' ? stockTrackedItems : inventory}
                         warehouses={warehouses}
                         onEdit={handleOpenEditModal}
                         onView={handleViewDetails}
@@ -415,7 +419,7 @@ const Inventory: React.FC = () => {
                 isOpen={isSmartAdjustOpen}
                 onClose={() => setIsSmartAdjustOpen(false)}
                 onSuccess={handleSmartAdjustSuccess}
-                items={inventory.filter(item => item.type === 'Stationery' || item.type === 'Material' || item.type === 'Product')}
+                items={stockTrackedItems}
             />
 
             {/* Stock Adjustment Modal */}

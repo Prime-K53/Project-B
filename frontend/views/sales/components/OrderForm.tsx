@@ -16,7 +16,7 @@ import QuickPrintModal from '../../../components/QuickPrintModal';
 import { calculateSellingPrice, calculateServicePrice } from '../../../utils/pricing/pricingEngine';
 import { getPlaceholder } from '../../../constants/placeholders';
 import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../../../utils/pricing';
-import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
+import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../../../utils/pricingBreakdown';
 
 import { useDocumentPreview } from '../../../hooks/useDocumentPreview';
 
@@ -367,7 +367,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     // For variants with dynamic pricing, calculate from BOM
     const getInventoryPrices = (item: CartItem) => {
         const invItem = inventory.find((i: Item) => i.id === (item.parentId || item.id));
-        if (!invItem) return { price: item.price, cost: item.cost || 0, adjustmentSnapshots: item.adjustmentSnapshots };
+        if (!invItem) return { price: item.price, cost: item.cost || 0, adjustmentSnapshots: resolveItemAdjustmentSnapshots(item) };
 
         // For variants, check pricing mode — prefer SmartPricing snapshot
         if (item.parentId && invItem.variants) {
@@ -379,7 +379,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
                 return {
                     price: resolvedPrice,
                     cost: resolvedCost,
-                    adjustmentSnapshots: variant.adjustmentSnapshots,
+                    adjustmentSnapshots: resolveItemAdjustmentSnapshots(variant as any),
                     smartPricingSnapshot: snap
                 };
             }
@@ -388,7 +388,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         return {
             price: resolveStoredSellingPrice(invItem) || 0,
             cost: resolveStoredCost(invItem) || 0,
-            adjustmentSnapshots: invItem.adjustmentSnapshots
+            adjustmentSnapshots: resolveItemAdjustmentSnapshots(invItem as any)
         };
     };
 
@@ -540,7 +540,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             totalCostPrice += itemCost * item.quantity;
 
             // Aggregate adjustments (Use stored snapshots OR calculate dynamically if missing)
-            let currentSnapshots = item.adjustmentSnapshots;
+            let currentSnapshots = resolveItemAdjustmentSnapshots(item);
 
             if (!currentSnapshots || currentSnapshots.length === 0) {
                 // Calculation fallback for legacy items or missing snapshots
@@ -572,7 +572,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             // Calculate totals for summary
             if (currentSnapshots && currentSnapshots.length > 0) {
                 getMarketAdjustmentSnapshots(currentSnapshots).forEach((snap: any) => {
-                    const amount = (snap.calculatedAmount || 0) * item.quantity;
+                    const amount = getSnapshotCalculatedAmount(snap) * item.quantity;
                     const name = snap.name || 'Other Adjustment';
                     adjustmentBreakdown[name] = (adjustmentBreakdown[name] || 0) + amount;
                 });
@@ -1172,6 +1172,8 @@ const handleAddItem = async (item: Item) => {
 const handleVariantSelect = async (variant: ProductVariant) => {
         if (!selectedProductForVariants) return;
 
+        const normalizedAdjustmentSnapshots = resolveItemAdjustmentSnapshots(variant as any);
+
         const existingItemIdx = formData.items.findIndex((i: any) => i.id === variant.id && i.parentId === selectedProductForVariants.id);
 
         if (existingItemIdx > -1) {
@@ -1228,8 +1230,12 @@ const handleVariantSelect = async (variant: ProductVariant) => {
             // baseCost would re-derive a wrong price (ignores margin + rounding already applied).
             const snapPrice = resolveStoredSellingPrice(variant as any);
             const snapCost = resolveStoredCost(variant as any);
-            const snapAdjTotal = Number((variant as any).smartPricingSnapshot?.marketAdjustmentTotal ?? 0);
-            const snapAdjSnaps = (variant as any).adjustmentSnapshots || [];
+            const snapAdjTotal = Number(
+                (variant as any).smartPricingSnapshot?.marketAdjustmentTotal
+                ?? (variant as any).adjustmentTotal
+                ?? normalizedAdjustmentSnapshots.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+            );
+            const snapAdjSnaps = normalizedAdjustmentSnapshots;
 
             if (snapPrice > 0) {
                 // Use the stored SmartPricing price directly
@@ -1382,6 +1388,12 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                     newItems[idx].calculated_price = resolveStoredCalculatedPrice(savedVariant as any) || restored;
                     newItems[idx].cost = resolveStoredCost(savedVariant as any) || 0;
                     newItems[idx].cost_price = resolveStoredCost(savedVariant as any) || 0;
+                    newItems[idx].adjustmentSnapshots = resolveItemAdjustmentSnapshots(savedVariant as any);
+                    newItems[idx].adjustmentTotal = Number(
+                        (savedVariant as any).smartPricingSnapshot?.marketAdjustmentTotal
+                        ?? (savedVariant as any).adjustmentTotal
+                        ?? newItems[idx].adjustmentSnapshots.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+                    );
                 }
             }
         }
@@ -2227,7 +2239,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                     <div className="flex justify-between items-center gap-1">
                                                         <p className="text-[11px] font-normal text-slate-700 group-hover:text-blue-600 transition-colors line-clamp-2 flex-1">{item.name}</p>
                                                         <span className="text-[11px] font-normal text-blue-600 font-mono shrink-0">
-                                                            {currency}{item.price.toLocaleString()}
+                                                            {item.isVariantParent ? 'View' : `${currency}${resolveStoredSellingPrice(item as any).toLocaleString()}`}
                                                         </span>
                                                     </div>
                                                     {item.isVariantParent && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-400"></div>}

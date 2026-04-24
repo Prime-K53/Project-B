@@ -13,7 +13,7 @@ import { examinationBatchService } from '../services/examinationBatchService';
 import { jobTicketConversionService } from '../services/jobTicketConversionService';
 import { generateNextSalesInvoiceNumber } from '../services/documentNumberService';
 import { addDays, addMonths, addYears, isBefore, parseISO, format, isSameDay } from 'date-fns';
-import { attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
+import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 import { customerNotificationService, type NotificationActivityType } from '../services/customerNotificationService';
 
@@ -709,19 +709,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         // ✅ Aggregate adjustment snapshots from all items for margin tracking
-        const allAdjustmentSnapshots: any[] = [];
         const invoiceItems = q.items.map(item => {
-            // Preserve item-level adjustment snapshots
-            const itemSnapshots = (item as any).adjustmentSnapshots || [];
-            itemSnapshots.forEach((snap: any) => {
-                const existing = allAdjustmentSnapshots.find(s => s.name === snap.name);
-                if (existing) {
-                    existing.calculatedAmount += snap.calculatedAmount || 0;
-                } else {
-                    allAdjustmentSnapshots.push({ ...snap });
-                }
-            });
-
             return attachPricingBreakdown({
                 ...item,
                 lineTotalNet: item.lineTotalNet || (item.price * item.quantity)
@@ -729,6 +717,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
         });
         const pricingSummary = summarizePricingBreakdown(invoiceItems as any[]);
+        const allAdjustmentSnapshots = aggregateMarketAdjustmentSnapshots(invoiceItems as any[]);
 
         const invoice: Invoice = {
             id: invId,
@@ -746,6 +735,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             materialTotal: (q as any).materialTotal || pricingSummary.materialTotal,
             profitMarginTotal: (q as any).profitMarginTotal || pricingSummary.profitMarginTotal,
             roundingTotal: (q as any).roundingTotal || pricingSummary.roundingTotal,
+            roundingDifference: (q as any).roundingDifference || pricingSummary.roundingTotal,
             notes: `Converted from [Quotation] #[${q.id}] on [${new Date().toLocaleDateString()}] as accepted by [${q.customerName}]`,
             tax: q.tax,
             taxRate: q.taxRate,

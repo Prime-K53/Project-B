@@ -10,6 +10,7 @@ import { usePagination } from '../../../hooks/usePagination';
 import Pagination from '../../../components/Pagination';
 import { OfflineImage } from '../../../components/OfflineImage';
 import { mapToInvoiceData } from '../../../utils/pdfMapper';
+import { resolveTransactionPricingSummary } from '../../../utils/pricingBreakdown';
 import { Edit2, Trash2, Star, List, LayoutGrid, CheckCircle, Check, Clock, User, Calendar, Box, Eye, Send, Copy, Plus, Phone, ChevronRight, FileText, FileCheck, Briefcase, Mail, MessageCircle, Repeat, XCircle, Archive, History as HistoryIcon, Users, RefreshCw, ArrowUp, ArrowDown, Link as LinkIcon, Paperclip, CalendarClock, AlertTriangle, Download, Truck, MoreVertical, Play, Pause, Package, Globe, DollarSign, TrendingUp, Zap, Target, Share2, ExternalLink, PlayCircle, Coins, Wallet, ShoppingBag, Printer } from 'lucide-react';
 
 export interface ListProps<T> {
@@ -51,6 +52,10 @@ export const HoverActionMenu: React.FC<{
 }> = ({ id, type, pos, data, onAction }) => {
     const { companyConfig } = useData();
     const currency = companyConfig.currencySymbol;
+    const pricingSummary = useMemo(() => resolveTransactionPricingSummary(data), [data]);
+    const hasPricingMetrics = Math.abs(pricingSummary.adjustmentTotal) > 0.0001
+        || Math.abs(pricingSummary.profitMarginTotal) > 0.0001
+        || Math.abs(pricingSummary.roundingTotal) > 0.0001;
 
     if (!data) return null;
 
@@ -105,6 +110,25 @@ export const HoverActionMenu: React.FC<{
                         {currency}{(data.total || data.totalAmount || data.total_price_difference || 0).toLocaleString()}
                     </span>
                 </div>
+
+                {hasPricingMetrics && (
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-2 py-2">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Adj</div>
+                            <div className="text-[11px] font-bold text-indigo-300 finance-nums">{currency}{pricingSummary.adjustmentTotal.toLocaleString()}</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-2 py-2">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Margin</div>
+                            <div className="text-[11px] font-bold text-emerald-300 finance-nums">{currency}{pricingSummary.profitMarginTotal.toLocaleString()}</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-2 py-2">
+                            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Round</div>
+                            <div className={`text-[11px] font-bold finance-nums ${pricingSummary.roundingTotal >= 0 ? 'text-blue-300' : 'text-rose-300'}`}>
+                                {pricingSummary.roundingTotal >= 0 ? '+' : ''}{currency}{pricingSummary.roundingTotal.toLocaleString()}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {type === 'SalesExchange' && onAction && (data.status === 'pending' || data.status === 'Pending') && (
                     <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700">

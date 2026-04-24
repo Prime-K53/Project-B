@@ -1,364 +1,421 @@
 import React, { useMemo, useState } from 'react';
 import { useData, REFRESH_INTERVAL } from '../../context/DataContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
-import { format, parseISO, startOfWeek, startOfMonth, isWithinInterval, subDays, isSameDay } from 'date-fns';
 import {
-    DollarSign, TrendingUp, TrendingDown, CreditCard, Wallet, Users,
-    ShoppingCart, Building2, ArrowUpRight, ArrowDownRight, Activity,
-    BarChart3, PieChart, Calendar, RefreshCw,
-    Receipt, Users as UsersIcon, PieChart as PieChartIcon, Sparkles, ShieldCheck, Activity as ActivityIcon
+  Activity,
+  Coins,
+  DollarSign,
+  Layers3,
+  Receipt,
+  TrendingDown,
+  TrendingUp,
+  Users,
+  Wallet,
 } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
-
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-
-type DateRange = 'week' | 'month' | 'quarter' | 'year' | 'all';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { getRevenueSourceLabel } from '../../services/revenueAnalysisService';
+import {
+  buildRevenueReportingSnapshot,
+  matchesRevenueDateRange,
+  type RevenueDateRange,
+} from '../../services/revenueReportingService';
 
 const RevenueDashboard: React.FC = () => {
-    const { 
-        sales = [], invoices = [], expenses = [], purchases = [], 
-        customers = [], customerPayments = [], accounts = [], ledger = [],
-        companyConfig, refreshAllData 
-    } = useData();
+  const {
+    sales = [],
+    invoices = [],
+    orders = [],
+    expenses = [],
+    examinationBatches = [],
+    companyConfig,
+    refreshAllData,
+  } = useData();
 
-    // 5-minute poll + focus refresh
-    useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
-    const navigate = useNavigate();
-    const location = useLocation();
-    const currency = companyConfig?.currencySymbol || '$';
-    const [dateRange, setDateRange] = useState<DateRange>('month');
+  useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
 
-    const NAV_ITEMS = [
-        { id: 'Overview', label: 'Dashboard', icon: ActivityIcon, path: '/revenue' },
-        { id: 'Sales Audit', label: 'Sales Audit', icon: Receipt, path: '/revenue/sales-audit' },
-        { id: 'Margin Performance', label: 'Margin Performance', icon: BarChart3, path: '/revenue/margin-performance' },
-        { id: 'Rounding Analytics', label: 'Rounding Analytics', icon: ActivityIcon, path: '/revenue/rounding-analytics' },
-        { id: 'Client Ledger', label: 'Client Ledger', icon: UsersIcon, path: '/revenue/contacts' },
-        { id: 'Business Intel', label: 'Business Intel', icon: PieChartIcon, path: '/revenue/intel' },
-        { id: 'Health Diagnostic', label: 'Health Diagnostic', icon: Sparkles, path: '/revenue/health' },
-        { id: 'Auditor', label: 'Internal Auditor', icon: ShieldCheck, path: '/revenue/auditor' },
-    ];
+  const currency = companyConfig?.currencySymbol || '$';
+  const [dateRange, setDateRange] = useState<RevenueDateRange>('month');
 
+  const formatCurrency = (value: number) =>
+    `${currency}${Number(value || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
 
-    const formatCurrency = (val: number) => {
-        if (val === undefined || val === null || isNaN(val)) return `${currency}0.00`;
-        return `${currency}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    };
+  const report = useMemo(
+    () =>
+      buildRevenueReportingSnapshot({
+        sales,
+        invoices,
+        orders,
+        batches: examinationBatches,
+        dateRange,
+        trendDays: 7,
+      }),
+    [sales, invoices, orders, examinationBatches, dateRange]
+  );
 
-    const filterByDateRange = (dateStr: string): boolean => {
-        if (dateRange === 'all') return true;
-        const date = parseISO(dateStr);
-        const now = new Date();
+  const operatingExpenses = useMemo(
+    () =>
+      (expenses || [])
+        .filter((expense: any) => matchesRevenueDateRange(expense?.date, dateRange))
+        .reduce((sum: number, expense: any) => sum + Number(expense?.amount || 0), 0),
+    [expenses, dateRange]
+  );
 
-        switch (dateRange) {
-            case 'week':
-                return isWithinInterval(date, { start: startOfWeek(now, { weekStartsOn: 1 }), end: now });
-            case 'month':
-                return isWithinInterval(date, { start: startOfMonth(now), end: now });
-            case 'quarter': {
-                const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-                return isWithinInterval(date, { start: quarterStart, end: now });
-            }
-            case 'year':
-                return date.getFullYear() === now.getFullYear();
-            default:
-                return true;
-        }
-    };
+  const outstandingReceivables = useMemo(
+    () =>
+      (invoices || [])
+        .filter((invoice: any) => matchesRevenueDateRange(invoice?.date, dateRange))
+        .filter((invoice: any) => !['cancelled', 'draft'].includes(String(invoice?.status || '').toLowerCase()))
+        .reduce((sum: number, invoice: any) => {
+          const total = Number(invoice?.totalAmount || invoice?.total || 0);
+          const paid = Number(invoice?.paidAmount || 0);
+          return sum + Math.max(0, total - paid);
+        }, 0),
+    [invoices, dateRange]
+  );
 
-    const stats = useMemo(() => {
-        // Filter data by date range
-        const filteredSales = sales.filter((s: any) => filterByDateRange(s.date));
-        const filteredInvoices = invoices.filter((i: any) => filterByDateRange(i.date));
-        const filteredExpenses = expenses.filter((e: any) => filterByDateRange(e.date));
-        const filteredPurchases = purchases.filter((p: any) => filterByDateRange(p.date));
-        const filteredPayments = customerPayments.filter((p: any) => filterByDateRange(p.date));
-        const gl = companyConfig?.glMapping || {};
-        const cogsAccount = gl.defaultCOGSAccount || '5000';
+  const netContribution = report.totals.profitMargin - operatingExpenses;
 
-        // Total Revenue (Sales + Invoices)
-        const totalRevenue = filteredSales.reduce((sum: number, s: any) => sum + (s.totalAmount || s.total || 0), 0) +
-                            filteredInvoices.reduce((sum: number, i: any) => sum + (i.totalAmount || 0), 0);
+  const kpis = [
+    {
+      label: 'Recognized Revenue',
+      value: formatCurrency(report.totals.revenue),
+      subtext: `${report.totals.transactionCount} posted transactions`,
+      icon: TrendingUp,
+      tone: 'emerald',
+    },
+    {
+      label: 'Material Cost',
+      value: formatCurrency(report.totals.materialCost),
+      subtext: 'Recovered from sales and examination',
+      icon: Layers3,
+      tone: 'slate',
+    },
+    {
+      label: 'Market Adjustments',
+      value: formatCurrency(report.totals.adjustmentTotal),
+      subtext: `${report.topAdjustments.length} tracked adjustment type(s)`,
+      icon: Coins,
+      tone: 'indigo',
+    },
+    {
+      label: 'Profit Margin',
+      value: formatCurrency(report.totals.profitMargin),
+      subtext: report.totals.revenue > 0
+        ? `${((report.totals.profitMargin / report.totals.revenue) * 100).toFixed(1)}% of revenue`
+        : 'No revenue in range',
+      icon: DollarSign,
+      tone: report.totals.profitMargin >= 0 ? 'blue' : 'rose',
+    },
+    {
+      label: 'Round Up / Down',
+      value: `${report.totals.roundingTotal >= 0 ? '+' : ''}${formatCurrency(report.totals.roundingTotal)}`,
+      subtext: 'Net rounding effect',
+      icon: Activity,
+      tone: report.totals.roundingTotal >= 0 ? 'blue' : 'rose',
+    },
+    {
+      label: 'Outstanding AR',
+      value: formatCurrency(outstandingReceivables),
+      subtext: 'Open invoice exposure',
+      icon: Wallet,
+      tone: 'amber',
+    },
+  ];
 
-        const cogsTotal = ledger
-            .filter((entry: any) => entry.debitAccountId === cogsAccount && filterByDateRange(entry.date))
-            .reduce((sum: number, entry: any) => sum + (entry.amount || 0), 0);
+  const toneClasses: Record<string, { icon: string; card: string; value: string }> = {
+    emerald: { icon: 'text-emerald-600 bg-emerald-50', card: 'border-emerald-100', value: 'text-emerald-700' },
+    slate: { icon: 'text-slate-600 bg-slate-100', card: 'border-slate-200', value: 'text-slate-900' },
+    indigo: { icon: 'text-indigo-600 bg-indigo-50', card: 'border-indigo-100', value: 'text-indigo-700' },
+    blue: { icon: 'text-blue-600 bg-blue-50', card: 'border-blue-100', value: 'text-blue-700' },
+    amber: { icon: 'text-amber-600 bg-amber-50', card: 'border-amber-100', value: 'text-amber-700' },
+    rose: { icon: 'text-rose-600 bg-rose-50', card: 'border-rose-100', value: 'text-rose-700' },
+  };
 
-        // Total Expenses
-        const totalExpenses = filteredExpenses.reduce((sum: number, e: any) => sum + (e.amount || 0), 0) + cogsTotal;
-
-        // Net Income
-        const netIncome = totalRevenue - totalExpenses;
-
-        // Accounts Receivable (unpaid invoices)
-        const accountsReceivable = invoices
-            .filter((i: any) => i.status !== 'Paid' && i.status !== 'Cancelled')
-            .reduce((sum: number, i: any) => sum + ((i.totalAmount || 0) - (i.paidAmount || 0)), 0);
-
-        // Accounts Payable (unpaid purchases)
-        const accountsPayable = purchases
-            .filter((p: any) => p.paymentStatus !== 'Paid' && p.status !== 'Cancelled')
-            .reduce((sum: number, p: any) => sum + ((p.total || p.totalAmount || 0) - (p.paidAmount || 0)), 0);
-
-        // Total Payments Collected
-        const paymentsCollected = filteredPayments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-
-        // Transaction counts
-        const salesCount = filteredSales.length;
-        const invoiceCount = filteredInvoices.length;
-
-        // Top customers by revenue
-        const customerRevenue: Record<string, number> = {};
-        [...filteredSales, ...filteredInvoices].forEach((t: any) => {
-            const name = t.customerName || 'Walk-in';
-            customerRevenue[name] = (customerRevenue[name] || 0) + (t.totalAmount || t.total || 0);
-        });
-
-        const topCustomers = Object.entries(customerRevenue)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([name, amount]) => ({ name, amount }));
-
-        // Revenue trend (last 7 days)
-        const trendData: { date: string; revenue: number; expenses: number }[] = [];
-        for (let i = 6; i >= 0; i--) {
-            const date = subDays(new Date(), i);
-            const dateStr = format(date, 'yyyy-MM-dd');
-            
-            const dayRevenue = [...sales, ...invoices]
-                .filter((t: any) => t.date.startsWith(dateStr))
-                .reduce((sum: number, t: any) => sum + (t.totalAmount || t.total || 0), 0);
-            
-            const dayExpenses = expenses
-                .filter((e: any) => e.date.startsWith(dateStr))
-                .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-            const dayCogs = ledger
-                .filter((entry: any) => entry.debitAccountId === cogsAccount && entry.date.startsWith(dateStr))
-                .reduce((sum: number, entry: any) => sum + (entry.amount || 0), 0);
-
-            trendData.push({
-                date: format(date, 'EEE'),
-                revenue: dayRevenue,
-                expenses: dayExpenses + dayCogs
-            });
-        }
-
-        // Payment method breakdown
-        const paymentMethods: Record<string, number> = {};
-        filteredSales.forEach((s: any) => {
-            const method = s.paymentMethod || 'Cash';
-            paymentMethods[method] = (paymentMethods[method] || 0) + (s.totalAmount || s.total || 0);
-        });
-
-        return {
-            totalRevenue,
-            totalExpenses,
-            cogsTotal,
-            netIncome,
-            accountsReceivable,
-            accountsPayable,
-            paymentsCollected,
-            salesCount,
-            invoiceCount,
-            topCustomers,
-            trendData,
-            paymentMethods
-        };
-    }, [sales, invoices, expenses, purchases, customerPayments, ledger, companyConfig, dateRange]);
-
-    return (
-        <div className="space-y-6 animate-fadeIn">
-             {/* Date Range Filter */}
-            <div className="flex flex-col gap-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Revenue Analysis</h2>
-                        <p className="text-slate-500 text-sm font-medium">Financial insights and performance metrics</p>
-                    </div>
-                    <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
-                        {(['week', 'month', 'quarter', 'year', 'all'] as const).map(range => (
-                            <button
-                                key={range}
-                                onClick={() => setDateRange(range)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${dateRange === range
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                                }`}
-                            >
-                                {range.charAt(0).toUpperCase() + range.slice(1)}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-
-            {/* Primary KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 tablet-auto-fit-250 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Total Revenue</p>
-                            <h3 className="text-2xl font-black text-emerald-600 mt-1 tabular-nums">{formatCurrency(stats.totalRevenue)}</h3>
-                            <p className="text-[11px] text-slate-500 mt-1 font-medium">{stats.salesCount + stats.invoiceCount} transactions</p>
-                        </div>
-                        <div className="p-3 bg-emerald-50 rounded-xl">
-                            <TrendingUp size={24} className="text-emerald-600" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Total Expenses</p>
-                            <h3 className="text-2xl font-black text-rose-600 mt-1 tabular-nums">{formatCurrency(stats.totalExpenses)}</h3>
-                            <p className="text-[11px] text-slate-500 mt-1 font-medium">Operating + COGS</p>
-                            <p className="text-[11px] text-slate-400 mt-1 font-medium">COGS: {formatCurrency(stats.cogsTotal)}</p>
-                        </div>
-                        <div className="p-3 bg-rose-50 rounded-xl">
-                            <TrendingDown size={24} className="text-rose-600" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Net Income</p>
-                            <h3 className={`text-2xl font-black mt-1 tabular-nums ${stats.netIncome >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
-                                {formatCurrency(stats.netIncome)}
-                            </h3>
-                            <p className="text-[11px] text-slate-500 mt-1 font-medium">
-                                {stats.netIncome >= 0 ? 'Profit' : 'Loss'}
-                            </p>
-                        </div>
-                        <div className={`p-3 rounded-xl ${stats.netIncome >= 0 ? 'bg-blue-50' : 'bg-rose-50'}`}>
-                            <DollarSign size={24} className={stats.netIncome >= 0 ? 'text-blue-600' : 'text-rose-600'} />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">Payments Collected</p>
-                            <h3 className="text-2xl font-black text-violet-600 mt-1 tabular-nums">{formatCurrency(stats.paymentsCollected)}</h3>
-                            <p className="text-[11px] text-slate-500 mt-1 font-medium">Cash inflow</p>
-                        </div>
-                        <div className="p-3 bg-violet-50 rounded-xl">
-                            <Wallet size={24} className="text-violet-600" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Secondary KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 tablet-auto-fit-250 gap-4">
-                <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-5 rounded-2xl shadow-lg text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold text-blue-200 tracking-widest uppercase">Accounts Receivable</p>
-                            <h3 className="text-2xl font-black mt-1 tabular-nums">{formatCurrency(stats.accountsReceivable)}</h3>
-                            <p className="text-[11px] text-blue-200 mt-1 font-medium">Outstanding invoices</p>
-                        </div>
-                        <div className="p-3 bg-white/20 rounded-xl">
-                            <Users size={24} />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-gradient-to-br from-amber-500 to-orange-500 p-5 rounded-2xl shadow-lg text-white">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold text-amber-200 tracking-widest uppercase">Accounts Payable</p>
-                            <h3 className="text-2xl font-black mt-1 tabular-nums">{formatCurrency(stats.accountsPayable)}</h3>
-                            <p className="text-[11px] text-amber-200 mt-1 font-medium">Outstanding bills</p>
-                        </div>
-                        <div className="p-3 bg-white/20 rounded-xl">
-                            <Building2 size={24} />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 tablet-auto-fit-280 tablet-auto-fit-reset gap-6">
-                {/* Revenue Trend Chart */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
-                        <Activity size={18} className="text-blue-500" />
-                        7-Day Revenue Trend
-                    </h3>
-                    <div style={{ width: '100%', height: 256, minHeight: 150 }}>
-                        <ResponsiveContainer width="100%" height="100%" minHeight={150} minWidth={0}>
-                            <AreaChart data={stats.trendData}>
-                                <defs>
-                                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${currency}${v >= 1000 ? (v/1000).toFixed(0) + 'k' : v}`} />
-                                <Tooltip 
-                                    formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                                    contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
-                                />
-                                <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} fill="url(#colorRevenue)" name="Revenue" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Top Customers */}
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
-                        <Users size={18} className="text-violet-500" />
-                        Top Customers
-                    </h3>
-                    <div className="space-y-3">
-                        {stats.topCustomers.map((customer, idx) => (
-                            <div key={customer.name} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xs font-bold">
-                                        {idx + 1}
-                                    </div>
-                                    <span className="font-semibold text-slate-700 text-sm">{customer.name}</span>
-                                </div>
-                                <span className="font-bold text-slate-900 tabular-nums text-sm">{formatCurrency(customer.amount)}</span>
-                            </div>
-                        ))}
-                        {stats.topCustomers.length === 0 && (
-                            <div className="text-center text-slate-400 py-8 text-sm">No customer data available</div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Payment Methods Breakdown */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
-                    <CreditCard size={18} className="text-blue-500" />
-                    Revenue by Payment Method
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 tablet-auto-fit-180 gap-4">
-                    {Object.entries(stats.paymentMethods)
-                        .sort((a, b) => b[1] - a[1])
-                        .map(([method, amount]) => (
-                            <div key={method} className="p-4 bg-slate-50 rounded-xl text-center">
-                                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{method}</p>
-                                <p className="text-lg font-bold text-slate-900 mt-1 tabular-nums">{formatCurrency(amount)}</p>
-                                <p className="text-[10px] text-slate-400 mt-1">
-                                    {stats.totalRevenue > 0 ? ((amount / stats.totalRevenue) * 100).toFixed(1) : 0}%
-                                </p>
-                            </div>
-                        ))}
-                </div>
-            </div>
+  return (
+    <div className="space-y-6 animate-fadeIn">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Revenue Analysis</h2>
+            <p className="text-slate-500 text-sm font-medium">Unified tracking for sales, order-form invoices, and examination billing.</p>
+          </div>
+          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+            {(['week', 'month', 'quarter', 'year', 'all'] as const).map((range) => (
+              <button
+                key={range}
+                onClick={() => setDateRange(range)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  dateRange === range ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {range.charAt(0).toUpperCase() + range.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-    );
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {kpis.map((kpi) => {
+            const Icon = kpi.icon;
+            const tone = toneClasses[kpi.tone];
+            return (
+              <div key={kpi.label} className={`bg-white p-5 rounded-2xl border shadow-sm ${tone.card}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-400 tracking-widest uppercase">{kpi.label}</p>
+                    <h3 className={`text-2xl font-black mt-1 tabular-nums ${tone.value}`}>{kpi.value}</h3>
+                    <p className="text-[11px] text-slate-500 mt-1 font-medium">{kpi.subtext}</p>
+                  </div>
+                  <div className={`p-3 rounded-xl ${tone.icon}`}>
+                    <Icon size={22} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-5 rounded-2xl shadow-lg text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold text-slate-300 tracking-widest uppercase">Operating Expenses</p>
+              <h3 className="text-2xl font-black mt-1 tabular-nums">{formatCurrency(operatingExpenses)}</h3>
+              <p className="text-[11px] text-slate-300 mt-1 font-medium">Operating expenses inside the selected window</p>
+            </div>
+            <div className="p-3 bg-white/10 rounded-xl">
+              <TrendingDown size={22} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-5 rounded-2xl shadow-lg text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold text-blue-100 tracking-widest uppercase">Net Contribution</p>
+              <h3 className="text-2xl font-black mt-1 tabular-nums">{formatCurrency(netContribution)}</h3>
+              <p className="text-[11px] text-blue-100 mt-1 font-medium">Profit margin less operating expenses</p>
+            </div>
+            <div className="p-3 bg-white/15 rounded-xl">
+              <Receipt size={22} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+            <TrendingUp size={18} className="text-emerald-500" />
+            7-Day Revenue vs Margin Trend
+          </h3>
+          <div style={{ width: '100%', height: 280, minHeight: 180 }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={180} minWidth={0}>
+              <AreaChart data={report.trend}>
+                <defs>
+                  <linearGradient id="trendRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.28} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="trendMargin" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.24} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(value) => `${currency}${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`}
+                />
+                <Tooltip
+                  formatter={(value: number) => [formatCurrency(value), '']}
+                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+                />
+                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2} fill="url(#trendRevenue)" />
+                <Area type="monotone" dataKey="profitMargin" name="Profit Margin" stroke="#2563eb" strokeWidth={2} fill="url(#trendMargin)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+            <Users size={18} className="text-violet-500" />
+            Top Customers
+          </h3>
+          <div className="space-y-3">
+            {report.customers.slice(0, 6).map((customer, index) => (
+              <div key={`${customer.customerName}-${index}`} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                <div>
+                  <p className="font-semibold text-slate-700 text-sm">{customer.customerName}</p>
+                  <p className="text-[11px] text-slate-500">{customer.transactionCount} transaction(s)</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-slate-900 tabular-nums text-sm">{formatCurrency(customer.revenue)}</p>
+                  <p className="text-[11px] text-emerald-600 font-medium">{formatCurrency(customer.profitMargin)} margin</p>
+                </div>
+              </div>
+            ))}
+            {report.customers.length === 0 && (
+              <div className="text-center text-slate-400 py-10 text-sm">No revenue records available for this range.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+            <Activity size={18} className="text-blue-500" />
+            Revenue by Source
+          </h3>
+          <div style={{ width: '100%', height: 250, minHeight: 180 }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={180} minWidth={0}>
+              <BarChart data={report.sources.map((source) => ({
+                ...source,
+                label: getRevenueSourceLabel(source.source),
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(value) => `${currency}${value >= 1000 ? `${(value / 1000).toFixed(0)}k` : value}`}
+                />
+                <Tooltip
+                  formatter={(value: number) => [formatCurrency(value), '']}
+                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+                />
+                <Bar dataKey="revenue" name="Revenue" fill="#3b82f6" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="profitMargin" name="Profit Margin" fill="#10b981" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+            <Coins size={18} className="text-indigo-500" />
+            Adjustment Ledger
+          </h3>
+          <div className="space-y-3">
+            {report.topAdjustments.slice(0, 6).map((adjustment) => (
+              <div key={`${adjustment.source}-${adjustment.adjustmentName}`} className="flex items-center justify-between p-3 bg-indigo-50/40 rounded-xl border border-indigo-100/60">
+                <div>
+                  <p className="font-semibold text-slate-700 text-sm">{adjustment.adjustmentName}</p>
+                  <p className="text-[11px] text-slate-500">
+                    {getRevenueSourceLabel(adjustment.source)} · {adjustment.transactionCount} transaction(s)
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold text-indigo-700 tabular-nums text-sm">{formatCurrency(adjustment.totalAmount)}</p>
+                  <p className="text-[11px] text-slate-500">{adjustment.applicationCount} application(s)</p>
+                </div>
+              </div>
+            ))}
+            {report.topAdjustments.length === 0 && (
+              <div className="text-center text-slate-400 py-10 text-sm">No adjustment entries captured in this range.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+          <Receipt size={18} className="text-slate-500" />
+          Source Summary
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px] tracking-widest uppercase">
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3 text-right">Transactions</th>
+                <th className="px-4 py-3 text-right">Revenue</th>
+                <th className="px-4 py-3 text-right">Adjustments</th>
+                <th className="px-4 py-3 text-right">Profit Margin</th>
+                <th className="px-4 py-3 text-right">Rounding</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {report.sources.map((source) => (
+                <tr key={source.source} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 font-semibold text-slate-700">{getRevenueSourceLabel(source.source)}</td>
+                  <td className="px-4 py-3 text-right text-slate-500 tabular-nums">{source.transactionCount}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-900 tabular-nums">{formatCurrency(source.revenue)}</td>
+                  <td className="px-4 py-3 text-right text-indigo-700 font-semibold tabular-nums">{formatCurrency(source.adjustmentTotal)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-700 font-semibold tabular-nums">{formatCurrency(source.profitMargin)}</td>
+                  <td className={`px-4 py-3 text-right font-semibold tabular-nums ${source.roundingTotal >= 0 ? 'text-blue-700' : 'text-rose-600'}`}>
+                    {source.roundingTotal >= 0 ? '+' : ''}
+                    {formatCurrency(source.roundingTotal)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-4 flex items-center gap-2">
+          <Receipt size={18} className="text-slate-500" />
+          Recent Revenue Transactions
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px] tracking-widest uppercase">
+                <th className="px-4 py-3">Document</th>
+                <th className="px-4 py-3">Source</th>
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3 text-right">Revenue</th>
+                <th className="px-4 py-3 text-right">Adjustments</th>
+                <th className="px-4 py-3 text-right">Profit Margin</th>
+                <th className="px-4 py-3 text-right">Rounding</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {report.transactions.slice(0, 8).map((transaction) => (
+                <tr key={transaction.key} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-slate-700">{transaction.transactionNumber}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {new Date(transaction.date).toLocaleDateString()}
+                      {transaction.subAccountName ? ` · ${transaction.subAccountName}` : ''}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">{getRevenueSourceLabel(transaction.source)}</td>
+                  <td className="px-4 py-3 text-slate-700">{transaction.customerName}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-slate-900 tabular-nums">{formatCurrency(transaction.revenue)}</td>
+                  <td className="px-4 py-3 text-right text-indigo-700 font-semibold tabular-nums">{formatCurrency(transaction.adjustmentTotal)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-700 font-semibold tabular-nums">{formatCurrency(transaction.profitMargin)}</td>
+                  <td className={`px-4 py-3 text-right font-semibold tabular-nums ${transaction.roundingTotal >= 0 ? 'text-blue-700' : 'text-rose-600'}`}>
+                    {transaction.roundingTotal >= 0 ? '+' : ''}
+                    {formatCurrency(transaction.roundingTotal)}
+                  </td>
+                </tr>
+              ))}
+              {report.transactions.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                    No revenue transactions found for the selected range.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default RevenueDashboard;

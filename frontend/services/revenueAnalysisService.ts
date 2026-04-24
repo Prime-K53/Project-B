@@ -1,4 +1,4 @@
-import { attachPricingBreakdown } from '../utils/pricingBreakdown';
+import { attachPricingBreakdown, getMarketAdjustmentSnapshots } from '../utils/pricingBreakdown';
 
 export type RevenueSource = 'POS' | 'ORDER_FORM' | 'EXAMINATION';
 
@@ -31,6 +31,7 @@ export interface RevenueAnalysisLine {
   date: string;
   status: string;
   customerName: string;
+  subAccountName: string;
   itemId: string;
   itemName: string;
   quantity: number;
@@ -53,6 +54,7 @@ export interface RevenueAnalysisTransaction {
   date: string;
   status: string;
   customerName: string;
+  subAccountName: string;
   lineCount: number;
   quantity: number;
   revenue: number;
@@ -132,6 +134,21 @@ const isRecognizedSale = (sale: any) => {
   return status === 'paid' || status === 'completed' || status === 'partial';
 };
 
+const isPosMirrorInvoice = (invoice: any, recognizedSaleIds: Set<string>) => {
+  const noteText = String(invoice?.notes || '').trim().toLowerCase();
+  const origin = String(invoice?.originModule || invoice?.origin_module || invoice?.source || '').trim().toLowerCase();
+  const conversionType = String(invoice?.conversionDetails?.sourceType || '').trim().toLowerCase();
+  const reference = String(invoice?.reference || '').trim();
+  const invoiceId = String(invoice?.id || '').trim();
+
+  return origin === 'pos'
+    || conversionType === 'sale'
+    || noteText.includes('pos sale')
+    || noteText.includes('source: pos')
+    || (reference.length > 0 && recognizedSaleIds.has(reference))
+    || (invoiceId.length > 0 && recognizedSaleIds.has(invoiceId));
+};
+
 export const isExaminationInvoice = (invoice: any) => {
   const origin = String(invoice?.originModule || invoice?.origin_module || '').trim().toLowerCase();
   const documentTitle = String(invoice?.documentTitle || invoice?.document_title || '').trim().toLowerCase();
@@ -172,7 +189,7 @@ const buildAdjustmentLines = (
   quantity: number,
   targetTotal: number
 ): Array<{ name: string; amount: number }> => {
-  const baseLines = (Array.isArray(snapshots) ? snapshots : [])
+  const baseLines = getMarketAdjustmentSnapshots(Array.isArray(snapshots) ? snapshots : [])
     .map((snapshot: any) => ({
       name: String(snapshot?.name || snapshot?.adjustmentName || 'Adjustment'),
       amount: roundMoney(toNumber(snapshot?.calculatedAmount ?? snapshot?.amount, 0) * quantity)
@@ -257,6 +274,7 @@ const createNormalizedLine = ({
     date: toDateKey(transaction?.date || transaction?.orderDate || transaction?.createdAt),
     status: String(transaction?.status || ''),
     customerName: String(transaction?.customerName || 'Walk-in'),
+    subAccountName: String(transaction?.subAccountName || transaction?.sub_account_name || '').trim(),
     itemId: String(normalizedItem?.itemId || normalizedItem?.productId || normalizedItem?.id || `ITEM-${index + 1}`),
     itemName: String(
       normalizedItem?.productName
@@ -359,6 +377,7 @@ const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] 
       date: toDateKey(invoice?.date || batch?.updated_at || batch?.created_at),
       status: String(invoice?.status || batch?.status || ''),
       customerName: String(invoice?.customerName || batch?.school_name || batch?.schoolName || 'School'),
+      subAccountName: String(invoice?.subAccountName || invoice?.sub_account_name || batch?.subAccountName || batch?.sub_account_name || '').trim(),
       itemId: String(cls?.id || `EXAM-CLASS-${index + 1}`),
       itemName: String(cls?.class_name || `Class ${index + 1}`),
       quantity: learners,
@@ -402,6 +421,7 @@ const aggregateTransactions = (lines: RevenueAnalysisLine[]): RevenueAnalysisTra
       date: line.date,
       status: line.status,
       customerName: line.customerName,
+      subAccountName: line.subAccountName,
       lineCount: 1,
       quantity: line.quantity,
       revenue: line.revenue,
@@ -534,16 +554,21 @@ export const buildRevenueAnalysisDataset = ({
   );
 
   const orderKeysCoveredByInvoices = new Set<string>();
+  const recognizedSales = (Array.isArray(sales) ? sales : []).filter(isRecognizedSale);
+  const recognizedSaleIds = new Set<string>(
+    recognizedSales
+      .map((sale: any) => String(sale?.id || '').trim())
+      .filter(Boolean)
+  );
+
   (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
-    if (isExaminationInvoice(invoice)) return;
+    if (isExaminationInvoice(invoice) || isPosMirrorInvoice(invoice, recognizedSaleIds)) return;
     extractOrderReferenceKeys(invoice).forEach((key) => orderKeysCoveredByInvoices.add(key));
   });
 
   const lines: RevenueAnalysisLine[] = [];
 
-  (Array.isArray(sales) ? sales : [])
-    .filter(isRecognizedSale)
-    .forEach((sale: any) => {
+  recognizedSales.forEach((sale: any) => {
       lines.push(...normalizeGenericTransaction(sale, 'POS', 'Sale'));
     });
 
@@ -557,6 +582,10 @@ export const buildRevenueAnalysisDataset = ({
       ).trim();
       const batch = batchMap.get(batchId);
       lines.push(...buildExaminationLines(invoice, batch));
+      return;
+    }
+
+    if (isPosMirrorInvoice(invoice, recognizedSaleIds)) {
       return;
     }
 
@@ -578,7 +607,13 @@ export const buildRevenueAnalysisDataset = ({
     }, 'ORDER_FORM', 'Order'));
   });
 
-  const cleanedLines = lines.filter((line) => {
+  return buildRevenueAnalysisDatasetFromLines(lines);
+};
+
+export const buildRevenueAnalysisDatasetFromLines = (
+  lines: RevenueAnalysisLine[] = []
+): RevenueAnalysisDataset => {
+  const cleanedLines = (Array.isArray(lines) ? lines : []).filter((line) => {
     return Math.abs(line.revenue) > 0.0001
       || Math.abs(line.materialCost) > 0.0001
       || Math.abs(line.adjustmentTotal) > 0.0001
@@ -596,4 +631,3 @@ export const buildRevenueAnalysisDataset = ({
 };
 
 export const getRevenueSourceLabel = sourceLabel;
-
