@@ -886,15 +886,32 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
   const handleProcessRefund = async (saleId: string, items: { itemId: string, qty: number }[], refundAccountId?: string) => {
     try {
+      const sale = sales.find(entry => entry.id === saleId);
+      if (!sale) throw new Error('Sale not found');
+
+      let calculatedRefundAmount = 0;
+      const refundItems = items.map(item => {
+        const saleItem = (sale.items || []).find(entry => entry.id === item.itemId);
+        const itemPrice = saleItem?.price || 0;
+        calculatedRefundAmount += itemPrice * item.qty;
+
+        return {
+          itemId: item.itemId,
+          quantity: item.qty,
+          reason: 'POS Return',
+          condition: 'Sellable' as const
+        };
+      });
+
       await transactionService.processRefund({
         saleId,
-        refundItems: items.map(i => ({ itemId: i.itemId, quantity: i.qty, reason: 'POS Return', condition: 'Sellable' as const })),
+        items: refundItems,
         reason: 'POS Return',
         refundMethod: 'Cash' as any,
         accountId: refundAccountId || '1000', // Default to Cash Account if not specified
         date: new Date().toISOString(),
-        id: generateNextId('refund', [], companyConfig),
-        refundAmount: 0, // Should be calculated
+        id: generateNextId('refund', sales, companyConfig),
+        refundAmount: calculatedRefundAmount,
         restock: true
       });
 

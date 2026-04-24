@@ -4,6 +4,7 @@ import { Layers, ShoppingCart, CheckSquare, Square, Truck, TrendingDown, Package
 import { useData } from '../../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 import { OfflineImage } from '../../components/OfflineImage';
+import { generateNextId } from '../../utils/helpers';
 
 const MRP: React.FC = () => {
   const { 
@@ -96,11 +97,12 @@ const MRP: React.FC = () => {
       );
   };
 
-  const handleGeneratePOs = () => {
+  const handleGeneratePOs = async () => {
       if (selectedItemIds.length === 0) return;
 
       const itemsToOrder = mrpReport.filter(item => selectedItemIds.includes(item.id));
       const ordersBySupplier: Record<string, typeof itemsToOrder> = {};
+      const stagedPurchases = [...purchases];
       
       itemsToOrder.forEach(item => {
           const supId = item.preferredSupplierId || 'SUP-GENERIC';
@@ -109,7 +111,7 @@ const MRP: React.FC = () => {
       });
 
       let ordersCreated = 0;
-      Object.entries(ordersBySupplier).forEach(([supId, items]) => {
+      for (const [supId, items] of Object.entries(ordersBySupplier)) {
           const poItems = items.map(i => {
               const invItem = inventory.find(inv => inv.id === i.id);
               return {
@@ -121,8 +123,8 @@ const MRP: React.FC = () => {
               };
           });
 
-          addPurchase({
-              id: `PO-MRP-${Date.now().toString().slice(-4)}-${ordersCreated}`,
+          const nextPurchase = {
+              id: generateNextId('PO', stagedPurchases, companyConfig),
               date: new Date().toISOString(),
               supplierId: supId,
               items: poItems,
@@ -131,9 +133,12 @@ const MRP: React.FC = () => {
               paymentStatus: 'Unpaid',
               paidAmount: 0,
               notes: 'Auto-generated via MRP recursive demand analysis.'
-          });
+          };
+
+          stagedPurchases.push(nextPurchase);
+          await addPurchase(nextPurchase);
           ordersCreated++;
-      });
+      }
 
       notify(`${ordersCreated} Procurement Drafts generated successfully.`, 'success');
       setSelectedItemIds([]);

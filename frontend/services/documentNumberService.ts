@@ -1,6 +1,11 @@
 import { CompanyConfig, NumberingRule } from '../types';
 import { dbService } from './db';
-import { resolveBuiltInDocumentPrefix, resolveEffectiveNumberingRule } from '../utils/numbering';
+import {
+  extractConfiguredDocumentNumberValue,
+  formatConfiguredDocumentNumber,
+  resolveBuiltInDocumentPrefix,
+  resolveEffectiveNumberingRule
+} from '../utils/numbering';
 
 export type DocumentNumberSeriesKey = 'sales_invoice' | 'examination_batch';
 
@@ -69,8 +74,6 @@ const getCompanyConfig = (): CompanyConfig | null => {
   }
 };
 
-const escapeRegex = (value: string) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 const resolveCompanyRule = (
   seriesKey: DocumentNumberSeriesKey,
   companyConfig?: CompanyConfig | null
@@ -87,46 +90,18 @@ const resolveCompanyRule = (
   return null;
 };
 
-const buildSeparator = (prefix: string) => {
-  if (!prefix) return '';
-  return /[-/\s]$/.test(prefix) ? '' : '-';
-};
-
 export const formatDocumentNumber = (
-  rule: Pick<NumberingRule, 'prefix' | 'padding' | 'suffix'>,
+  rule: Pick<NumberingRule, 'prefix' | 'padding' | 'extension' | 'suffix'>,
   numericValue: number
 ) => {
-  const padded = String(toPositiveInteger(numericValue, 1)).padStart(toPositiveInteger(rule.padding, 4), '0');
-  const prefix = String(rule.prefix || '');
-  const suffix = String(rule.suffix || '');
-  return `${prefix}${buildSeparator(prefix)}${padded}${suffix}`;
+  return formatConfiguredDocumentNumber(rule, numericValue);
 };
 
 export const extractDocumentNumberValue = (
   documentNumber: string,
-  rule: Pick<NumberingRule, 'prefix' | 'suffix'> | null | undefined
+  rule: Pick<NumberingRule, 'prefix' | 'suffix'> | Partial<Pick<NumberingRule, 'prefix' | 'suffix' | 'extension'>> | null | undefined
 ) => {
-  const raw = String(documentNumber || '').trim();
-  if (!raw) return null;
-
-  const prefix = String(rule?.prefix || '').trim();
-  if (prefix) {
-    const separatorPattern = /[-/\s]$/.test(prefix) ? '' : '[-/\\s]?';
-    const prefixPattern = new RegExp(`^${escapeRegex(prefix)}${separatorPattern}`, 'i');
-    if (!prefixPattern.test(raw)) {
-      return null;
-    }
-  }
-
-  const suffix = String(rule?.suffix || '');
-  const withoutSuffix = suffix && raw.endsWith(suffix)
-    ? raw.slice(0, raw.length - suffix.length)
-    : raw;
-  const match = withoutSuffix.match(/(\d+)$/);
-  if (!match) return null;
-
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
+  return extractConfiguredDocumentNumberValue(documentNumber, rule);
 };
 
 const normalizeRule = (
@@ -141,6 +116,7 @@ const normalizeRule = (
   return {
     prefix: String(source?.prefix ?? defaultPrefix),
     padding: toPositiveInteger(source?.padding, 4),
+    extension: String(source?.extension || '').trim(),
     startNumber,
     currentNumber: Math.max(currentNumber, startNumber),
     suffix: String(source?.suffix || ''),

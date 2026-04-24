@@ -1,6 +1,8 @@
 
 import { Item, CompanyConfig } from '../types';
 import {
+  extractConfiguredDocumentNumberValue,
+  formatConfiguredDocumentNumber,
   normalizeNumberingKey,
   resolveBuiltInDocumentPrefix,
   resolveEffectiveNumberingRule,
@@ -39,31 +41,52 @@ const resolveNumberingPadding = (type: string, config?: CompanyConfig) => {
 
 export const assertInvoiceNumberFormat = (id: string, config?: CompanyConfig, type: string = 'invoice') => {
   const padding = resolveNumberingPadding(type, config);
-  const match = String(id || '').match(/(\d+)$/);
-  if (!match) {
+  const { effectiveRule } = resolveNumberingRules(type, config);
+  const numericValue = extractConfiguredDocumentNumberValue(String(id || ''), {
+    prefix: effectiveRule?.prefix || resolveBuiltInDocumentPrefix(type),
+    suffix: effectiveRule?.suffix || ''
+  });
+
+  if (numericValue === null) {
     throw new Error(`Invoice number must end with ${padding} digits.`);
   }
-  if (match[1].length !== padding) {
+
+  const numericText = String(id || '')
+    .trim()
+    .match(/(\d+)(?!.*\d)/)?.[1];
+
+  if (!numericText || numericText.length !== padding) {
     throw new Error(`Invoice number must be ${padding} digits.`);
   }
   return true;
 };
 
 export const generateNextId = (type: string, collection: any[], config?: CompanyConfig) => {
+  const { effectiveRule } = resolveNumberingRules(type, config);
+  const padding = resolveNumberingPadding(type, config);
   let prefix = resolveBuiltInDocumentPrefix(type) || type;
   let startNumber = 1;
   let resetInterval = 'Never';
-  const { effectiveRule } = resolveNumberingRules(type, config);
-  const padding = resolveNumberingPadding(type, config);
+  let extension = '';
+  let suffix = '';
 
   if (effectiveRule) {
     prefix = effectiveRule.prefix || prefix;
     startNumber = effectiveRule.startNumber || 1;
     resetInterval = effectiveRule.resetInterval || 'Never';
+    extension = effectiveRule.extension || '';
+    suffix = effectiveRule.suffix || '';
   }
 
+  const activeRule = {
+    prefix,
+    padding,
+    extension,
+    suffix
+  };
+
   if (!collection || collection.length === 0) {
-    const nextId = `${prefix}-${String(startNumber).padStart(padding, '0')}`;
+    const nextId = formatConfiguredDocumentNumber(activeRule, startNumber);
     if (isInvoiceNumberingType(type)) {
       assertInvoiceNumberFormat(nextId, config, type);
     }
@@ -77,6 +100,11 @@ export const generateNextId = (type: string, collection: any[], config?: Company
     filteredCollection = collection.filter(item => {
       if (!item.date) return false;
       const itemDate = new Date(item.date);
+      if (resetInterval === 'Daily') {
+        return itemDate.getDate() === now.getDate()
+          && itemDate.getMonth() === now.getMonth()
+          && itemDate.getFullYear() === now.getFullYear();
+      }
       if (resetInterval === 'Monthly') {
         return itemDate.getMonth() === now.getMonth() && itemDate.getFullYear() === now.getFullYear();
       }
@@ -88,7 +116,7 @@ export const generateNextId = (type: string, collection: any[], config?: Company
   }
 
   if (filteredCollection.length === 0) {
-    const nextId = `${prefix}-${String(startNumber).padStart(padding, '0')}`;
+    const nextId = formatConfiguredDocumentNumber(activeRule, startNumber);
     if (isInvoiceNumberingType(type)) {
       assertInvoiceNumberFormat(nextId, config, type);
     }
@@ -97,17 +125,14 @@ export const generateNextId = (type: string, collection: any[], config?: Company
 
   const maxId = filteredCollection.reduce((max, item) => {
     if (!item.id) return max;
-    // Handle different ID formats
     if (typeof item.id !== 'string') return max;
-    
-    // Extract the numeric part from the end of the ID
-    const match = item.id.match(/(\d+)$/);
-    const num = match ? parseInt(match[1]) : 0;
-    return !isNaN(num) ? Math.max(max, num) : max;
+
+    const num = extractConfiguredDocumentNumberValue(item.id, activeRule);
+    return num !== null ? Math.max(max, num) : max;
   }, 0);
 
   const nextNum = Math.max(maxId + 1, startNumber);
-  const nextId = `${prefix}-${String(nextNum).padStart(padding, '0')}`;
+  const nextId = formatConfiguredDocumentNumber(activeRule, nextNum);
   if (isInvoiceNumberingType(type)) {
     assertInvoiceNumberFormat(nextId, config, type);
   }

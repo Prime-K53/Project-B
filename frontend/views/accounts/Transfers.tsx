@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
 import { exportToCSV } from '../../services/excelService';
+import { generateNextId } from '../../utils/helpers';
 
 const Transfers: React.FC = () => {
   const { transfers, executeTransfer } = useFinance();
@@ -160,7 +161,7 @@ const Transfers: React.FC = () => {
     }
     
     try {
-      const transferId = `TRF-${Date.now()}`;
+      const transferId = generateNextId('TRF', transfers, companyConfig);
       const reference = formData.reference || transferId;
       const newTransfer: Transfer = {
         id: transferId,

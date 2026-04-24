@@ -10,9 +10,10 @@ import { PurchaseHistory } from './purchases/components/PurchaseHistory';
 import PurchaseOrderDetail from './purchases/components/PurchaseOrderDetail';
 import { SupplierPaymentModal } from './purchases/components/SupplierPaymentModal';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { generateNextId } from '../utils/helpers';
 
 const Purchases: React.FC = () => {
-  const { suppliers, inventory, addPurchase, purchases, receivePurchase, updatePurchase, addExpense, notify, deleteItem, refreshAllData } = useData();
+  const { suppliers, inventory, addPurchase, purchases, receivePurchase, updatePurchase, addExpense, notify, deleteItem, refreshAllData, companyConfig } = useData();
   const { recordSupplierPayment } = useFinance();
 
   // 5-minute poll + focus refresh
@@ -45,8 +46,9 @@ const Purchases: React.FC = () => {
   }, [location.state]);
   
   const handleCreateOrder = (data: { supplierId: string, items: any[], reference: string, dueDate: string, date: string }) => {
+    const purchaseId = generateNextId('PO', purchases, companyConfig);
     addPurchase({
-      id: 'BILL-' + Math.floor(Math.random() * 10000),
+      id: purchaseId,
       date: data.date,
       dueDate: data.dueDate,
       supplierId: data.supplierId,
@@ -148,7 +150,7 @@ const Purchases: React.FC = () => {
       });
 
       const totalCost = combinedItems.reduce((sum, i) => sum + (i.quantity * i.cost), 0);
-      const newId = `BILL-MERGED-${Date.now()}`;
+      const newId = generateNextId('PO', purchases, companyConfig);
 
       // Create New PO
       addPurchase({

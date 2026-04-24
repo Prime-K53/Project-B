@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { WorkOrder, SubcontractOrder } from '../../types';
+import { generateNextId } from '../../utils/helpers';
 
 const Subcontracting: React.FC = () => {
     const { workOrders, companyConfig, notify, updateWorkOrder, subcontractOrders, addSubcontractOrder, updateSubcontractOrder, deleteSubcontractOrder, purchases } = useData();
@@ -41,8 +42,9 @@ const Subcontracting: React.FC = () => {
     const handleCreateSubOrder = async () => {
         if (!selectedWoId || !selectedSupId) return;
 
+        const newOrderId = generateNextId('SUB', subcontractOrders, companyConfig);
         const newOrder: SubcontractOrder = {
-            id: `SUB-${Date.now()}`,
+            id: newOrderId,
             workOrderId: selectedWoId,
             supplierId: selectedSupId,
             operationName: opName,

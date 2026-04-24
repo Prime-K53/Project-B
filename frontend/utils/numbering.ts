@@ -73,6 +73,13 @@ const toPositiveInteger = (value: unknown, fallback: number) => {
   return Math.max(1, Math.floor(parsed));
 };
 
+const escapeRegex = (value: string) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildPrefixSeparator = (prefix: string) => {
+  if (!prefix) return '';
+  return /[-/\s]$/.test(prefix) ? '' : '-';
+};
+
 const normalizeResetInterval = (
   value: unknown,
   fallback: NonNullable<NumberingRule['resetInterval']> = DEFAULT_RESET_INTERVAL
@@ -234,12 +241,63 @@ export const formatNumberingPreview = (
 ) => {
   const normalizedRule = normalizeSharedNumberingRule(rule);
   const prefix = resolveBuiltInDocumentPrefix(type);
-  const padded = String(normalizedRule.startNumber).padStart(normalizedRule.padding, '0');
-  const extension = String(normalizedRule.extension || '');
-  const suffix = String(normalizedRule.suffix || '');
-  
-  const prefixSeparator = prefix && !/[-/\s]$/.test(prefix) ? '-' : '';
+  return formatConfiguredDocumentNumber({
+    ...normalizedRule,
+    prefix
+  }, normalizedRule.startNumber);
+};
+
+export const formatConfiguredDocumentNumber = (
+  rule: Pick<NumberingRule, 'prefix' | 'padding' | 'extension' | 'suffix'>,
+  numericValue: number
+) => {
+  const padded = String(toPositiveInteger(numericValue, DEFAULT_START_NUMBER)).padStart(
+    toPositiveInteger(rule.padding, DEFAULT_PADDING),
+    '0'
+  );
+  const prefix = String(rule.prefix || '').trim();
+  const extension = String(rule.extension || '').trim();
+  const suffix = String(rule.suffix || '');
+  const prefixSeparator = buildPrefixSeparator(prefix);
   const extensionPart = extension ? `${extension}/` : '';
-  
   return `${prefix}${prefixSeparator}${extensionPart}${padded}${suffix}`;
+};
+
+export const extractConfiguredDocumentNumberValue = (
+  documentNumber: string,
+  rule: Pick<NumberingRule, 'prefix' | 'suffix'> | Partial<Pick<NumberingRule, 'prefix' | 'suffix' | 'extension'>> | null | undefined
+) => {
+  const raw = String(documentNumber || '').trim();
+  if (!raw) return null;
+
+  const prefix = String(rule?.prefix || '').trim();
+  let remainder = raw;
+
+  if (prefix) {
+    const separatorPattern = /[-/\s]$/.test(prefix) ? '' : '[-/\\s]?';
+    const prefixPattern = new RegExp(`^${escapeRegex(prefix)}${separatorPattern}`, 'i');
+    const prefixMatch = raw.match(prefixPattern);
+    if (!prefixMatch) {
+      return null;
+    }
+    remainder = raw.slice(prefixMatch[0].length);
+  }
+
+  const suffix = String(rule?.suffix || '');
+  if (suffix) {
+    if (!remainder.endsWith(suffix)) {
+      return null;
+    }
+    remainder = remainder.slice(0, remainder.length - suffix.length);
+  }
+
+  // Ignore the optional branch extension when reading existing numbers so a pattern
+  // update does not accidentally reset a live sequence.
+  const match = remainder.match(/(\d+)(?!.*\d)/);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
 };

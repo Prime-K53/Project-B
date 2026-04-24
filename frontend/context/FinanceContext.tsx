@@ -444,27 +444,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addExpense = async (expense: Expense) => {
       try {
+        const expenseWithId: Expense = {
+          ...expense,
+          id: expense.id || generateNextId('EXP', financeStore.expenses, companyConfig)
+        };
         const isAdmin = user?.role === 'Admin';
-        const isAlreadyApproved = expense.status === 'Approved' || expense.status === 'Paid';
+        const isAlreadyApproved = expenseWithId.status === 'Approved' || expenseWithId.status === 'Paid';
         
         // Admin users or already approved expenses post directly to ledger
         if (isAdmin || isAlreadyApproved) {
-          await transactionService.addExpense(expense);
+          await transactionService.addExpense(expenseWithId);
           await financeStore.fetchFinanceData();
           
           addAuditLog({
               action: 'CREATE',
               entityType: 'Expense',
-              entityId: expense.id,
-              details: `Recorded expense${isAdmin ? ' (Admin - Direct Post)' : ' (Pre-approved)'}: ${expense.description} (${expense.amount})`,
-              newValue: expense
+              entityId: expenseWithId.id,
+              details: `Recorded expense${isAdmin ? ' (Admin - Direct Post)' : ' (Pre-approved)'}: ${expenseWithId.description} (${expenseWithId.amount})`,
+              newValue: expenseWithId
           });
           
           notify("Expense recorded and posted to ledger", "success");
         } else {
           // Non-admin users: Create expense with Pending Approval status
           const pendingExpense: Expense = {
-            ...expense,
+            ...expenseWithId,
             status: 'Pending Approval'
           };
           
@@ -475,8 +479,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           addAuditLog({
               action: 'CREATE',
               entityType: 'Expense',
-              entityId: expense.id,
-              details: `Recorded expense (Pending Approval): ${expense.description} (${expense.amount})`,
+              entityId: expenseWithId.id,
+              details: `Recorded expense (Pending Approval): ${expenseWithId.description} (${expenseWithId.amount})`,
               newValue: pendingExpense
           });
 
@@ -490,16 +494,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               await workflowService.startWorkflow(
                 workflowDef.id,
                 'expense',
-                expense.id,
+                expenseWithId.id,
                 user.id,
                 {
-                  amount: expense.amount,
-                  description: expense.description,
-                  category: expense.category,
-                  reference: expense.id,
+                  amount: expenseWithId.amount,
+                  description: expenseWithId.description,
+                  category: expenseWithId.category,
+                  reference: expenseWithId.id,
                   requesterName: user.username,
                 },
-                expense.amount > 1000 ? 'high' : 'normal'
+                expenseWithId.amount > 1000 ? 'high' : 'normal'
               );
               notify("Expense submitted for approval", "info");
             } else {
@@ -538,15 +542,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addIncome = async (income: Income) => {
       try {
-        await transactionService.addIncome(income);
+        const incomeWithId: Income = {
+          ...income,
+          id: income.id || generateNextId('INC', financeStore.income, companyConfig)
+        };
+
+        await transactionService.addIncome(incomeWithId);
         await financeStore.fetchFinanceData();
         
         addAuditLog({
             action: 'CREATE',
             entityType: 'Income',
-            entityId: income.id,
-            details: `Recorded income: ${income.description} (${income.amount})`,
-            newValue: income
+            entityId: incomeWithId.id,
+            details: `Recorded income: ${incomeWithId.description} (${incomeWithId.amount})`,
+            newValue: incomeWithId
         });
 
         notify("Income recorded successfully", "success");
@@ -636,7 +645,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const invoice = financeStore.invoices.find(i => i.id === invoiceId);
         if (!invoice) return null;
         
-        const newId = `DN-${Date.now()}`;
+        const newId = generateNextId('DN', financeStore.deliveryNotes, companyConfig);
         const note: DeliveryNote = {
             id: newId, 
             invoiceId: invoice.id, 
@@ -656,7 +665,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const executeTransfer = async (transfer: Transfer) => {
       try {
-        const id = transfer.id || `TRF-${Date.now()}`;
+        const id = transfer.id || generateNextId('TRF', financeStore.transfers, companyConfig);
         await transactionService.executeTransfer({ ...transfer, id });
         await financeStore.fetchFinanceData();
         
@@ -676,13 +685,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const addCheque = async (cheque: Cheque) => {
-      const newCheque = { ...cheque, id: cheque.id || `CHQ-${Date.now()}` };
+      const newCheque = {
+        ...cheque,
+        id: cheque.id || generateNextId('CHQ', financeStore.cheques, companyConfig)
+      };
       await financeStore.addCheque(newCheque);
   };
 
   const recordSupplierPayment = async (payment: SupplierPayment) => {
     try {
-      await financeStore.recordSupplierPayment(payment);
+      const paymentWithId: SupplierPayment = {
+        ...payment,
+        id: payment.id || generateNextId('SP', financeStore.supplierPayments, companyConfig)
+      };
+
+      await financeStore.recordSupplierPayment(paymentWithId);
       
       // Refresh related data
       await financeStore.fetchFinanceData();
@@ -694,8 +711,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       addAuditLog({
         action: 'CREATE',
         entityType: 'SupplierPayment',
-        entityId: payment.id || 'NEW',
-        details: `Recorded payment of ${payment.amount} to supplier ${payment.supplierId}`
+        entityId: paymentWithId.id,
+        details: `Recorded payment of ${paymentWithId.amount} to supplier ${paymentWithId.supplierId}`
       });
     } catch (err: any) {
       notify(`Failed to record payment: ${err.message}`, "error");

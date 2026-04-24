@@ -14,6 +14,7 @@ import { OfflineImage } from '../../../components/OfflineImage';
 import { generateAIResponse } from '../../../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import { AuditTimeline } from '../../shared/components/AuditTimeline';
+import { generateNextId } from '../../../utils/helpers';
 
 
 interface ProductDetailsProps {
@@ -244,7 +245,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
     const margin = netSellingPrice > 0 ? ((netSellingPrice - lastCost) / netSellingPrice) * 100 : 0;
 
     const handleCreatePO = () => {
-        const id = 'PO-' + Math.floor(Math.random() * 10000);
+        const id = generateNextId('PO', purchases, companyConfig);
         addPurchase({
             id,
             date: new Date().toISOString(),

@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { analyzeForecastingData } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
+import { generateNextId } from '../utils/helpers';
 
 const Forecasting: React.FC = () => {
   const { inventory, sales, batches, boms, companyConfig, purchases, addPurchase, invoices, expenses, ledger, accounts, notify, refreshAllData } = useData();
@@ -175,7 +176,7 @@ const Forecasting: React.FC = () => {
   // --- Handlers ---
   const handleCreatePO = (item: Item) => {
       // Quick PO creation logic
-      const id = 'PO-' + Math.floor(Math.random() * 10000);
+      const id = generateNextId('PO', purchases, companyConfig);
       addPurchase({
           id,
           date: new Date().toISOString(),

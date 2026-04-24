@@ -27,7 +27,7 @@ export const SupplierPaymentModal: React.FC<SupplierPaymentModalProps> = ({ purc
         const selectedAccount = DEFAULT_ACCOUNTS.find(a => a.id === selectedAccountId);
         
         const payment: SupplierPayment = {
-            id: `SPAY-${Date.now()}`,
+            id: '',
             date: new Date().toISOString(),
             supplierId: purchase.supplierId,
             amount: paymentAmount,

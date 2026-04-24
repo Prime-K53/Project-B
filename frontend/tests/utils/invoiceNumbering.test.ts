@@ -8,7 +8,8 @@ const buildSharedConfig = (padding: number): CompanyConfig => ({
       shared: {
         prefix: '',
         startNumber: 1,
-        padding
+        padding,
+        resetInterval: 'Never'
       }
     }
   }
@@ -20,7 +21,8 @@ const buildLegacyInvoiceConfig = (padding: number): CompanyConfig => ({
       invoice: {
         prefix: 'INV',
         startNumber: 1,
-        padding
+        padding,
+        resetInterval: 'Never'
       }
     }
   }
@@ -39,6 +41,45 @@ describe('invoice numbering padding', () => {
     const config = buildSharedConfig(3);
     expect(generateNextId('quotation', [], config)).toBe('QTN-001');
     expect(generateNextId('customer', [], config)).toBe('CUST-001');
+  });
+
+  it('includes the configured global extension in generated numbers', () => {
+    const config = {
+      transactionSettings: {
+        numbering: {
+          shared: {
+            prefix: '',
+            startNumber: 1,
+            padding: 4,
+            extension: 'P7',
+            resetInterval: 'Never'
+          }
+        }
+      }
+    } as CompanyConfig;
+
+    expect(generateNextId('invoice', [], config)).toBe('INV-P7/0001');
+    expect(generateNextId('quotation', [], config)).toBe('QTN-P7/0001');
+  });
+
+  it('resets numbering daily when the shared rule requires it', () => {
+    const config = {
+      transactionSettings: {
+        numbering: {
+          shared: {
+            prefix: '',
+            startNumber: 7,
+            padding: 3,
+            resetInterval: 'Daily'
+          }
+        }
+      }
+    } as CompanyConfig;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    expect(generateNextId('invoice', [{ id: 'INV-025', date: yesterday.toISOString() }], config)).toBe('INV-007');
   });
 
   it('keeps legacy invoice settings working', () => {

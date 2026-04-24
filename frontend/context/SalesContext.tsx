@@ -444,7 +444,7 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
 
             await transactionService.processRefund({
-                id: `REF-${Date.now()}`, // Temporary ID, transactionService might generate a better one
+                id: generateNextId('refund', salesStore.sales, companyConfig),
                 saleId,
                 date: new Date().toISOString(),
                 items: refundItems,

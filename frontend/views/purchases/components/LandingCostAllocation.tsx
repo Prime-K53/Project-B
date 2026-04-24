@@ -80,7 +80,7 @@ const LandingCostAllocation: React.FC<LandingCostAllocationProps> = ({ purchase,
         }
         
         const expense: Expense = {
-            id: `EXP-LC-${Date.now()}`,
+            id: '',
             date: new Date().toISOString(),
             amount: cost.amount,
             category: 'Transport & Freight',

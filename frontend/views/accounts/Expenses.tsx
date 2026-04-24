@@ -129,7 +129,7 @@ const Expenses: React.FC = () => {
     }
 
     addExpense({ 
-      id: 'EXP-' + Date.now(), 
+      id: '',
       date: new Date(formData.date).toISOString(), 
       amount: amt, 
       category: formData.category, 

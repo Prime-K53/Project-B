@@ -51,7 +51,7 @@ const IncomeView: React.FC = () => {
       const incData = {
           ...formData,
           amount: amt,
-          id: editingId || `INC-${Date.now()}`,
+          id: editingId || '',
           date: new Date(formData.date!).toISOString()
       } as Income;
 
