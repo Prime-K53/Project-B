@@ -36,10 +36,11 @@ export const calculateExaminationPricing = (
   const rawFeePerLearner = learners > 0 ? total / learners : 0;
   
   const precisionFee = Number(rawFeePerLearner.toFixed(2));
-  const roundedFeePerLearner = Math.round(precisionFee / 50) * 50;
+  const roundedFeePerLearner = Math.ceil(precisionFee / 50) * 50;
+  const roundedTotal = learners > 0 ? roundedFeePerLearner * learners : total;
   
   return {
-    Total: Number(total.toFixed(2)),
+    Total: Number(roundedTotal.toFixed(2)),
     FeePerLearner: roundedFeePerLearner
   };
 };

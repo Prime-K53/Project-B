@@ -221,6 +221,7 @@ export async function calculateSellingPrice(
       marginAmount,
       adjustmentSnapshots: (Object.freeze(normalizedAdjustments) as unknown) as SnapshotEntry[],
       adjustmentTotal,
+      roundingDifference: 0,
       breakdown: {
         baseCost: safeCost,
         adjustments: adjustmentTotal,
@@ -273,6 +274,7 @@ export async function calculateSellingPrice(
     marginAmount,
     adjustmentSnapshots: (Object.freeze(currentSnapshots) as unknown) as SnapshotEntry[],
     adjustmentTotal,
+    roundingDifference: roundToCurrency(unitPrice - totalBeforeRounding),
     breakdown,
     pricingVersion: PRICING_ENGINE_VERSION
   };
@@ -328,6 +330,7 @@ export async function calculateServicePrice(
       unitPrice: roundToCurrency(adjustedUnitPrice),
       totalPrice: adjustedTotalPrice,
       adjustmentTotal: basePricing.adjustmentTotal + serviceAdjustments,
+      roundingDifference: roundToCurrency(adjustedUnitPrice - (basePricing.unitPrice + serviceAdjustments / copies)),
       adjustmentSnapshots: [...basePricing.adjustmentSnapshots, ...serviceSnapshots]
     };
   }

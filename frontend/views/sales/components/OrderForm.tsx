@@ -327,6 +327,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const [selectedServiceForCalculator, setSelectedServiceForCalculator] = useState<Item | null>(null);
     const [serviceEditIndex, setServiceEditIndex] = useState<number | null>(null);
     const [serviceInitialValues, setServiceInitialValues] = useState<{ pages: number; copies: number }>({ pages: 1, copies: 1 });
+    const [selectedManualOverrideItemId, setSelectedManualOverrideItemId] = useState('');
+    const [manualOverrideValue, setManualOverrideValue] = useState('');
+    const [showManualOverrideCard, setShowManualOverrideCard] = useState(false);
     const [bomTemplates, setBomTemplates] = useState<BOMTemplate[]>([]);
     const [quickPrintModal, setQuickPrintModal] = useState<{ open: boolean; type: 'photocopy' | 'printing' }>({
       open: false,
@@ -356,12 +359,247 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         () => (isExaminationQuotation ? generatedExaminationItems : formData.items),
         [formData.items, generatedExaminationItems, isExaminationQuotation]
     );
+    const manualOverrideItems = useMemo(
+        () => (isExaminationQuotation ? [] : (Array.isArray(formData.items) ? formData.items.filter((entry: any) => !entry?.isVariantParent) : [])),
+        [formData.items, isExaminationQuotation]
+    );
+    const selectedManualOverrideItem = useMemo(
+        () => manualOverrideItems.find((entry: any) => entry.id === selectedManualOverrideItemId) || manualOverrideItems[0] || null,
+        [manualOverrideItems, selectedManualOverrideItemId]
+    );
     const examinationLearnerCount = useMemo(
         () => examinationDetails.classes.reduce((sum, entry) => sum + Math.max(0, Number(entry.learners) || 0), 0),
         [examinationDetails]
     );
     // Check if price is locked (approved Quote/Order)
     const isPriceLocked = (!localUnlock) && (initialData?.isPriceLocked || (formData.status === 'Approved' || formData.status === 'Completed' || formData.status === 'Paid'));
+
+    const getAutomaticOrderItemPrice = (item: CartItem | null) => {
+        if (!item) return 0;
+
+        const explicitOriginal = Number((item as any).originalPrice);
+        if (Number.isFinite(explicitOriginal) && explicitOriginal > 0) return explicitOriginal;
+
+        const storedSelling = Number((item as any).selling_price);
+        if (Number.isFinite(storedSelling) && storedSelling > 0) return storedSelling;
+
+        const calculatedPrice = Number((item as any).calculated_price);
+        if (Number.isFinite(calculatedPrice) && calculatedPrice > 0) return calculatedPrice;
+
+        return Number(item.price) || 0;
+    };
+
+    useEffect(() => {
+        if (!manualOverrideItems.length) {
+            setSelectedManualOverrideItemId('');
+            return;
+        }
+
+        const currentExists = manualOverrideItems.some((entry: any) => entry.id === selectedManualOverrideItemId);
+        if (!selectedManualOverrideItemId || !currentExists) {
+            setSelectedManualOverrideItemId(manualOverrideItems[0].id);
+        }
+    }, [manualOverrideItems, selectedManualOverrideItemId]);
+
+    useEffect(() => {
+        if (selectedManualOverrideItem) {
+            setManualOverrideValue(String(Number(selectedManualOverrideItem.price || 0)));
+        } else {
+            setManualOverrideValue('');
+        }
+    }, [selectedManualOverrideItem]);
+
+    useEffect(() => {
+        if (!manualOverrideItems.length) {
+            setShowManualOverrideCard(false);
+        }
+    }, [manualOverrideItems.length]);
+
+    const applyManualLineItemPrice = (targetId: string, newPrice: number) => {
+        const safePrice = roundToCurrency(Math.max(0, Number(newPrice) || 0));
+
+        setFormData((prev: any) => ({
+            ...prev,
+            items: Array.isArray(prev.items)
+                ? prev.items.map((entry: any) => {
+                    if (entry.id !== targetId) return entry;
+
+                    return {
+                        ...entry,
+                        price: safePrice,
+                        manual_override: true,
+                        serviceDetails: entry.serviceDetails
+                            ? {
+                                ...entry.serviceDetails,
+                                unitPricePerCopy: safePrice,
+                                totalPrice: safePrice * (Number(entry.quantity) || 1)
+                            }
+                            : entry.serviceDetails
+                    };
+                })
+                : prev.items
+        }));
+    };
+
+    const resetManualLineItemPrice = async (targetId: string) => {
+        const currentItems = Array.isArray(formData.items) ? [...formData.items] : [];
+        const idx = currentItems.findIndex((entry: any) => entry.id === targetId);
+        if (idx < 0) return;
+
+        const item = currentItems[idx];
+
+        if (item.type === 'Service' && (item as any).serviceDetails) {
+            const cartItem = item as any;
+            const pages = Number(cartItem.serviceDetails?.pages || item.pagesOverride || 1);
+
+            if (cartItem.priceLocked && cartItem.lockedUnitPricePerCopy !== undefined) {
+                currentItems[idx] = {
+                    ...currentItems[idx],
+                    price: cartItem.lockedUnitPricePerCopy,
+                    selling_price: cartItem.lockedUnitPricePerCopy,
+                    cost: cartItem.lockedUnitCostPerCopy || cartItem.cost,
+                    cost_price: cartItem.lockedUnitCostPerCopy || cartItem.cost_price || cartItem.cost,
+                    basePrice: cartItem.lockedUnitCostPerCopy || cartItem.basePrice,
+                    manual_override: false,
+                    serviceDetails: {
+                        ...cartItem.serviceDetails,
+                        pages,
+                        copies: item.quantity,
+                        totalPages: pages * item.quantity,
+                        unitPricePerCopy: cartItem.lockedUnitPricePerCopy,
+                        unitCostPerCopy: cartItem.lockedUnitCostPerCopy || cartItem.cost,
+                        totalCost: Number(cartItem.lockedUnitCostPerCopy || cartItem.cost || 0) * item.quantity,
+                        totalPrice: cartItem.lockedUnitPricePerCopy * item.quantity
+                    }
+                };
+                setFormData({ ...formData, items: currentItems });
+                return;
+            }
+
+            const baseService = inventory.find((i: Item) => i.id === (cartItem.itemId || item.id)) || item;
+            const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive).map((adj: any) => ({
+                name: adj.name,
+                type: adj.type,
+                value: adj.value,
+                percentage: adj.percentage ?? adj.value,
+                adjustmentId: adj.id,
+                isActive: true
+            }));
+
+            const baseCost = Number(baseService.cost) || 0;
+            const pricing = await calculateServicePrice({
+                itemId: baseService.id,
+                categoryId: baseService.category,
+                baseCost,
+                pages,
+                copies: item.quantity,
+                adjustments: activeAdjs,
+                marketAdjustments: activeAdjs,
+                context: 'SERVICE'
+            });
+
+            currentItems[idx] = {
+                ...currentItems[idx],
+                price: pricing.unitPrice,
+                selling_price: pricing.unitPrice,
+                cost: pricing.cost,
+                cost_price: pricing.cost,
+                basePrice: pricing.cost,
+                adjustmentSnapshots: pricing.adjustmentSnapshots,
+                adjustmentTotal: pricing.adjustmentTotal,
+                manual_override: false,
+                serviceDetails: {
+                    pages,
+                    copies: item.quantity,
+                    totalPages: pages * item.quantity,
+                    unitCostPerPage: pricing.cost / pages,
+                    unitPricePerCopy: pricing.unitPrice,
+                    unitCostPerCopy: pricing.cost,
+                    totalCost: baseCost,
+                    totalPrice: pricing.totalPrice
+                }
+            };
+
+            setFormData({ ...formData, items: currentItems });
+            return;
+        }
+
+        const baseItemId = (item as any).parentId || item.id;
+        const baseItem = inventory.find((i: Item) => i.id === baseItemId) || item;
+        const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+        const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+            const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+            let calcAmount = 0;
+            if (isPercentage) {
+                calcAmount = Number(currentItems[idx].cost || baseItem.cost) * (adj.value / 100);
+            } else {
+                calcAmount = adj.value;
+            }
+            return {
+                name: adj.name,
+                type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+                value: adj.value,
+                percentage: isPercentage ? adj.value : undefined,
+                calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+                adjustmentId: adj.id,
+                isActive: true
+            };
+        });
+
+        const normalizedSnapshots = resolveItemAdjustmentSnapshots(item);
+        const storedVariantPrice = resolveStoredSellingPrice(item as any);
+        const storedVariantCost = resolveStoredCost(item as any);
+        const storedVariantAdjustmentTotal = Number(
+            (item as any).smartPricingSnapshot?.marketAdjustmentTotal
+            ?? (item as any).adjustmentTotal
+            ?? normalizedSnapshots.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+        );
+
+        if ((item as any).parentId && storedVariantPrice > 0) {
+            currentItems[idx] = {
+                ...currentItems[idx],
+                price: storedVariantPrice,
+                selling_price: storedVariantPrice,
+                calculated_price: resolveStoredCalculatedPrice(item as any) || storedVariantPrice,
+                cost: storedVariantCost || currentItems[idx].cost || 0,
+                cost_price: storedVariantCost || currentItems[idx].cost_price || currentItems[idx].cost || 0,
+                adjustmentSnapshots: normalizedSnapshots,
+                adjustmentTotal: storedVariantAdjustmentTotal,
+                manual_override: false
+            };
+            setFormData({ ...formData, items: currentItems });
+            return;
+        }
+
+        const basePrice = resolveStoredSellingPrice(baseItem as any);
+        const priceData = basePrice > 0 ? {
+            unitPrice: basePrice,
+            cost: Number(currentItems[idx].cost || baseItem.cost) || 0,
+            adjustmentTotal: marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0),
+            adjustmentSnapshots: marketAdjustmentsInput
+        } : await calculateSellingPrice({
+            itemId: baseItem.id,
+            categoryId: baseItem.category,
+            baseCost: Number(currentItems[idx].cost || baseItem.cost) || 0,
+            basePrice: Number(currentItems[idx].price || baseItem.price) || undefined,
+            quantity: Number(currentItems[idx].quantity) || 1,
+            adjustments: marketAdjustmentsInput,
+            context: 'ORDER'
+        });
+
+        currentItems[idx] = {
+            ...currentItems[idx],
+            price: priceData.unitPrice,
+            selling_price: priceData.unitPrice,
+            cost: priceData.cost,
+            cost_price: priceData.cost,
+            adjustmentSnapshots: priceData.adjustmentSnapshots,
+            adjustmentTotal: priceData.adjustmentTotal,
+            manual_override: false
+        };
+
+        setFormData({ ...formData, items: currentItems });
+    };
 
     // Use inventory cost price and selling price as final — no recalculation
     // For variants with dynamic pricing, calculate from BOM
@@ -1289,6 +1527,30 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 
         if (item.type === 'Service' && (item as any).serviceDetails) {
             const cartItem = item as any;
+
+            if (cartItem.manual_override) {
+                const pages = Number(cartItem.serviceDetails?.pages || item.pagesOverride || 1);
+                const newItems = [...formData.items];
+                newItems[idx] = {
+                    ...newItems[idx],
+                    quantity: safeQty,
+                    manual_override: true,
+                    serviceDetails: {
+                        ...cartItem.serviceDetails,
+                        pages,
+                        copies: safeQty,
+                        totalPages: pages * safeQty,
+                        unitCostPerPage: pages > 0 ? Number(cartItem.cost || 0) / pages : 0,
+                        unitPricePerCopy: cartItem.price,
+                        unitCostPerCopy: cartItem.cost,
+                        totalCost: Number(cartItem.cost || 0) * safeQty,
+                        totalPrice: Number(cartItem.price || 0) * safeQty
+                    }
+                };
+
+                setFormData({ ...formData, items: newItems });
+                return;
+            }
 
             // If price is locked, maintain the locked unit price without recalculation
             if (cartItem.priceLocked && cartItem.lockedUnitPricePerCopy !== undefined) {
@@ -2318,10 +2580,7 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                                     value={item.price}
                                                                     onChange={e => {
                                                                         if (isPriceLocked || serviceDetails) return;
-                                                                        const newItems = [...formData.items];
-                                                                        newItems[idx].price = roundToCurrency(parseFloat(e.target.value) || 0);
-                                                                        newItems[idx].manual_override = true;
-                                                                        setFormData({ ...formData, items: newItems });
+                                                                        applyManualLineItemPrice(item.id, parseFloat(e.target.value) || 0);
                                                                     }}
                                                                     disabled={isPriceLocked || isExaminationQuotation}
                                                                 />
@@ -2369,6 +2628,77 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                             <div className="flex justify-between items-end">
                                                 <div className="text-[9px] text-slate-500 font-normal uppercase tracking-tighter">Limit: {currency}{(selectedCustomerObj.creditLimit || 0).toLocaleString()}</div>
                                                 <div className="text-xs font-normal text-slate-700">Exposure: {currency}{(getCustomerOutstanding(selectedCustomerObj.name) + finalDisplayTotal).toLocaleString()}</div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {!isExaminationQuotation && selectedManualOverrideItem && (
+                                        <div className="mb-4">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowManualOverrideCard(prev => !prev)}
+                                                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold border transition-colors ${showManualOverrideCard ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                                            >
+                                                {showManualOverrideCard ? <Eye size={14} /> : <TrendingUp size={14} />}
+                                                {showManualOverrideCard ? 'Hide Manual Override Pricing' : 'Manual Override Pricing'}
+                                            </button>
+                                        </div>
+                                    )}
+                                    {!isExaminationQuotation && showManualOverrideCard && selectedManualOverrideItem && (
+                                        <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 mb-4 space-y-3">
+                                            <div className="space-y-1">
+                                                <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Manual Override Pricing</div>
+                                                <div className="text-xs text-slate-700">
+                                                    Auto Price: <span className="font-semibold">{currency}{getAutomaticOrderItemPrice(selectedManualOverrideItem).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                    <span className="mx-2 text-slate-400">|</span>
+                                                    Final Price: <span className="font-semibold">{currency}{Number(selectedManualOverrideItem.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                                </div>
+                                                <div className={`text-[10px] font-bold uppercase tracking-wider ${selectedManualOverrideItem.manual_override ? 'text-amber-700' : 'text-slate-500'}`}>
+                                                    {selectedManualOverrideItem.manual_override ? 'Status: Manual Override Active' : 'Status: Auto Pricing'}
+                                                </div>
+                                            </div>
+
+                                            <select
+                                                value={selectedManualOverrideItem.id}
+                                                onChange={(e) => setSelectedManualOverrideItemId(e.target.value)}
+                                                disabled={isPriceLocked}
+                                                className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-xs font-semibold text-slate-700 outline-none disabled:opacity-60"
+                                            >
+                                                {manualOverrideItems.map((entry: any) => (
+                                                    <option key={entry.id} value={entry.id}>
+                                                        {entry.name} ({currency}{Number(entry.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                                                    </option>
+                                                ))}
+                                            </select>
+
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.01"
+                                                    value={manualOverrideValue}
+                                                    onChange={(e) => setManualOverrideValue(e.target.value)}
+                                                    disabled={isPriceLocked}
+                                                    className="flex-1 p-2.5 bg-white border border-amber-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-100 disabled:opacity-60"
+                                                    placeholder="Override unit price"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => applyManualLineItemPrice(selectedManualOverrideItem.id, Number(manualOverrideValue) || 0)}
+                                                    disabled={isPriceLocked}
+                                                    className="px-4 py-2.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-60"
+                                                >
+                                                    {selectedManualOverrideItem.manual_override ? 'Update' : 'Apply'}
+                                                </button>
+                                                {selectedManualOverrideItem.manual_override && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void resetManualLineItemPrice(selectedManualOverrideItem.id)}
+                                                        disabled={isPriceLocked}
+                                                        className="px-4 py-2.5 rounded-lg bg-white border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-100 disabled:opacity-60"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     )}

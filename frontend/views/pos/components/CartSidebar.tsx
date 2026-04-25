@@ -14,6 +14,7 @@ interface CartSidebarProps {
     onSelectCustomer: () => void;
     updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void;
     updatePrice: (id: string, newPrice: number) => void;
+    resetPriceOverride: (id: string) => void | Promise<void>;
     removeFromCart: (id: string) => void;
     clearCart: () => void;
     onPark: () => void;
@@ -40,14 +41,67 @@ interface CartSidebarProps {
 }
 
 export const CartSidebar: React.FC<CartSidebarProps> = ({
-    cart, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, rounding
+    cart, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, resetPriceOverride, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, rounding
 }) => {
     const { companyConfig, invoices } = useData();
     const currency = companyConfig.currencySymbol;
+    const [showManualOverrideCard, setShowManualOverrideCard] = useState(false);
+    const [selectedOverrideItemId, setSelectedOverrideItemId] = useState<string>('');
+    const [overrideValue, setOverrideValue] = useState<string>('');
 
     const grandTotal = totals.total;
     const hasAdjustments = adjustmentSummary && adjustmentSummary.length > 0;
     const totalAdjustments = hasAdjustments ? adjustmentSummary.reduce((sum, adj) => sum + adj.totalAmount, 0) : 0;
+    const overrideEligibleItems = useMemo(
+        () => cart.filter((item: any) => !item?.isVariantParent),
+        [cart]
+    );
+
+    const selectedOverrideItem = useMemo(
+        () => overrideEligibleItems.find(item => item.id === selectedOverrideItemId) || overrideEligibleItems[0] || null,
+        [overrideEligibleItems, selectedOverrideItemId]
+    );
+
+    const getAutomaticUnitPrice = (item: CartItem | null) => {
+        if (!item) return 0;
+
+        const explicitOriginal = Number((item as any).originalPrice);
+        if (Number.isFinite(explicitOriginal) && explicitOriginal > 0) return explicitOriginal;
+
+        const storedSelling = Number((item as any).selling_price);
+        if (Number.isFinite(storedSelling) && storedSelling > 0) return storedSelling;
+
+        const calculatedPrice = Number((item as any).calculated_price);
+        if (Number.isFinite(calculatedPrice) && calculatedPrice > 0) return calculatedPrice;
+
+        return Number(item.price) || 0;
+    };
+
+    useEffect(() => {
+        if (!overrideEligibleItems.length) {
+            setSelectedOverrideItemId('');
+            return;
+        }
+
+        const currentExists = overrideEligibleItems.some(item => item.id === selectedOverrideItemId);
+        if (!selectedOverrideItemId || !currentExists) {
+            setSelectedOverrideItemId(overrideEligibleItems[0].id);
+        }
+    }, [overrideEligibleItems, selectedOverrideItemId]);
+
+    useEffect(() => {
+        if (selectedOverrideItem) {
+            setOverrideValue(String(Number(selectedOverrideItem.price || 0)));
+        } else {
+            setOverrideValue('');
+        }
+    }, [selectedOverrideItem]);
+
+    useEffect(() => {
+        if (!overrideEligibleItems.length) {
+            setShowManualOverrideCard(false);
+        }
+    }, [overrideEligibleItems.length]);
 
     const customerOutstanding = useMemo(() => {
         if (!selectedCustomerName) return 0;
@@ -132,6 +186,62 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
 
             {/* Checkout Totals Summary */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-3 shrink-0 rounded-b-xl">
+                {showManualOverrideCard && selectedOverrideItem && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-3">
+                        <div className="space-y-1">
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Manual Override Pricing</div>
+                            <div className="text-[11px] text-slate-600">
+                                Auto Price: <span className="font-semibold">{currency}{formatNumber(getAutomaticUnitPrice(selectedOverrideItem))}</span>
+                                <span className="mx-2 text-slate-400">|</span>
+                                Final Price: <span className="font-semibold">{currency}{formatNumber(Number(selectedOverrideItem.price || 0))}</span>
+                            </div>
+                            <div className={`text-[10px] font-bold uppercase tracking-wider ${selectedOverrideItem.manual_override ? 'text-amber-700' : 'text-slate-500'}`}>
+                                {selectedOverrideItem.manual_override ? 'Status: Manual Override Active' : 'Status: Auto Pricing'}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2">
+                            <select
+                                value={selectedOverrideItem.id}
+                                onChange={(e) => setSelectedOverrideItemId(e.target.value)}
+                                className="w-full p-2 border border-amber-200 rounded-lg bg-white text-[11px] font-semibold text-slate-700"
+                            >
+                                {overrideEligibleItems.map(item => (
+                                    <option key={item.id} value={item.id}>
+                                        {item.name} ({currency}{formatNumber(Number(item.price || 0))})
+                                    </option>
+                                ))}
+                            </select>
+
+                            <div className="flex gap-2">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={overrideValue}
+                                    onChange={(e) => setOverrideValue(e.target.value)}
+                                    className="flex-1 p-2 border border-amber-200 rounded-lg bg-white text-[11px] font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-amber-100"
+                                    placeholder="Override unit price"
+                                />
+                                <button
+                                    onClick={() => updatePrice(selectedOverrideItem.id, Number(overrideValue) || 0)}
+                                    className="px-3 py-2 rounded-lg bg-amber-600 text-white text-[11px] font-bold hover:bg-amber-700"
+                                >
+                                    {selectedOverrideItem.manual_override ? 'Update' : 'Apply'}
+                                </button>
+                                {selectedOverrideItem.manual_override && (
+                                    <button
+                                        onClick={() => resetPriceOverride(selectedOverrideItem.id)}
+                                        className="px-3 py-2 rounded-lg bg-white border border-amber-200 text-amber-700 text-[11px] font-bold hover:bg-amber-100"
+                                    >
+                                        Reset
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Adjustment Breakdown */}
                 {hasAdjustments && (
                     <div className="space-y-1.5 pt-2 border-t border-slate-50">
@@ -250,9 +360,13 @@ return null;
                         <span>Receive Payment</span> <ArrowRight size={16} />
                     </button>
 
-                    <div className="grid grid-cols-2 gap-2">
-                        <button onClick={onPark} disabled={cart.length === 0} className="flex items-center justify-center gap-2 py-2 rounded-full border border-slate-200 bg-white text-slate-800 font-bold text-xs hover:bg-slate-50 disabled:opacity-50 transition-all">
-                            <Clock size={12} /> Hold
+                    <div className={`grid gap-2 ${companyConfig.transactionSettings?.pos?.allowReturns !== false ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                        <button
+                            onClick={() => setShowManualOverrideCard(prev => !prev)}
+                            disabled={cart.length === 0 || !selectedOverrideItem}
+                            className={`flex items-center justify-center gap-2 py-2 rounded-full border font-bold text-xs transition-all disabled:opacity-50 ${showManualOverrideCard ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'}`}
+                        >
+                            <Tag size={12} /> {showManualOverrideCard ? 'Close Override' : 'Manual Override Pricing'}
                         </button>
                         {companyConfig.transactionSettings?.pos?.allowReturns !== false && (
                             <button onClick={onReturn} className="flex items-center justify-center gap-2 py-2 rounded-full border border-slate-200 bg-white text-slate-800 font-bold text-xs hover:bg-slate-50 transition-all">

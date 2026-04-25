@@ -358,6 +358,8 @@ export const ServiceCalculatorModal: React.FC<{
                         calculatedTotalPrice: result.totalPrice,
                         adjustmentTotal: result.adjustmentTotal,
                         adjustmentSnapshots: result.adjustmentSnapshots,
+                        marginAmount: result.marginAmount,
+                        rounding_difference: result.roundingDifference,
                         components: [],
                         serviceDetails: {
                             pages,

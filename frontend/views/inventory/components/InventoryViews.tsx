@@ -257,6 +257,9 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                         </td>
                                         <td className={`table-body-cell text-right finance-nums font-bold ${(item.type === 'Raw Material' || item.type === 'Material') ? 'text-red-600' : 'text-green-600'}`}>
                                             {(item.type === 'Raw Material' || item.type === 'Material') ? formatMaterialItemCost(item, currency) : formatParentProductPrice(item, currency)}
+                                            {(item.pricingConfig as any)?.manualOverride && (
+                                                <span className="ml-1 text-[9px] text-blue-600 font-bold" title="Manual Override">*</span>
+                                            )}
                                         </td>
                                         <td className="table-body-cell text-right">
                                             <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">

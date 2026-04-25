@@ -41,6 +41,8 @@ export interface DynamicServicePricingResult {
     calculatedTotalPrice: number;
     adjustmentTotal: number;
     adjustmentSnapshots: any[];
+    marginAmount?: number;
+    rounding_difference?: number;
     components: DynamicServiceComponentCost[];
     serviceDetails: DynamicServiceDetails;
     /** When true, indicates the price has been locked by user confirmation and should not be recalculated on quantity changes */

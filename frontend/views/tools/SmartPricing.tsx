@@ -55,6 +55,9 @@ const SmartPricing: React.FC = () => {
     const [showSettings, setShowSettings] = useState(false);
     const [showProductDialog, setShowProductDialog] = useState(false);
     const [productName, setProductName] = useState('');
+    const [selectedInventoryProductId, setSelectedInventoryProductId] = useState('');
+    const [editingProductId, setEditingProductId] = useState<string | null>(null);
+    const [editingBomId, setEditingBomId] = useState<string | null>(null);
     const [isCreatingProduct, setIsCreatingProduct] = useState(false);
     const [editingCosts, setEditingCosts] = useState<{ [key: string]: number }>({});
     const [inventory, setInventory] = useState<Item[]>([]);
@@ -129,6 +132,18 @@ const SmartPricing: React.FC = () => {
 
     const selectedPaper = useMemo(() => inventory.find(i => i.id === selectedPaperId), [inventory, selectedPaperId]);
     const selectedToner = useMemo(() => inventory.find(i => i.id === selectedTonerId), [inventory, selectedTonerId]);
+    const editableInventoryProducts = useMemo(
+        () => inventory.filter(item =>
+            item.type === 'Product' &&
+            (
+                item.smartPricing ||
+                item.pricingConfig?.paperId ||
+                item.pricingConfig?.tonerId ||
+                item.pricingConfig?.finishingOptions?.length
+            )
+        ),
+        [inventory]
+    );
 
     const calculateCosts = () => {
         let paperCost = 0;
@@ -262,6 +277,181 @@ const SmartPricing: React.FC = () => {
         setMarketAdjustmentEnabled(true);
     };
 
+    const clearLoadedProduct = () => {
+        setEditingProductId(null);
+        setEditingBomId(null);
+        setSelectedInventoryProductId('');
+        setProductName('');
+        resetCalculator();
+    };
+
+    const loadInventoryProduct = (productId: string) => {
+        const product = inventory.find(item => item.id === productId);
+        if (!product) {
+            alert('Selected product was not found in inventory.');
+            return;
+        }
+
+        const smartPricing = product.smartPricing || {};
+        const savedPaperId = String(smartPricing.paperItemId || product.pricingConfig?.paperId || '');
+        const savedTonerId = String(smartPricing.tonerItemId || product.pricingConfig?.tonerId || '');
+        const savedFinishingIds = new Set<string>([
+            ...((smartPricing.finishingEnabled || []) as string[]),
+            ...(((product.pricingConfig?.finishingOptions || []) as FinishingOption[]).map(option => option.id))
+        ]);
+        const hasSavedAdjustments = Array.isArray(smartPricing.marketAdjustments)
+            ? smartPricing.marketAdjustments.length > 0
+            : Boolean(product.pricingConfig?.selectedAdjustmentIds?.length);
+
+        setPages(Math.max(1, Number(smartPricing.pages ?? product.pages ?? 1) || 1));
+        setCopies(Math.max(1, Number(smartPricing.copies ?? 1) || 1));
+        setSelectedPaperId(savedPaperId);
+        setSelectedTonerId(savedTonerId);
+        setFinishingOptions(prev => prev.map(option => ({
+            ...option,
+            enabled: savedFinishingIds.has(option.id)
+        })));
+        setMarketAdjustmentEnabled(hasSavedAdjustments);
+        setEditingProductId(product.id);
+        setEditingBomId(String(smartPricing.bomTemplateId || `BOM-${Date.now()}`));
+        setSelectedInventoryProductId(product.id);
+        setProductName(product.name || '');
+    };
+
+    const handleSaveProduct = async () => {
+        if (!productName.trim()) {
+            alert('Please enter a product name');
+            return;
+        }
+
+        setIsCreatingProduct(true);
+
+        try {
+            const existingProduct = editingProductId ? inventory.find(item => item.id === editingProductId) : null;
+            const productId = editingProductId || `PROD-${Date.now()}`;
+            const bomId = editingBomId || existingProduct?.smartPricing?.bomTemplateId || `BOM-${Date.now()}`;
+
+            const newProduct: Item = {
+                ...(existingProduct || {}),
+                id: productId,
+                name: productName.trim(),
+                sku: existingProduct?.sku || `SKU-${Date.now()}`,
+                type: 'Product',
+                category: existingProduct?.category || 'Printed Products',
+                unit: existingProduct?.unit || 'copy',
+                cost: baseCost,
+                cost_price: baseCost,
+                price: displayTotal,
+                selling_price: displayTotal,
+                calculated_price: roundingResult?.originalPrice ?? finalPrice,
+                rounding_difference: roundingResult?.roundingDifference ?? 0,
+                rounding_method: roundingResult?.methodUsed,
+                stock: existingProduct?.stock || 0,
+                pages,
+                pricingConfig: {
+                    ...(existingProduct?.pricingConfig || {}),
+                    paperId: selectedPaperId,
+                    tonerId: selectedTonerId,
+                    finishingOptions: finishingOptions.filter(option => option.enabled),
+                    selectedAdjustmentIds: marketAdjustmentEnabled ? marketAdjustments.map(adj => adj.id) : [],
+                    manualOverride: false,
+                    marketAdjustment: marketAdjustmentTotal
+                },
+                smartPricing: {
+                    pages,
+                    copies,
+                    paperItemId: selectedPaperId,
+                    tonerItemId: selectedTonerId,
+                    finishingEnabled: finishingOptions.filter(o => o.enabled).map(o => o.id),
+                    roundingMethod: roundingResult?.methodUsed,
+                    roundedPrice: displayTotal,
+                    originalPrice: finalPrice,
+                    bomTemplateId: bomId,
+                    paperCost,
+                    tonerCost,
+                    finishingCost,
+                    baseCost,
+                    marketAdjustmentTotal,
+                    marketAdjustments: marketAdjustmentEnabled
+                        ? marketAdjustments.map(adj => {
+                            const type = (adj.type || '').toUpperCase();
+                            const value = type === 'PERCENTAGE' || type === 'PERCENT'
+                                ? baseCost * ((adj.value || 0) / 100)
+                                : (adj.value || 0) * pages * copies;
+                            return { id: adj.id, name: adj.name, type: adj.type, value, rawValue: adj.value };
+                        })
+                        : [],
+                    profitMarginAmount,
+                    marginType: globalMargin?.margin_type,
+                    marginValue: globalMargin?.margin_value,
+                    roundingDifference: roundingResult?.roundingDifference ?? 0,
+                    wasRounded: roundingResult?.wasRounded ?? false,
+                } as any
+            };
+
+            const components: any[] = [];
+            if (selectedPaper) {
+                components.push({
+                    itemId: selectedPaperId,
+                    name: selectedPaper.name,
+                    quantityFormula: `${totalSheets}`,
+                    unit: selectedPaper.unit || 'ream'
+                });
+            }
+            if (selectedToner) {
+                components.push({
+                    itemId: selectedTonerId,
+                    name: selectedToner.name,
+                    quantityFormula: `${Math.ceil(totalPages / 20000 * 100)} / 100`,
+                    unit: selectedToner.unit || 'unit'
+                });
+            }
+            finishingOptions.filter(o => o.enabled).forEach(opt => {
+                components.push({
+                    itemId: opt.id,
+                    name: opt.name,
+                    quantityFormula: `${opt.id === 'coverPages' ? copies * 2 : copies}`,
+                    unit: 'unit'
+                });
+            });
+
+            const newBom: BOMTemplate = {
+                ...(bomTemplates.find(template => template.id === bomId) || {}),
+                id: bomId,
+                name: productName.trim(),
+                type: 'Custom',
+                components,
+                lastUpdated: new Date().toISOString()
+            };
+
+            await dbService.put('inventory', newProduct);
+            await dbService.put('bomTemplates', newBom);
+
+            setInventory(prev => {
+                const exists = prev.some(item => item.id === newProduct.id);
+                return exists ? prev.map(item => item.id === newProduct.id ? newProduct : item) : [...prev, newProduct];
+            });
+            setBOMTemplates(prev => {
+                const exists = prev.some(template => template.id === newBom.id);
+                return exists ? prev.map(template => template.id === newBom.id ? newBom : template) : [...prev, newBom];
+            });
+
+            setEditingProductId(newProduct.id);
+            setEditingBomId(newBom.id);
+            setSelectedInventoryProductId(newProduct.id);
+            setShowProductDialog(false);
+
+            alert(editingProductId
+                ? `Product "${productName.trim()}" updated and saved back to inventory.`
+                : `Product "${productName.trim()}" created and saved to inventory with corresponding BOM recipe.`);
+        } catch (error) {
+            console.error('Failed to save product:', error);
+            alert(editingProductId ? 'Failed to update product' : 'Failed to create product');
+        } finally {
+            setIsCreatingProduct(false);
+        }
+    };
+
     const formatCurrency = (value: number) => `${currency} ${value.toFixed(2)}`;
     const totalPages = pages * copies;
     const totalSheets = Math.ceil(pages / 2) * copies;
@@ -315,6 +505,11 @@ const SmartPricing: React.FC = () => {
                         <div>
                             <h1 className="text-2xl font-bold text-slate-800">Smart Pricing Engine</h1>
                             <p className="text-slate-500">Calculate print job pricing with BOM cost analysis</p>
+                            {editingProductId && (
+                                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-700">
+                                    Editing Inventory Product: {productName || inventory.find(item => item.id === editingProductId)?.name || editingProductId}
+                                </div>
+                            )}
                         </div>
                         {globalMarginWarning && (
                             <div className="mt-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-center gap-2">
@@ -334,6 +529,50 @@ const SmartPricing: React.FC = () => {
                         <Settings size={18} />
                         Settings
                     </button>
+                </div>
+
+                <div id="smart-pricing-inventory-loader" className="mb-6 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50 via-white to-indigo-50">
+                        <div className="flex flex-col gap-1">
+                            <h2 className="text-lg font-bold text-slate-800">Load Product from Inventory</h2>
+                            <p className="text-sm text-slate-500">Pick an existing Smart Pricing product, edit it here, then save it back to inventory.</p>
+                        </div>
+                    </div>
+                    <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-3 items-end">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Inventory Product</label>
+                            <select
+                                value={selectedInventoryProductId}
+                                onChange={(e) => setSelectedInventoryProductId(e.target.value)}
+                                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                            >
+                                <option value="">Select a Smart Pricing product...</option>
+                                {editableInventoryProducts.map(product => (
+                                    <option key={product.id} value={product.id}>
+                                        {product.name} ({product.sku})
+                                    </option>
+                                ))}
+                            </select>
+                            {editableInventoryProducts.length === 0 && (
+                                <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                                    No Smart Pricing products were found in inventory yet.
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => loadInventoryProduct(selectedInventoryProductId)}
+                            disabled={!selectedInventoryProductId}
+                            className="px-5 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                            Load Product
+                        </button>
+                        <button
+                            onClick={clearLoadedProduct}
+                            className="px-5 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50"
+                        >
+                            New Product
+                        </button>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -634,6 +873,22 @@ const SmartPricing: React.FC = () => {
                             </div>
 
                             <div className="px-6 pb-6 space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <button
+                                        onClick={() => document.getElementById('smart-pricing-inventory-loader')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                        className="w-full flex items-center justify-center gap-2 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+                                    >
+                                        <Package size={18} />
+                                        Load Product
+                                    </button>
+                                    <button
+                                        onClick={clearLoadedProduct}
+                                        className="w-full flex items-center justify-center gap-2 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
+                                    >
+                                        <RefreshCw size={18} />
+                                        New Product
+                                    </button>
+                                </div>
                                 <button 
                                     onClick={resetCalculator}
                                     className="w-full flex items-center justify-center gap-2 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
@@ -647,7 +902,7 @@ const SmartPricing: React.FC = () => {
                                     }}
                                     className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
                                 >
-                                    Create Product
+                                    {editingProductId ? 'Save Product' : 'Create Product'}
                                 </button>
                             </div>
                         </div>
@@ -734,8 +989,8 @@ const SmartPricing: React.FC = () => {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
                         <div className="flex items-center justify-between p-6 border-b border-slate-100">
-                            <h2 className="text-xl font-bold text-slate-800">Create Product from Pricing</h2>
-                            <button onClick={() => { setShowProductDialog(false); setProductName(''); }} className="p-2 hover:bg-slate-100 rounded-lg">
+                            <h2 className="text-xl font-bold text-slate-800">{editingProductId ? 'Save Product to Inventory' : 'Create Product from Pricing'}</h2>
+                            <button onClick={() => setShowProductDialog(false)} className="p-2 hover:bg-slate-100 rounded-lg">
                                 <X size={20} />
                             </button>
                         </div>
@@ -783,121 +1038,18 @@ const SmartPricing: React.FC = () => {
                         </div>
                         <div className="p-6 border-t border-slate-100 flex gap-3">
                             <button 
-                                onClick={() => { setShowProductDialog(false); setProductName(''); }}
+                                onClick={() => setShowProductDialog(false)}
                                 className="flex-1 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50"
                                 disabled={isCreatingProduct}
                             >
                                 Cancel
                             </button>
                             <button 
-                                onClick={async () => {
-                                    if (!productName.trim()) {
-                                        alert('Please enter a product name');
-                                        return;
-                                    }
-                                    setIsCreatingProduct(true);
-                                    try {
-                                        const productId = `PROD-${Date.now()}`;
-                                        const bomId = `BOM-${Date.now()}`;
-                                        
-                                        const newProduct: Item = {
-                                            id: productId,
-                                            name: productName,
-                                            sku: `SKU-${Date.now()}`,
-                                            type: 'Product',
-                                            category: 'Printed Products',
-                                            unit: 'copy',
-                                            cost: baseCost,
-                                            price: displayTotal,
-                                            selling_price: displayTotal,
-                                            calculated_price: displayTotal,
-                                            stock: 0,
-                                            pages: pages,
-                                            smartPricing: {
-                                                pages,
-                                                copies,
-                                                paperItemId: selectedPaperId,
-                                                tonerItemId: selectedTonerId,
-                                                finishingEnabled: finishingOptions.filter(o => o.enabled).map(o => o.id),
-                                                roundingMethod: roundingResult?.methodUsed,
-                                                roundedPrice: displayTotal,
-                                                originalPrice: finalPrice,
-                                                bomTemplateId: bomId,
-                                                // Full price breakdown — kept in sync with Price Summary panel
-                                                paperCost,
-                                                tonerCost,
-                                                finishingCost,
-                                                baseCost,
-                                                marketAdjustmentTotal,
-                                                marketAdjustments: marketAdjustmentEnabled
-                                                    ? marketAdjustments.map(adj => {
-                                                        const type = (adj.type || '').toUpperCase();
-                                                        const value = type === 'PERCENTAGE' || type === 'PERCENT'
-                                                            ? baseCost * ((adj.value || 0) / 100)
-                                                            : (adj.value || 0) * pages * copies;
-                                                        return { id: adj.id, name: adj.name, type: adj.type, value, rawValue: adj.value };
-                                                    })
-                                                    : [],
-                                                profitMarginAmount,
-                                                marginType: globalMargin?.margin_type,
-                                                marginValue: globalMargin?.margin_value,
-                                                roundingDifference: roundingResult?.roundingDifference ?? 0,
-                                                wasRounded: roundingResult?.wasRounded ?? false,
-                                            } as any
-                                        };
-                                        
-                                        const components: any[] = [];
-                                        if (selectedPaper) {
-                                            components.push({
-                                                itemId: selectedPaperId,
-                                                name: selectedPaper.name,
-                                                quantityFormula: `${totalSheets}`,
-                                                unit: selectedPaper.unit || 'ream'
-                                            });
-                                        }
-                                        if (selectedToner) {
-                                            components.push({
-                                                itemId: selectedTonerId,
-                                                name: selectedToner.name,
-                                                quantityFormula: `${Math.ceil(totalPages / 20000 * 100)} / 100`,
-                                                unit: selectedToner.unit || 'unit'
-                                            });
-                                        }
-                                        finishingOptions.filter(o => o.enabled).forEach(opt => {
-                                            components.push({
-                                                itemId: opt.id,
-                                                name: opt.name,
-                                                quantityFormula: `${opt.id === 'coverPages' ? copies * 2 : copies}`,
-                                                unit: 'unit'
-                                            });
-                                        });
-                                        
-                                        const newBom: BOMTemplate = {
-                                            id: bomId,
-                                            name: productName,
-                                            type: 'Custom',
-                                            components: components,
-                                            lastUpdated: new Date().toISOString()
-                                        };
-                                        
-                                        await dbService.put('inventory', newProduct);
-                                        await dbService.put('bomTemplates', newBom);
-                                        
-                                        alert(`Product "${productName}" created and saved to inventory with corresponding BOM recipe.`);
-                                        setShowProductDialog(false);
-                                        setProductName('');
-                                        resetCalculator();
-                                    } catch (error) {
-                                        console.error('Failed to create product:', error);
-                                        alert('Failed to create product');
-                                    } finally {
-                                        setIsCreatingProduct(false);
-                                    }
-                                }}
+                                onClick={handleSaveProduct}
                                 className="flex-1 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50"
                                 disabled={isCreatingProduct}
                             >
-                                {isCreatingProduct ? 'Creating...' : 'Create Product'}
+                                {isCreatingProduct ? (editingProductId ? 'Saving...' : 'Creating...') : (editingProductId ? 'Save Product' : 'Create Product')}
                             </button>
                         </div>
                     </div>

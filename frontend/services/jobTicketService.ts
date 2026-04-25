@@ -20,7 +20,6 @@ const SETTINGS_ID = 'default';
 
 const defaultSettings: JobTicketSettings = {
   defaultRushFeePercent: 25,
-  defaultRushFeePercent: 25,
   expressFeePercent: 50,
   urgentFeePercent: 100,
   enableNotifications: true,

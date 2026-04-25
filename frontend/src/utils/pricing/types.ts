@@ -45,6 +45,7 @@ export interface PricingResult {
   marginAmount: number;
   adjustmentSnapshots: SnapshotEntry[];
   adjustmentTotal: number;
+  roundingDifference: number;
   breakdown: PricingBreakdown;
 }
 

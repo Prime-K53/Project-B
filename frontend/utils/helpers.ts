@@ -437,3 +437,67 @@ export const exportToCSV = (filename: string, data: any[]) => {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   downloadBlob(blob, `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
 };
+
+export interface ClassPricingInputs {
+  bom: number;
+  adjustmentAmount?: number;
+  marginAmount?: number;
+  learners: number;
+  adjustmentRate?: number;
+  profitMargin?: number;
+  roundingDirection?: 'nearest' | 'up' | 'down';
+}
+
+export interface ClassPricingResult {
+  finalClassTotal: number;
+  roundedFeePerLearner: number;
+  rawFeePerLearner: number;
+  rawClassTotal: number;
+  adjustedCost: number;
+  roundingDifference: number;
+  roundingDirection: 'nearest' | 'up' | 'down';
+}
+
+export const calculateClassPricing = (inputs: ClassPricingInputs): ClassPricingResult => {
+  const { bom, learners, adjustmentAmount, marginAmount, adjustmentRate = 0, profitMargin = 0, roundingDirection = 'up' } = inputs;
+  
+  const safeLearners = Math.max(1, Math.floor(learners || 0));
+  
+  const adjustedCost = adjustmentAmount !== undefined
+    ? Number((bom + adjustmentAmount).toFixed(2))
+    : Number((bom * (1 + adjustmentRate)).toFixed(2));
+  
+  const rawTotal = marginAmount !== undefined
+    ? Number((adjustedCost + marginAmount).toFixed(2))
+    : Number((adjustedCost * (1 + profitMargin)).toFixed(2));
+  
+  const rawFeePerLearner = Number((rawTotal / safeLearners).toFixed(2));
+  
+  let roundedFeePerLearner: number;
+  
+  if (roundingDirection === 'up') {
+    roundedFeePerLearner = Math.ceil(rawFeePerLearner / 50) * 50;
+  } else if (roundingDirection === 'down') {
+    roundedFeePerLearner = Math.floor(rawFeePerLearner / 50) * 50;
+  } else {
+    const rawFeeRoundedDown = Math.floor(rawFeePerLearner / 50) * 50;
+    const rawFeeRoundedUp = Math.ceil(rawFeePerLearner / 50) * 50;
+    const diffDown = Math.abs(rawFeePerLearner - rawFeeRoundedDown);
+    const diffUp = Math.abs(rawFeePerLearner - rawFeeRoundedUp);
+    roundedFeePerLearner = diffUp <= diffDown ? rawFeeRoundedUp : rawFeeRoundedDown;
+  }
+  
+  const finalClassTotal = Number((roundedFeePerLearner * safeLearners).toFixed(2));
+  
+  const roundingDifference = Number((finalClassTotal - rawTotal).toFixed(2));
+  
+  return {
+    finalClassTotal,
+    roundedFeePerLearner,
+    rawFeePerLearner,
+    rawClassTotal: rawTotal,
+    adjustedCost,
+    roundingDifference,
+    roundingDirection: roundingDirection as 'nearest' | 'up' | 'down'
+  };
+};

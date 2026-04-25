@@ -152,6 +152,9 @@ const POS: React.FC = () => {
       quantity: pricing.copies,
       price: pricing.unitPricePerCopy,
       cost: pricing.unitCostPerCopy,
+      marginAmount: pricing.marginAmount,
+      rounding_difference: pricing.rounding_difference,
+      calculated_price: pricing.unitPricePerCopy - (pricing.rounding_difference || 0),
       basePrice: pricing.unitCostPerCopy,
       pagesOverride: pricing.pages,
       adjustmentSnapshots,
@@ -267,20 +270,27 @@ const POS: React.FC = () => {
     setShowPaymentModal(true);
   };
 
-  const { total, processedItems } = useMemo(() => {
+  const { total, processedItems, totalProfitMargin } = useMemo(() => {
     const items = cart.map(item => {
+      const itemCost = Number(item.cost || item.cost_price || 0);
+      const itemPrice = Number(item.price || 0);
+      const itemQty = Number(item.quantity || 1);
+      const marginPerItem = Number((item as any).marginAmount) || (itemPrice - itemCost);
       return {
         ...item,
-        totalAmount: item.price * item.quantity
+        totalAmount: itemPrice * itemQty,
+        _calcMargin: marginPerItem * itemQty
       };
     });
 
     const subTotal = items.reduce((sum, i) => sum + i.totalAmount, 0);
+    const totalMargin = items.reduce((sum, i) => sum + (i._calcMargin || 0), 0);
     const finalTotal = subTotal;
 
     return {
       total: finalTotal,
-      processedItems: items
+      processedItems: items,
+      totalProfitMargin: totalMargin
     };
   }, [cart]);
 
@@ -393,6 +403,9 @@ const POS: React.FC = () => {
     let resolvedCost: number;
     let resolvedAdjTotal: number;
     let resolvedAdjSnaps: any[];
+    let marginAmount = 0;
+    let roundingDifference = 0;
+    let calculatedPrice = 0;
 
     if (isVariant && variantStoredPrice > 0) {
       // Use variant's pre-computed price — no recalculation needed
@@ -423,6 +436,9 @@ const POS: React.FC = () => {
       resolvedCost = pricing.cost;
       resolvedAdjTotal = pricing.adjustmentTotal;
       resolvedAdjSnaps = pricing.adjustmentSnapshots;
+      marginAmount = pricing.marginAmount || 0;
+      roundingDifference = pricing.roundingDifference || 0;
+      calculatedPrice = pricing.unitPrice - (pricing.roundingDifference || 0);
     }
 
     const originalPrice = resolveStoredSellingPrice(item as any) || 0;
@@ -453,7 +469,10 @@ const POS: React.FC = () => {
         cost_price: resolvedCost,
         adjustmentTotal: resolvedAdjTotal,
         adjustmentSnapshots: resolvedAdjSnaps,
-        productionCostSnapshot
+        productionCostSnapshot,
+        marginAmount,
+        rounding_difference: roundingDifference,
+        calculated_price: calculatedPrice
       }];
     });
   };
@@ -512,14 +531,176 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
   const updatePrice = (id: string, newPrice: number) => {
     setCart(prev => prev.map(item => {
       if (item.id === id) {
+        const currentCost = Number(item.cost || item.cost_price || 0);
         return {
           ...item,
           price: roundToCurrency(newPrice),
+          marginAmount: roundToCurrency(newPrice - currentCost),
           manual_override: true
         };
       }
       return item;
     }));
+  };
+
+  const resetPriceOverride = async (id: string) => {
+    const itemInCart = cart.find(i => i.id === id);
+    if (!itemInCart) return;
+
+    if ((itemInCart as any).serviceDetails) {
+      const cartItem = itemInCart as any;
+      const pages = Number(cartItem.serviceDetails?.pages || cartItem.pagesOverride || 1);
+
+      if (cartItem.priceLocked && cartItem.lockedUnitPricePerCopy !== undefined) {
+        setCart(prev => prev.map(i => i.id === id ? {
+          ...i,
+          price: cartItem.lockedUnitPricePerCopy,
+          selling_price: cartItem.lockedUnitPricePerCopy,
+          cost: cartItem.lockedUnitCostPerCopy || i.cost,
+          cost_price: cartItem.lockedUnitCostPerCopy || i.cost_price || i.cost,
+          basePrice: cartItem.lockedUnitCostPerCopy || i.basePrice,
+          manual_override: false,
+          serviceDetails: {
+            ...(i as any).serviceDetails,
+            pages,
+            copies: itemInCart.quantity,
+            totalPages: pages * itemInCart.quantity,
+            unitPricePerCopy: cartItem.lockedUnitPricePerCopy,
+            unitCostPerCopy: cartItem.lockedUnitCostPerCopy || i.cost,
+            totalCost: Number(cartItem.lockedUnitCostPerCopy || i.cost || 0) * itemInCart.quantity,
+            totalPrice: cartItem.lockedUnitPricePerCopy * itemInCart.quantity
+          }
+        } : i));
+        return;
+      }
+
+      const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive).map((adj: any) => ({
+        name: adj.name,
+        type: adj.type,
+        value: adj.value,
+        percentage: adj.percentage ?? adj.value,
+        adjustmentId: adj.id,
+        isActive: true
+      }));
+
+      const baseServiceId = cartItem.itemId || itemInCart.id.split('::')[0];
+      const baseService = inventory.find(i => i.id === baseServiceId) || ({ ...itemInCart, id: baseServiceId } as Item);
+      const baseCost = Number(baseService.cost) || 0;
+
+      const pricing = await calculateServicePrice({
+        itemId: baseService.id,
+        categoryId: baseService.category,
+        baseCost,
+        pages,
+        copies: itemInCart.quantity,
+        adjustments: activeAdjs,
+        marketAdjustments: activeAdjs,
+        context: 'SERVICE'
+      });
+
+      setCart(prev => prev.map(i => i.id === id ? {
+        ...i,
+        price: pricing.unitPrice,
+        selling_price: pricing.unitPrice,
+        cost: pricing.cost,
+        cost_price: pricing.cost,
+        basePrice: pricing.cost,
+        adjustmentSnapshots: pricing.adjustmentSnapshots,
+        adjustmentTotal: pricing.adjustmentTotal,
+        marginAmount: pricing.marginAmount,
+        rounding_difference: pricing.roundingDifference,
+        calculated_price: pricing.unitPrice - pricing.roundingDifference,
+        manual_override: false,
+        serviceDetails: {
+          pages,
+          copies: itemInCart.quantity,
+          totalPages: pages * itemInCart.quantity,
+          unitCostPerPage: pricing.cost / pages,
+          unitPricePerCopy: pricing.unitPrice,
+          unitCostPerCopy: pricing.cost,
+          totalCost: baseCost,
+          totalPrice: pricing.totalPrice
+        }
+      } : i));
+      return;
+    }
+
+    const baseItemId = (itemInCart as any).parentId || itemInCart.id.split('::')[0];
+    const baseItem = inventory.find(i => i.id === baseItemId) || itemInCart;
+
+    const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+    const marketAdjustmentsInput = activeAdjs.map((adj: any) => {
+      const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+      let calcAmount = 0;
+      if (isPercentage) {
+        calcAmount = Number(baseItem.cost) * (adj.value / 100);
+      } else {
+        calcAmount = adj.value;
+      }
+      return {
+        name: adj.name,
+        type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+        value: adj.value,
+        percentage: isPercentage ? adj.value : undefined,
+        calculatedAmount: Number((calcAmount || 0).toFixed(2)),
+        adjustmentId: adj.id,
+        isActive: true
+      };
+    });
+
+    const isCartItemVariant = Boolean((itemInCart as any).parentId);
+    const cartVariantStoredPrice = resolveStoredSellingPrice(itemInCart as any);
+    const cartVariantAdjustmentSnapshots = resolveItemAdjustmentSnapshots(itemInCart);
+    const cartVariantAdjustmentTotal = Number(
+      (itemInCart as any).smartPricingSnapshot?.marketAdjustmentTotal
+      ?? (itemInCart as any).adjustmentTotal
+      ?? cartVariantAdjustmentSnapshots.reduce((sum: number, snapshot: any) => sum + getSnapshotCalculatedAmount(snapshot), 0)
+    );
+
+    if (isCartItemVariant && cartVariantStoredPrice > 0) {
+      setCart(prev => prev.map(i => i.id === id ? {
+        ...i,
+        price: cartVariantStoredPrice,
+        selling_price: cartVariantStoredPrice,
+        cost: resolveStoredCost(itemInCart as any),
+        cost_price: resolveStoredCost(itemInCart as any),
+        originalPrice: (itemInCart as any).originalPrice,
+        adjustmentSnapshots: cartVariantAdjustmentSnapshots,
+        adjustmentTotal: cartVariantAdjustmentTotal,
+        manual_override: false,
+        productionCostSnapshot: (itemInCart as any).productionCostSnapshot
+      } : i));
+      return;
+    }
+
+    const effectiveCost = isCartItemVariant ? resolveStoredCost(itemInCart as any) : Number(baseItem.cost);
+    const effectiveBasePrice = isCartItemVariant ? resolveStoredSellingPrice(itemInCart as any) : resolveStoredSellingPrice(baseItem);
+
+    const pricing = await calculateSellingPrice({
+      itemId: baseItem.id,
+      categoryId: baseItem.category,
+      baseCost: effectiveCost,
+      basePrice: effectiveBasePrice || undefined,
+      quantity: itemInCart.quantity,
+      adjustments: marketAdjustmentsInput,
+      context: 'POS'
+    });
+
+    setCart(prev => prev.map(i => i.id === id ? {
+      ...i,
+      price: pricing.unitPrice,
+      selling_price: pricing.unitPrice,
+      cost: pricing.cost,
+      cost_price: pricing.cost,
+      originalPrice: (itemInCart as any).originalPrice,
+      adjustmentSnapshots: pricing.adjustmentSnapshots,
+      adjustmentTotal: pricing.adjustmentTotal,
+      rounding_difference: pricing.roundingDifference,
+      marginAmount: pricing.marginAmount,
+      calculated_price: pricing.unitPrice - pricing.roundingDifference,
+      manual_override: false,
+      productionCostSnapshot: (itemInCart as any).productionCostSnapshot
+    } : i));
   };
 
   const updateQuantity = async (id: string, value: number, isAbsolute?: boolean) => {
@@ -536,6 +717,31 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       const pages = Number(serviceInfo?.pages || cartItem.pagesOverride || 1);
       const baseServiceId = cartItem.itemId || itemInCart.id.split('::')[0];
       const baseService = inventory.find(i => i.id === baseServiceId) || ({ ...itemInCart, id: baseServiceId } as Item);
+
+      if (cartItem.manual_override) {
+        setCart(prev => prev.map(i => i.id === id ? {
+          ...i,
+          quantity: newQty,
+          price: cartItem.price,
+          selling_price: cartItem.price,
+          cost: cartItem.cost,
+          cost_price: cartItem.cost_price || cartItem.cost,
+          basePrice: cartItem.basePrice,
+          manual_override: true,
+          serviceDetails: {
+            ...(i as any).serviceDetails,
+            pages,
+            copies: newQty,
+            totalPages: pages * newQty,
+            unitCostPerPage: pages > 0 ? Number(cartItem.cost || 0) / pages : 0,
+            unitPricePerCopy: cartItem.price,
+            unitCostPerCopy: cartItem.cost,
+            totalCost: Number(cartItem.cost || 0) * newQty,
+            totalPrice: Number(cartItem.price || 0) * newQty
+          }
+        } : i));
+        return;
+      }
 
       if (cartItem.priceLocked && cartItem.lockedUnitPricePerCopy !== undefined) {
         const lockedAdjustmentTotal = cartItem.adjustmentTotal || 0;
@@ -680,6 +886,9 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       originalPrice: (itemInCart as any).originalPrice,
       adjustmentSnapshots: pricing.adjustmentSnapshots,
       adjustmentTotal: pricing.adjustmentTotal,
+      rounding_difference: pricing.roundingDifference,
+      marginAmount: pricing.marginAmount,
+      calculated_price: pricing.unitPrice - pricing.roundingDifference,
       productionCostSnapshot: (itemInCart as any).productionCostSnapshot
     } : i));
   };
@@ -1013,6 +1222,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
             onSelectCustomer={() => setShowCustomerModal(true)}
             updateQuantity={updateQuantity}
             updatePrice={updatePrice}
+            resetPriceOverride={resetPriceOverride}
             removeFromCart={removeFromCart}
             clearCart={clearCart}
             onPark={handleParkOrder}
@@ -1067,6 +1277,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           customerName={selectedCustomerName}
           availableCredit={0}
           walletBalance={customers.find((c: any) => c.name === selectedCustomerName || c.id === selectedCustomerName)?.walletBalance || 0}
+          loyaltyPoints={customers.find((c: any) => c.name === selectedCustomerName || c.id === selectedCustomerName)?.loyaltyPoints || 0}
+          totalProfitMargin={totalProfitMargin}
           subAccountName={selectedSubAccount}
           adjustmentSummary={cartAdjustmentSummary}
           roundingAccumulation={roundingAccumulation}

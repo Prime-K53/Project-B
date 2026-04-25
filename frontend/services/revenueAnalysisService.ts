@@ -357,7 +357,21 @@ const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] 
       ? roundMoney(batchRounding - allocatedRounding)
       : roundMoney(batchRounding * allocationBase);
     allocatedRounding = roundMoney(allocatedRounding + roundingTotal);
-    const profitMargin = roundMoney(revenue - materialCost - adjustmentTotal - roundingTotal);
+    const explicitMargin = toNumber(cls?.margin_amount, Number.NaN);
+    const calculatedTotalCost = toNumber(cls?.calculated_total_cost, 0);
+    
+    let baseMargin = 0;
+    if (Number.isFinite(explicitMargin)) {
+      baseMargin = explicitMargin;
+    } else if (calculatedTotalCost > 0) {
+      baseMargin = calculatedTotalCost - materialCost - adjustmentTotal;
+    } else {
+      baseMargin = revenue - materialCost - adjustmentTotal - roundingTotal;
+    }
+    const profitMargin = roundMoney(Math.max(0, baseMargin));
+    
+    // Any remaining variance between revenue and costs is the true rounding difference
+    const actualRoundingTotal = roundMoney(revenue - materialCost - adjustmentTotal - profitMargin);
 
     const adjustmentRatio = totalAdjustment > 0
       ? adjustmentTotal / totalAdjustment
@@ -385,9 +399,9 @@ const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] 
       materialCost,
       adjustmentTotal,
       profitMargin,
-      roundingTotal,
+      roundingTotal: actualRoundingTotal,
       grossGain: roundMoney(revenue - materialCost),
-      reconciliationDelta: roundMoney(revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal),
+      reconciliationDelta: roundMoney(revenue - materialCost - adjustmentTotal - profitMargin - actualRoundingTotal),
       adjustmentLines: buildAdjustmentLines(scaledSnapshots, 1, adjustmentTotal)
     };
   });

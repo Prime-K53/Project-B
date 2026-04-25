@@ -12,6 +12,8 @@ export interface PricingSettingsInput {
   paper_unit_cost?: number;
   toner_unit_cost?: number;
   conversion_rate?: number;
+  adjustment_rate?: number; // percentage as decimal, e.g. 0.70
+  profit_margin?: number;    // percentage as decimal, e.g. 0.385
   constants?: {
     toner_pages_per_unit?: number;
   };
@@ -56,10 +58,11 @@ export interface BatchPricingResult {
 
 const roundMoney = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
 
-const roundUpToNearest = (value: number, nearest: number): number => {
+const roundUpTo50 = (value: number): number => {
   const safeValue = Number(value) || 0;
-  const safeNearest = Math.max(1, Number(nearest) || 1);
-  return Math.ceil(safeValue / safeNearest) * safeNearest;
+  // Rule: round the learner fee up to the next clean 50.
+  // Example: 2,080 → 2,100; 1,274 → 1,250
+  return Math.ceil(safeValue / 50) * 50;
 };
 
 const normalizeAdjustmentType = (value: string | undefined) => {
@@ -119,34 +122,40 @@ export const calculateExaminationBatchPricing = (
     const tonerCost = roundMoney(tonerQty * (Number(settings.toner_unit_cost) || 0));
     const totalBomCost = roundMoney(paperCost + tonerCost);
 
-    let totalAdjustments = roundMoney((effectiveAdjustments || []).reduce((sum, adjustment) => {
-      const adjustmentType = normalizeAdjustmentType(adjustment.type);
-      const numericValue = adjustmentType === 'FIXED'
-        ? (Number(adjustment.value) || 0)
-        : (Number(adjustment.percentage ?? adjustment.value) || 0);
-      const amount = adjustmentType === 'FIXED'
-        ? roundMoney(numericValue * totalPages)
-        : roundMoney(totalBomCost * (numericValue / 100));
-      return sum + amount;
-    }, 0));
-
-    let totalCost = roundMoney(totalBomCost + totalAdjustments);
-    let expectedFeePerLearner = learners > 0 ? roundMoney(totalCost / learners) : 0;
-
-    if (totalAdjustments > 0) {
-      const roundedFeePerLearner = roundUpToNearest(expectedFeePerLearner, 50);
-      // NOTE: Do NOT round the difference per learner - it's too small (e.g., 0.0044)
-      // and would round to 0. Instead, calculate at full precision and round only at the end.
-      const roundingDiffPerLearner = roundedFeePerLearner - expectedFeePerLearner;
-
-      if (roundingDiffPerLearner > 0) {
-        // Calculate at full precision first, then round the final result
-        const roundingTotalForClass = roundMoney(roundingDiffPerLearner * learners);
-        totalAdjustments = roundMoney(totalAdjustments + roundingTotalForClass);
-        totalCost = roundMoney(totalBomCost + totalAdjustments);
-        expectedFeePerLearner = roundedFeePerLearner;
+    // 1. Compute adjustedCost = BOM + (BOM * adjustmentRate)
+    const explicitAdjustmentRate = Number(settings.adjustment_rate ?? 0);
+    const sumOfAdjustments = (effectiveAdjustments || []).reduce((sum, adj) => {
+      const val = Number(adj.percentage ?? adj.value ?? 0);
+      return sum + (normalizeAdjustmentType(adj.type) === 'PERCENTAGE' ? val / 100 : 0);
+    }, 0);
+    
+    const totalFixedAdjustments = (effectiveAdjustments || []).reduce((sum, adj) => {
+      if (normalizeAdjustmentType(adj.type) === 'FIXED') {
+        const val = Number(adj.value) || 0;
+        return sum + roundMoney(val * totalPages);
       }
-    }
+      return sum;
+    }, 0);
+
+    const effectiveAdjustmentRate = explicitAdjustmentRate || sumOfAdjustments;
+    const adjustedCost = totalBomCost + (totalBomCost * effectiveAdjustmentRate) + totalFixedAdjustments;
+
+    // 2. Compute rawTotal = adjustedCost * (1 + profitMargin)
+    // Profit margin must be applied after adjustments, not directly on BOM.
+    const profitMargin = Number(settings.profit_margin ?? 0);
+    const rawTotal = adjustedCost * (1 + profitMargin);
+
+    // 3. Compute rawFeePerLearner = rawTotal / learners
+    // Ensure floating point precision up to 2 decimal places before rounding.
+    const rawFeePerLearner = learners > 0 ? roundMoney(rawTotal / learners) : 0;
+
+    // 4. Apply the standard examination round-up rule.
+    const roundedFeePerLearner = roundUpTo50(rawFeePerLearner);
+
+    const expectedFeePerLearner = roundedFeePerLearner;
+    const roundedExpectedTotal = roundMoney(expectedFeePerLearner * learners);
+    const totalCost = roundedExpectedTotal;
+    const totalAdjustments = roundMoney(totalCost - totalBomCost);
 
     const hasManualOverride = Boolean(Number(cls.is_manual_override || 0)) && cls.manual_cost_per_learner != null;
     const finalFeePerLearner = hasManualOverride

@@ -6,29 +6,7 @@ import { Trash2, FileText, Copy, Layout, RotateCw, Calculator, Hash, Truck, Chev
 import { useData } from '../../../context/DataContext';
 import { examinationBatchService } from '../../../services/examinationBatchService';
 import OverrideDialog from './OverrideDialog';
-
-export const calculateExaminationPricing = (
-  bom: number,
-  adjustmentRate: number,
-  profitMargin: number,
-  learners: number
-) => {
-  const adjustedCost = bom + (bom * adjustmentRate);
-  const marginAmount = adjustedCost * profitMargin;
-  const total = adjustedCost + marginAmount;
-  const rawFeePerLearner = learners > 0 ? total / learners : 0;
-  
-  // Ensure floating point precision up to 2 decimal places before rounding
-  const precisionFee = Number(rawFeePerLearner.toFixed(2));
-  const feePerLearner = Math.round(precisionFee / 50) * 50;
-  
-  return {
-    adjustedCost: Number(adjustedCost.toFixed(2)),
-    marginAmount: Number(marginAmount.toFixed(2)),
-    total: Number(total.toFixed(2)),
-    feePerLearner
-  };
-};
+import { calculateLocalClassPreviewBase, calculateRoundedClassPreview } from '../../../utils/examinationClassPricing';
 
 interface ManageSubjectsDialogProps {
   open: boolean;
@@ -87,17 +65,6 @@ const isPaperMaterialCandidate = (item: Item): boolean => {
 const isTonerMaterialCandidate = (item: Item): boolean => {
   const hint = `${String(item?.name || '')} ${String((item as any)?.material || '')} ${String(item?.category || '')} ${String((item as any)?.category_id || '')}`.toLowerCase();
   return hint.includes('toner');
-};
-
-const isNetworkError = (error: unknown): boolean => {
-  if (!(error instanceof Error)) return false;
-  const message = String(error.message || '').toLowerCase();
-  return (
-    error.name === 'TypeError'
-    || message.includes('failed to fetch')
-    || message.includes('networkerror')
-    || message.includes('connection refused')
-  );
 };
 
 export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
@@ -335,16 +302,19 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const finalFeePerLearner = useMemo(() => {
     if (!examinationClass) return expectedFeePerLearner;
     if (hasManualOverride) return Number(examinationClass.manual_cost_per_learner) || expectedFeePerLearner;
-    return Number(examinationClass.final_fee_per_learner ?? expectedFeePerLearner) || expectedFeePerLearner;
+    return expectedFeePerLearner;
   }, [examinationClass, expectedFeePerLearner, hasManualOverride]);
 
   const liveTotalAmount = useMemo(() => {
     if (!examinationClass) return 0;
     const learners = Math.max(0, Math.floor(Number(examinationClass.number_of_learners) || 0));
+    if (!hasManualOverride && preview) {
+      return Number(preview.calculatedTotalCost ?? preview.totalCost ?? 0) || 0;
+    }
     const persistedLive = Number(examinationClass.live_total_preview);
     if (Number.isFinite(persistedLive) && persistedLive >= 0) return persistedLive;
     return Number((finalFeePerLearner * learners).toFixed(2));
-  }, [examinationClass, finalFeePerLearner]);
+  }, [examinationClass, finalFeePerLearner, hasManualOverride, preview]);
 
   const persistHiddenBomSelections = useCallback(async () => {
     const localPaperValue = String(localPaperId || '').trim();
@@ -419,15 +389,10 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
     setPreviewError(null);
 
     try {
-      // Get material costs dynamically from inventory
       const paper = paperMaterials.find(m => String(m.id) === String(localPaperId));
       const toner = tonerMaterials.find(m => String(m.id) === String(localTonerId));
-
-      // Get cost prices from inventory items
       const paperUnitCost = getMaterialUnitCost(paper);
       const tonerUnitCost = getMaterialUnitCost(toner);
-
-      // Get conversion rates from inventory or use defaults
       const paperConversionRate = Number(
         (paper as any)?.conversionRate ??
         (paper as any)?.conversion_rate ??
@@ -441,47 +406,38 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         DEFAULT_TONER_PAGES_PER_KG
       );
 
-      const result = await examinationBatchService.getClassPreview(examinationClass.id, {
-        paperId: localPaperId || undefined,
-        tonerId: localTonerId || undefined,
-        paperUnitCost: paperUnitCost > 0 ? paperUnitCost : undefined,
-        tonerUnitCost: tonerUnitCost > 0 ? tonerUnitCost : undefined,
-        tonerPagesPerUnit: tonerPagesPerUnit > 0 ? tonerPagesPerUnit : undefined,
-        paperConversionRate: paperConversionRate > 0 ? paperConversionRate : undefined,
-        applyRounding: true,
-        rounding_method: 'ALWAYS_UP_50',
-        rounding_value: 50
-      });
-
-      const adjustmentRateDec = effectiveAdjustments.reduce((sum, adj) => {
-        const isPct = String(adj.type).toUpperCase().includes('PERCENT');
-        return isPct ? sum + (Number(adj.value ?? adj.percentage ?? 0) / 100) : sum;
-      }, 0);
-      const profitMarginDec = globalMargin ? (globalMargin.margin_value / 100) : 0;
-      
-      const localPricing = calculateExaminationPricing(
-        result.totalBomCost,
-        adjustmentRateDec,
-        profitMarginDec,
-        examinationClass.number_of_learners || 0
+      const localPreviewBase = calculateLocalClassPreviewBase(
+        examinationClass.subjects || [],
+        Number(examinationClass.number_of_learners) || 0,
+        paperUnitCost > 0 ? paperUnitCost : 0,
+        tonerUnitCost > 0 ? tonerUnitCost : 0,
+        paperConversionRate > 0 ? paperConversionRate : DEFAULT_PAPER_SHEETS_PER_REAM,
+        tonerPagesPerUnit > 0 ? tonerPagesPerUnit : DEFAULT_TONER_PAGES_PER_KG,
+        effectiveAdjustments
       );
-
-      result.totalCost = localPricing.total;
-      result.expectedFeePerLearner = localPricing.feePerLearner;
-      result.calculatedTotalCost = localPricing.total;
-
-      setPreview({
-        totalSheets: result.totalSheets,
-        totalPages: result.totalPages,
-        totalBomCost: result.totalBomCost,
-        totalAdjustments: result.totalAdjustments,
-        totalCost: result.totalCost,
-        expectedFeePerLearner: result.expectedFeePerLearner,
-        materialTotalCost: result.materialTotalCost,
-        adjustmentTotalCost: result.adjustmentTotalCost,
-        calculatedTotalCost: result.calculatedTotalCost,
-        marginAmount: localPricing.marginAmount
+      const roundedPreview = calculateRoundedClassPreview({
+        totalBomCost: localPreviewBase.totalBomCost,
+        marketAdjustmentTotal: localPreviewBase.marketAdjustmentTotal,
+        learners: Number(examinationClass.number_of_learners) || 0,
+        margin: globalMargin,
+        roundingStep: 50
       });
+
+      const result = {
+        totalSheets: localPreviewBase.totalSheets,
+        totalPages: localPreviewBase.totalPages,
+        totalBomCost: localPreviewBase.totalBomCost,
+        totalAdjustments: roundedPreview.totalAdjustments,
+        totalCost: roundedPreview.totalCost,
+        expectedFeePerLearner: roundedPreview.expectedFeePerLearner,
+        materialTotalCost: localPreviewBase.totalBomCost,
+        adjustmentTotalCost: roundedPreview.totalAdjustments,
+        calculatedTotalCost: roundedPreview.calculatedTotalCost,
+        marginAmount: roundedPreview.marginAmount
+      };
+
+      setPreview(result);
+      setPreviewError(null);
 
       // Automatically sync only when values truly changed. This prevents repeated
       // writes while still preserving live propagation to batch/list totals.
@@ -530,8 +486,8 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         }
       }
     } catch (error) {
-      const offlineMessage = 'Preview service unavailable. Start the backend or set VITE_API_BASE_URL.';
-      setPreviewError(isNetworkError(error) ? offlineMessage : 'Failed to load calculation preview');
+      console.error('Failed to calculate class preview:', error);
+      setPreviewError('Failed to calculate pricing preview.');
       setPreview(null);
     } finally {
       setIsPreviewLoading(false);
@@ -1067,7 +1023,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                   <div className="mt-4 pt-3 border-t border-slate-200">
                     <div className="flex items-center gap-2 text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
                       <Info className="w-4 h-4" />
-                      Fee per learner is automatically rounded to the nearest 50.
+                      Fee per learner is automatically rounded up to the next 50.
                     </div>
                   </div>
                 </div>

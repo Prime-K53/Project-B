@@ -522,7 +522,7 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                         </>
                     )}
 
-                    <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
+<div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
                         <div className="text-label uppercase mb-1 tracking-wider">Pricing</div>
                         <div className="flex justify-between text-[12px] mt-1">
                             <span className="text-slate-500 font-medium">Last Cost:</span>
@@ -530,8 +530,13 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ item, onBack, onEdit, o
                         </div>
                         <div className="flex justify-between text-[12px] mt-0.5">
                             <span className="text-slate-500 font-medium">{item.type === 'Raw Material' ? 'Base Cost:' : 'Price (Inc):'}</span>
-                            <span className="font-black text-slate-900 finance-nums">{currency}{(item.type === 'Raw Material' ? item.cost : item.price || 0).toFixed(2)}</span>
+                            <span className={`font-black finance-nums ${(item.pricingConfig as any)?.manualOverride ? 'text-blue-600 underline decoration-dotted' : 'text-slate-900'}`}>{currency}{(item.type === 'Raw Material' ? item.cost : item.price || 0).toFixed(2)}</span>
                         </div>
+                        {(item.pricingConfig as any)?.manualOverride && (
+                            <div className="mt-2 text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded font-medium">
+                                Manual Override Active
+                            </div>
+                        )}
                     </div>
 
                     <div className="glass-card p-4 rounded-2xl flex flex-col justify-center border border-white/60">
