@@ -509,6 +509,19 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
         notify(`${quantity}x${pagesPerCopy} pages added to cart`, 'success');
       };
 
+  const updatePrice = (id: string, newPrice: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.id === id) {
+        return {
+          ...item,
+          price: roundToCurrency(newPrice),
+          manual_override: true
+        };
+      }
+      return item;
+    }));
+  };
+
   const updateQuantity = async (id: string, value: number, isAbsolute?: boolean) => {
     const itemInCart = cart.find(i => i.id === id);
     if (!itemInCart) return;
@@ -643,7 +656,9 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     }
 
     const effectiveCost = isCartItemVariant ? resolveStoredCost(itemInCart as any) : Number(baseItem.cost);
-    const effectiveBasePrice = isCartItemVariant ? resolveStoredSellingPrice(itemInCart as any) : resolveStoredSellingPrice(baseItem);
+    const effectiveBasePrice = (itemInCart as any).manual_override
+      ? itemInCart.price
+      : (isCartItemVariant ? resolveStoredSellingPrice(itemInCart as any) : resolveStoredSellingPrice(baseItem));
 
     const pricing = await calculateSellingPrice({
       itemId: baseItem.id,
@@ -997,6 +1012,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
             setSelectedSubAccount={setSelectedSubAccount}
             onSelectCustomer={() => setShowCustomerModal(true)}
             updateQuantity={updateQuantity}
+            updatePrice={updatePrice}
             removeFromCart={removeFromCart}
             clearCart={clearCart}
             onPark={handleParkOrder}

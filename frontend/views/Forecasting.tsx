@@ -8,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format, addDays, startOfDay, isBefore, isAfter, subDays } from 'date-fns';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Legend
+  BarChart, Bar, Legend, ComposedChart
 } from 'recharts';
 import { analyzeForecastingData } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
@@ -400,8 +400,8 @@ const Forecasting: React.FC = () => {
                     </div>
                 </div>
                 <div style={{ width: '100%', height: 400, minHeight: 150 }}>
-                    <ResponsiveContainer width="100%" height="100%" minHeight={150} minWidth={0}>
-                        <AreaChart data={cashFlowForecast.timeline}>
+                    <ResponsiveContainer key="cashflow-chart-container" width="100%" height="100%" minHeight={150} minWidth={0}>
+                        <ComposedChart data={cashFlowForecast.timeline}>
                             <defs>
                                 <linearGradient id="colorBal" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
@@ -436,7 +436,7 @@ const Forecasting: React.FC = () => {
                             />
                             <Bar dataKey="inflow" fill="#10b981" opacity={0.3} radius={[2, 2, 0, 0]} />
                             <Bar dataKey="outflow" fill="#ef4444" opacity={0.3} radius={[2, 2, 0, 0]} />
-                        </AreaChart>
+                        </ComposedChart>
                     </ResponsiveContainer>
                 </div>
             </div>

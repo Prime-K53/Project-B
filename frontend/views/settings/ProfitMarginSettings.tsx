@@ -4,7 +4,7 @@ import {
   Download, Upload, Search, Filter, ChevronDown, ChevronUp,
   AlertTriangle, CheckCircle2, X, Save, RefreshCw, History,
   DollarSign, Percent, Globe, Tag, Package, Shield,
-  Clock, User, Info, ChevronRight
+  Clock, User, Info, ChevronRight, Zap
 } from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
 
@@ -22,6 +22,7 @@ interface MarginSetting {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  apply_volume_margins?: number | boolean;
 }
 
 interface AuditEntry {
@@ -658,6 +659,93 @@ const ProfitMarginSettings: React.FC = () => {
               )}
             </div>
           </section>
+
+          {/* ── VOLUME DISCOUNT SECTION ───────────────────────────────────── */}
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <TrendingUp size={18} className="text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-[15px] text-slate-800">Volume Margins (Discounts)</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Automatically apply tiered margins based on the total page count (Products & Services only)</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6">
+                <div className="flex items-center gap-4">
+                   <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${globalSetting?.apply_volume_margins ? 'bg-indigo-600 shadow-lg shadow-indigo-200' : 'bg-slate-200'}`}>
+                      <Zap size={20} className={globalSetting?.apply_volume_margins ? 'text-white' : 'text-slate-400'} />
+                   </div>
+                   <div>
+                      <h4 className="font-bold text-slate-800 text-sm">Enable Volume Margins</h4>
+                      <p className="text-xs text-slate-500">Apply the 10%, 15%, and 25% tiers automatically based on page volume.</p>
+                   </div>
+                </div>
+                <button 
+                  id="toggle-volume-margins"
+                  onClick={async () => {
+                    if (!globalSetting) {
+                      toast('Please save a Global Default Margin first', 'info');
+                      return;
+                    }
+                    
+                    const originalValue = globalSetting.apply_volume_margins;
+                    const newValue = originalValue ? 0 : 1;
+
+                    // Optimistic update
+                    setSettings(prev => prev.map(s => 
+                      s.id === globalSetting.id ? { ...s, apply_volume_margins: newValue } : s
+                    ));
+
+                    try {
+                      await apiFetch(`/profit-margins/${globalSetting.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ apply_volume_margins: newValue }),
+                      });
+                      toast(`Volume margins ${newValue ? 'enabled' : 'disabled'}`, 'success');
+                    } catch (err: any) {
+                      // Revert on error
+                      setSettings(prev => prev.map(s => 
+                        s.id === globalSetting.id ? { ...s, apply_volume_margins: originalValue } : s
+                      ));
+                      toast(err.message, 'error');
+                    }
+                  }}
+                  className="transition-transform active:scale-90"
+                >
+                  {globalSetting?.apply_volume_margins ? <ToggleRight size={40} className="text-indigo-600" /> : <ToggleLeft size={40} className="text-slate-300" />}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {[
+                  { range: '0 - 179 pages', discount: '0%', color: 'slate' },
+                  { range: '180 - 249 pages', discount: '10%', color: 'indigo' },
+                  { range: '250 - 499 pages', discount: '15%', color: 'violet' },
+                  { range: '500 - 1000 pages', discount: '25%', color: 'emerald' },
+                ].map((tier, idx) => (
+                  <div key={idx} className={`p-4 rounded-xl border border-${tier.color}-100 bg-${tier.color}-50/50`}>
+                    <p className={`text-[10px] font-black uppercase tracking-widest text-${tier.color}-600 mb-1`}>Tier {idx + 1}</p>
+                    <p className="text-lg font-bold text-slate-800">{tier.discount}</p>
+                    <p className="text-xs text-slate-500">{tier.range}</p>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-6 p-4 bg-amber-50 border border-amber-100 rounded-xl flex gap-3">
+                <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-amber-800 leading-relaxed">
+                  <p className="font-bold mb-1 uppercase tracking-wider">How it works:</p>
+                  <p>When enabled, the system will apply these specific margin percentages instead of the default global margin if the item's total page count falls within these ranges. This logic is strictly excluded from Examination batches.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
 
           {/* ── CATEGORY OVERRIDES ────────────────────────────────────────── */}
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

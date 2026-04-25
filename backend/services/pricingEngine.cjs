@@ -100,6 +100,19 @@ const resolveGlobalMargin = (resolve) => {
 };
 
 /**
+ * Resolve volume-based margin if enabled
+ */
+const resolveVolumeMargin = (pages, margin) => {
+  if (!margin.apply_volume_margins) return margin.margin_value;
+  
+  const p = Number(pages) || 0;
+  if (p >= 500) return 25;
+  if (p >= 250) return 15;
+  if (p >= 180) return 10;
+  return 0;
+};
+
+/**
  * Calculate margin amount
  */
 const calculateMarginAmount = (baseCost, margin) => {
@@ -237,6 +250,17 @@ const calculatePriceCore = async (input) => {
   let marginAmount = 0;
   if (shouldApply) {
     const costAfterAdjustments = runningCost + adjustmentTotal;
+    
+    // Volume Discount Logic (Excluded from Examination)
+    let effectiveMarginValue = margin.margin_value;
+    if (context !== 'EXAMINATION' && margin.apply_volume_margins) {
+      const pages = input.pages || (input.serviceDetails?.pages) || 0;
+      effectiveMarginValue = resolveVolumeMargin(pages, margin);
+      // Volume margins are always percentages in this logic
+      margin.margin_type = 'percentage';
+      margin.margin_value = effectiveMarginValue;
+    }
+
     marginAmount = calculateMarginAmount(costAfterAdjustments, margin);
   }
 

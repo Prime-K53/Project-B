@@ -948,19 +948,25 @@ const ExaminationBatchDetail: React.FC = () => {
                                   <div className="flex items-center justify-end gap-8">
                                     <div className="flex flex-col text-right">
                                       <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Production</span>
-                                      <span className="font-bold text-slate-700 finance-nums leading-none mt-1 text-sm">
+                                      <span className="font-bold text-slate-600 finance-nums leading-none mt-1 text-sm">
                                         {batch.currency || 'MWK'} {(Number(cls.material_total_cost) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                       </span>
                                     </div>
                                     <div className="flex flex-col text-right">
+                                      <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Margin</span>
+                                      <span className="font-bold text-orange-600 finance-nums leading-none mt-1 text-sm">
+                                        {batch.currency || 'MWK'} {(Number(cls.margin_amount) || Math.max(0, (Number(cls.calculated_total_cost) || 0) - (Number(cls.material_total_cost) || 0) - (Number(cls.adjustment_total_cost) || 0))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-col text-right">
                                       <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Adjustments</span>
-                                      <span className="font-bold text-slate-700 finance-nums leading-none mt-1 text-sm">
+                                      <span className="font-bold text-emerald-600 finance-nums leading-none mt-1 text-sm">
                                         {batch.currency || 'MWK'} {(Number(cls.adjustment_total_cost) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                       </span>
                                     </div>
                                     <div className="flex flex-col text-right">
                                       <span className="text-xs uppercase font-bold text-slate-600 tracking-widest">Class Total</span>
-                                      <span className="font-bold text-blue-700 finance-nums leading-none mt-1.5 text-base">
+                                      <span className="font-bold text-indigo-700 finance-nums leading-none mt-1.5 text-base">
                                         {batch.currency || 'MWK'} {resolveClassTotalAmount(cls).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                       </span>
                                     </div>

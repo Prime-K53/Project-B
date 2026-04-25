@@ -296,41 +296,8 @@ const AppLayout: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const wrapTablesForTablet = (root: ParentNode) => {
-      const tables = Array.from(root.querySelectorAll('table'));
-      for (const table of tables) {
-        table.classList.add('tablet-table-min');
-        if (table.closest('.tablet-table-scroll')) {
-          continue;
-        }
-        const parent = table.parentElement;
-        if (!parent) continue;
-        const wrapper = document.createElement('div');
-        wrapper.className = 'tablet-table-scroll custom-scrollbar';
-        parent.insertBefore(wrapper, table);
-        wrapper.appendChild(table);
-      }
-    };
-
-    wrapTablesForTablet(document);
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of Array.from(mutation.addedNodes)) {
-          if (!(node instanceof HTMLElement)) continue;
-          if (node.tagName.toLowerCase() === 'table') {
-            wrapTablesForTablet(node.parentElement || document);
-            continue;
-          }
-          if (node.querySelector('table')) {
-            wrapTablesForTablet(node);
-          }
-        }
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    // Table responsiveness is now handled via CSS in index.css
+    // avoid manual DOM manipulation that interferes with React
   }, []);
 
   useEffect(() => {

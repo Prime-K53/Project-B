@@ -18,7 +18,7 @@ const profitMarginService = {
       // 1. Check line_item level
       if (lineItemId) {
         db.get(
-          "SELECT margin_value, margin_type, scope FROM profit_margin_settings WHERE scope = 'line_item' AND scope_ref_id = ? AND is_active = 1 AND deleted_at IS NULL",
+          "SELECT margin_value, margin_type, scope, apply_volume_margins FROM profit_margin_settings WHERE scope = 'line_item' AND scope_ref_id = ? AND is_active = 1 AND deleted_at IS NULL",
           [lineItemId],
           (err, row) => {
             if (err) return reject(err);
@@ -38,7 +38,7 @@ const profitMarginService = {
     return new Promise((resolve, reject) => {
       if (categoryId) {
         db.get(
-          "SELECT margin_value, margin_type, scope FROM profit_margin_settings WHERE scope = 'category' AND scope_ref_id = ? AND is_active = 1 AND deleted_at IS NULL",
+          "SELECT margin_value, margin_type, scope, apply_volume_margins FROM profit_margin_settings WHERE scope = 'category' AND scope_ref_id = ? AND is_active = 1 AND deleted_at IS NULL",
           [categoryId],
           (err, row) => {
             if (err) return reject(err);
@@ -57,7 +57,7 @@ const profitMarginService = {
   _checkGlobal: () => {
     return new Promise((resolve, reject) => {
       db.get(
-        "SELECT margin_value, margin_type, scope FROM profit_margin_settings WHERE scope = 'global' AND is_active = 1 AND deleted_at IS NULL",
+        "SELECT margin_value, margin_type, scope, apply_volume_margins FROM profit_margin_settings WHERE scope = 'global' AND is_active = 1 AND deleted_at IS NULL",
         [],
         (err, row) => {
           if (err) return reject(err);
@@ -133,9 +133,9 @@ const profitMarginService = {
       db.serialize(() => {
         db.run("BEGIN TRANSACTION");
         db.run(
-          `INSERT INTO profit_margin_settings (id, scope, scope_ref_id, margin_type, margin_value, reason, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [id, scope, scope_ref_id, margin_type, margin_value, reason, userId],
+          `INSERT INTO profit_margin_settings (id, scope, scope_ref_id, margin_type, margin_value, reason, created_by, apply_volume_margins)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, scope, scope_ref_id, margin_type, margin_value, reason, userId, data.apply_volume_margins || 0],
           function(err) {
             if (err) {
               db.run("ROLLBACK");
@@ -186,6 +186,7 @@ const profitMarginService = {
         if (margin_value !== undefined) { updates.push("margin_value = ?"); params.push(margin_value); }
         if (margin_type !== undefined) { updates.push("margin_type = ?"); params.push(margin_type); }
         if (is_active !== undefined) { updates.push("is_active = ?"); params.push(is_active); }
+        if (data.apply_volume_margins !== undefined) { updates.push("apply_volume_margins = ?"); params.push(data.apply_volume_margins); }
         if (reason !== undefined) { updates.push("reason = ?"); params.push(reason); }
         updates.push("updated_at = CURRENT_TIMESTAMP");
         

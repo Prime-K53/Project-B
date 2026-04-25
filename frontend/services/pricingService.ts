@@ -717,7 +717,7 @@ export const pricingService = {
 /**
  * Get the Global Default Margin settings from the backend API
  */
-export const getGlobalDefaultMargin = async (): Promise<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number } | null> => {
+export const getGlobalDefaultMargin = async (): Promise<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number; apply_volume_margins?: boolean } | null> => {
     try {
         const API_BASE_URL = (await import('../config/api.js')).API_BASE_URL;
         const userId = localStorage.getItem('prime_user_id') || 'unknown';
@@ -739,7 +739,8 @@ export const getGlobalDefaultMargin = async (): Promise<{ margin_type: 'percenta
 
         return {
             margin_type: globalMargin.margin_type || 'percentage',
-            margin_value: Number(globalMargin.margin_value) || 0
+            margin_value: Number(globalMargin.margin_value) || 0,
+            apply_volume_margins: !!globalMargin.apply_volume_margins
         };
     } catch (error) {
         console.error('[PricingService] Failed to get global default margin:', error);
@@ -791,12 +792,25 @@ export const calculateAutoPrice = async ({
 
     // Apply markup
     let markedUpPrice = cost;
-    if (globalMargin.margin_type === 'percentage') {
-        markedUpPrice = cost * (1 + globalMargin.margin_value / 100);
+    let marginValue = globalMargin.margin_value;
+    let marginType = globalMargin.margin_type;
+
+    // Volume Discount Logic
+    if (globalMargin.apply_volume_margins) {
+        const pages = (companyConfig as any)?.pages || 0;
+        if (pages >= 500) marginValue = 25;
+        else if (pages >= 250) marginValue = 15;
+        else if (pages >= 180) marginValue = 10;
+        else marginValue = 0;
+        marginType = 'percentage';
+    }
+
+    if (marginType === 'percentage') {
+        markedUpPrice = cost * (1 + marginValue / 100);
         result.markupApplied = markedUpPrice - cost;
     } else {
-        markedUpPrice = cost + globalMargin.margin_value;
-        result.markupApplied = globalMargin.margin_value;
+        markedUpPrice = cost + marginValue;
+        result.markupApplied = marginValue;
     }
 
     let priceBeforeVat = markedUpPrice;

@@ -625,6 +625,7 @@ const initDb = () => {
         margin_type TEXT NOT NULL CHECK(margin_type IN ('percentage', 'fixed_amount')),
         margin_value REAL NOT NULL,
         is_active INTEGER DEFAULT 1,
+        apply_volume_margins INTEGER DEFAULT 0,
         reason TEXT,
         created_by TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -737,7 +738,8 @@ const initDb = () => {
         { table: 'examination_bom_calculations', column: 'adjustment_type', type: 'TEXT' },
         { table: 'examination_bom_calculations', column: 'adjustment_value', type: 'REAL DEFAULT 0' },
         { table: 'examination_bom_calculations', column: 'allocation_ratio', type: 'REAL DEFAULT 0' },
-        { table: 'documents', column: 'logical_number', type: 'TEXT' }
+        { table: 'documents', column: 'logical_number', type: 'TEXT' },
+        { table: 'profit_margin_settings', column: 'apply_volume_margins', type: 'INTEGER DEFAULT 0' }
       ];
 
       const migrationPromises = columns.map(col => {

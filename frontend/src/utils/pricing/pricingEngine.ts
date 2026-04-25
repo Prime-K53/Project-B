@@ -105,6 +105,18 @@ const resolveMargin = async (
   return { margin, shouldApply };
 };
 
+/**
+ * Volume-discount tier resolver.
+ * Returns the effective margin % for the given page count.
+ * Tiers: 0-179→0%, 180-249→10%, 250-499→15%, 500-1000→25%.
+ */
+const resolveVolumeMarginValue = (pages: number): number => {
+  if (pages >= 500) return 25;
+  if (pages >= 250) return 15;
+  if (pages >= 180) return 10;
+  return 0;
+};
+
 const calculateMarginAmount = (
   baseCost: number,
   margin: EffectiveMargin
@@ -196,17 +208,23 @@ export async function calculateSellingPrice(
     const unitPrice = applyRounding(basePrice);
     const totalPrice = roundToCurrency(unitPrice * safeQty);
     
+    // For manual overrides, we still need to report the margin.
+    // Margin = Unit Price - Cost - Other Adjustments
+    const normalizedAdjustments = normalizeSnapshots(adjustments, safeCost);
+    const adjustmentTotal = calculateAdjustmentTotal(normalizedAdjustments);
+    const marginAmount = roundToCurrency(unitPrice - safeCost - adjustmentTotal);
+    
     return {
       unitPrice,
       totalPrice,
       cost: safeCost,
-      marginAmount: 0,
-      adjustmentSnapshots: Object.freeze([]),
-      adjustmentTotal: 0,
+      marginAmount,
+      adjustmentSnapshots: (Object.freeze(normalizedAdjustments) as unknown) as SnapshotEntry[],
+      adjustmentTotal,
       breakdown: {
         baseCost: safeCost,
-        adjustments: 0,
-        margin: 0
+        adjustments: adjustmentTotal,
+        margin: marginAmount
       },
       pricingVersion: PRICING_ENGINE_VERSION
     };
@@ -224,6 +242,14 @@ export async function calculateSellingPrice(
   let marginAmount = 0;
   if (shouldApply) {
     const costAfterAdjustments = runningCost + adjustmentTotal;
+
+    // Volume-discount override (Products & Services only — never EXAMINATION)
+    if (margin.apply_volume_margins && (context as string) !== 'EXAMINATION') {
+      const pageCount = Number(input.pages) || 0;
+      margin.margin_value = resolveVolumeMarginValue(pageCount);
+      margin.margin_type = 'percentage';
+    }
+
     marginAmount = calculateMarginAmount(costAfterAdjustments, margin);
   }
 
@@ -245,7 +271,7 @@ export async function calculateSellingPrice(
     totalPrice,
     cost: runningCost,
     marginAmount,
-    adjustmentSnapshots: Object.freeze(currentSnapshots),
+    adjustmentSnapshots: (Object.freeze(currentSnapshots) as unknown) as SnapshotEntry[],
     adjustmentTotal,
     breakdown,
     pricingVersion: PRICING_ENGINE_VERSION

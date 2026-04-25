@@ -15,6 +15,7 @@ export interface EffectiveMargin {
   margin_value: number;
   margin_type: 'percentage' | 'fixed_amount';
   source: 'line_item' | 'category' | 'global' | 'system';
+  apply_volume_margins?: boolean;
 }
 
 /** In-memory cache keyed by `${lineItemId}|${categoryId}` */
@@ -112,5 +113,5 @@ export async function getSellingPrice(
 }
 
 function _systemDefault(): EffectiveMargin {
-  return { margin_value: 0, margin_type: 'percentage', source: 'system' };
+  return { margin_value: 0, margin_type: 'percentage', source: 'system', apply_volume_margins: false };
 }

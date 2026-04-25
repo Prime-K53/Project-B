@@ -1,4 +1,4 @@
-export type PricingContext = 'POS' | 'ORDER' | 'SERVICE';
+export type PricingContext = 'POS' | 'ORDER' | 'SERVICE' | 'EXAMINATION';
 
 export type MarginType = 'percentage' | 'fixed_amount';
 
@@ -6,6 +6,7 @@ export type EffectiveMargin = {
   margin_value: number;
   margin_type: MarginType;
   source: 'line_item' | 'category' | 'global' | 'system';
+  apply_volume_margins?: boolean;
 };
 
 export interface SnapshotEntry {
@@ -26,6 +27,7 @@ export interface PricingInput {
   baseCost: number;
   basePrice?: number;
   quantity?: number;
+  pages?: number;
   adjustments?: SnapshotEntry[];
   context: PricingContext;
 }

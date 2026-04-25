@@ -21,7 +21,7 @@ const SmartPricing: React.FC = () => {
     const { companyConfig } = useData();
 
     // Global Default Margin for auto-pricing
-    const [globalMargin, setGlobalMargin] = React.useState<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number } | null>(null);
+    const [globalMargin, setGlobalMargin] = React.useState<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number; apply_volume_margins?: boolean } | null>(null);
     const [globalMarginWarning, setGlobalMarginWarning] = React.useState<string | null>(null);
 
     // Load Global Default Margin on mount
@@ -189,13 +189,28 @@ const SmartPricing: React.FC = () => {
 
     // Apply Global Default Margin to get final price
     const profitMarginAmount = React.useMemo(() => {
-        if (!globalMargin || globalMargin.margin_value <= 0) return 0;
-        if (globalMargin.margin_type === 'percentage') {
-            return priceAfterMarketAdjustments * (globalMargin.margin_value / 100);
-        } else {
-            return globalMargin.margin_value;
+        if (!globalMargin) return 0;
+
+        let marginValue = globalMargin.margin_value;
+        let marginType = globalMargin.margin_type;
+
+        // Volume Discount Logic
+        if (globalMargin.apply_volume_margins) {
+            if (pages >= 500) marginValue = 25;
+            else if (pages >= 250) marginValue = 15;
+            else if (pages >= 180) marginValue = 10;
+            else marginValue = 0;
+            marginType = 'percentage';
         }
-    }, [globalMargin, priceAfterMarketAdjustments]);
+
+        if (marginValue <= 0) return 0;
+
+        if (marginType === 'percentage') {
+            return priceAfterMarketAdjustments * (marginValue / 100);
+        } else {
+            return marginValue;
+        }
+    }, [globalMargin, priceAfterMarketAdjustments, pages]);
 
     const finalPrice = priceAfterMarketAdjustments + profitMarginAmount;
 

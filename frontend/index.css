@@ -168,6 +168,13 @@
       -webkit-overflow-scrolling: touch;
     }
 
+    /* Ensure tables can scroll on tablet if not already wrapped */
+    .app-layout-frame table {
+      max-width: 100%;
+      display: block;
+      overflow-x: auto;
+    }
+
     .app-layout-frame .flex > * {
       min-width: 0;
     }

@@ -13,6 +13,7 @@ interface CartSidebarProps {
     setSelectedSubAccount: (val: string) => void;
     onSelectCustomer: () => void;
     updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void;
+    updatePrice: (id: string, newPrice: number) => void;
     removeFromCart: (id: string) => void;
     clearCart: () => void;
     onPark: () => void;
@@ -39,7 +40,7 @@ interface CartSidebarProps {
 }
 
 export const CartSidebar: React.FC<CartSidebarProps> = ({
-    cart, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, rounding
+    cart, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, rounding
 }) => {
     const { companyConfig, invoices } = useData();
     const currency = companyConfig.currencySymbol;
@@ -121,6 +122,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                                 key={item.id}
                                 item={item}
                                 updateQuantity={updateQuantity}
+                                updatePrice={updatePrice}
                                 removeFromCart={removeFromCart}
                             />
                         ))}
@@ -264,15 +266,22 @@ return null;
     );
 }
 
-const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void, removeFromCart: (id: string) => void }> = ({ item, updateQuantity, removeFromCart }) => {
+const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta: number, isAbsolute?: boolean) => void, updatePrice: (id: string, newPrice: number) => void, removeFromCart: (id: string) => void }> = ({ item, updateQuantity, updatePrice, removeFromCart }) => {
     const { companyConfig } = useData();
     const currency = companyConfig.currencySymbol;
     const [localQty, setLocalQty] = useState(item.quantity.toString());
     const serviceDetails = (item as any).serviceDetails;
 
+    const [isEditingPrice, setIsEditingPrice] = useState(false);
+    const [localPrice, setLocalPrice] = useState(item.price.toString());
+
     useEffect(() => {
         setLocalQty(item.quantity.toString());
     }, [item.quantity]);
+
+    useEffect(() => {
+        setLocalPrice(item.price.toString());
+    }, [item.price]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
@@ -292,6 +301,32 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
         } else {
             setLocalQty(item.quantity.toString());
         }
+    };
+
+    const handlePriceKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            const val = parseFloat(localPrice);
+            if (!isNaN(val) && val >= 0) {
+                updatePrice(item.id, val);
+                setIsEditingPrice(false);
+            } else {
+                setLocalPrice(item.price.toString());
+                setIsEditingPrice(false);
+            }
+        } else if (e.key === 'Escape') {
+            setLocalPrice(item.price.toString());
+            setIsEditingPrice(false);
+        }
+    };
+
+    const handlePriceBlur = () => {
+        const val = parseFloat(localPrice);
+        if (!isNaN(val) && val >= 0) {
+            updatePrice(item.id, val);
+        } else {
+            setLocalPrice(item.price.toString());
+        }
+        setIsEditingPrice(false);
     };
 
     return (
@@ -334,10 +369,27 @@ const CartItemRow: React.FC<{ item: CartItem, updateQuantity: (id: string, delta
                         />
                         <button onClick={() => updateQuantity(item.id, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-slate-50 border-l border-slate-200"><Plus size={10} /></button>
                     </div>
-                    <span className="text-[11px] text-slate-500">
-                        {serviceDetails
-                            ? `${serviceDetails.pages} pages x ${serviceDetails.copies} copies`
-                            : `@ ${currency}${formatNumber(item.price)}`}
+                    <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                        @ {currency}
+                        {isEditingPrice ? (
+                            <input
+                                type="number"
+                                autoFocus
+                                className="w-16 bg-white border border-blue-400 rounded px-1 text-xs font-bold text-blue-600 outline-none"
+                                value={localPrice}
+                                onChange={(e) => setLocalPrice(e.target.value)}
+                                onKeyDown={handlePriceKeyDown}
+                                onBlur={handlePriceBlur}
+                            />
+                        ) : (
+                            <span 
+                                onClick={() => setIsEditingPrice(true)}
+                                className={`font-bold cursor-pointer hover:text-blue-600 transition-colors ${item.manual_override ? 'text-blue-600 underline decoration-dotted' : 'text-slate-800'}`}
+                                title="Click to override price"
+                            >
+                                {formatNumber(item.price)}
+                            </span>
+                        )}
                     </span>
                 </div>
                 <div className="text-right">

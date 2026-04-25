@@ -25,6 +25,25 @@ import {
   CheckCircle, AlertTriangle, Loader2, ArrowLeft, Lock, Unlock, Info, Settings, X, ShieldCheck 
 } from 'lucide-react';
 
+export const calculateExaminationPricing = (
+  bom: number,
+  adjustmentRate: number,
+  profitMargin: number,
+  learners: number
+) => {
+  const adjustedCost = bom + (bom * adjustmentRate);
+  const total = adjustedCost * (1 + profitMargin);
+  const rawFeePerLearner = learners > 0 ? total / learners : 0;
+  
+  const precisionFee = Number(rawFeePerLearner.toFixed(2));
+  const roundedFeePerLearner = Math.round(precisionFee / 50) * 50;
+  
+  return {
+    Total: Number(total.toFixed(2)),
+    FeePerLearner: roundedFeePerLearner
+  };
+};
+
 interface ExaminationJobFormProps {
   isModal?: boolean;
   onClose?: () => void;
@@ -134,6 +153,14 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
     );
   }, [inventory]);
 
+  const [globalMargin, setGlobalMargin] = useState<any>(null);
+
+  useEffect(() => {
+    import('../../utils/getEffectiveMargin').then(({ getEffectiveMargin }) => {
+      getEffectiveMargin(null, null, false).then(setGlobalMargin);
+    });
+  }, []);
+
   useEffect(() => {
     if (!inventory || inventory.length === 0) return;
     setPricingConfig(prev => {
@@ -192,27 +219,17 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
     };
   }, [pricingConfig.paperId, pricingConfig.tonerId, totalSheets, totalPages, inventory]);
 
-  // Calculate total adjustments
+  // Calculate total adjustments (legacy, kept for reference if needed elsewhere)
   const totalAdjustments = useMemo(() => {
     if (!pricingConfig.marketAdjustmentId || !pricingConfig.marketAdjustment) return 0;
     return pricingConfig.marketAdjustment;
   }, [pricingConfig.marketAdjustmentId, pricingConfig.marketAdjustment]);
 
-  // Calculate total cost
-  const totalCost = totalBOMCost + totalAdjustments;
-
-  // Calculate fee per learner
-  const feePerLearner = formData.number_of_learners > 0 
-    ? totalCost / formData.number_of_learners 
-    : 0;
-
   // Manual fee override state
   const [feeOverrideEnabled, setFeeOverrideEnabled] = useState(false);
   const [manualFeePerLearner, setManualFeePerLearner] = useState(0);
   
-  // Final fee per learner (auto or manual)
-  const finalFeePerLearner = feeOverrideEnabled ? manualFeePerLearner : feePerLearner;
-  const finalTotalAmount = finalFeePerLearner * formData.number_of_learners;
+
 
   // adjustmentOptions must be defined BEFORE adjustmentInfo
   const adjustmentOptions = useMemo(() => {
@@ -291,6 +308,25 @@ const ExaminationJobForm: React.FC<ExaminationJobFormProps> = ({ isModal: propIs
       adjustments: adjustmentOptions
     };
   }, [adjustmentOptions]);
+
+  // Calculate total cost and fee per learner using the new formula
+  const { totalCost, feePerLearner } = useMemo(() => {
+    const bom = totalBOMCost;
+    const adjustmentRate = (adjustmentInfo.totalPercentage || 0) / 100;
+    const profitMargin = globalMargin ? (globalMargin.margin_value / 100) : 0;
+    const learners = formData.number_of_learners;
+
+    const result = calculateExaminationPricing(bom, adjustmentRate, profitMargin, learners);
+
+    return {
+      totalCost: result.Total,
+      feePerLearner: result.FeePerLearner
+    };
+  }, [totalBOMCost, adjustmentInfo.totalPercentage, globalMargin, formData.number_of_learners]);
+
+  // Final fee per learner (auto or manual)
+  const finalFeePerLearner = feeOverrideEnabled ? manualFeePerLearner : feePerLearner;
+  const finalTotalAmount = finalFeePerLearner * formData.number_of_learners;
 
   const selectedCustomer = useMemo(() => {
     return customers.find(customer => customer.id === formData.school_id) || null;

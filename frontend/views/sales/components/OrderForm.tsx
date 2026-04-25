@@ -2314,15 +2314,16 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                                             ) : (
                                                                 <input
                                                                     type="number"
-                                                                    className="w-full bg-transparent text-right outline-none focus:text-blue-600 font-mono font-normal disabled:text-slate-500"
+                                                                    className={`w-full bg-transparent text-right outline-none focus:text-blue-600 font-mono font-normal disabled:text-slate-500 ${item.manual_override ? 'text-blue-600 font-bold underline decoration-dotted' : ''}`}
                                                                     value={item.price}
                                                                     onChange={e => {
                                                                         if (isPriceLocked || serviceDetails) return;
                                                                         const newItems = [...formData.items];
                                                                         newItems[idx].price = roundToCurrency(parseFloat(e.target.value) || 0);
+                                                                        newItems[idx].manual_override = true;
                                                                         setFormData({ ...formData, items: newItems });
                                                                     }}
-                                                                    disabled={isPriceLocked || !!serviceDetails || isExaminationQuotation}
+                                                                    disabled={isPriceLocked || isExaminationQuotation}
                                                                 />
                                                             )}
                                                         </td>

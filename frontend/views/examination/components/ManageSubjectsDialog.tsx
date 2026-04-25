@@ -2,10 +2,33 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../../components/Dialog';
 import { Input } from '../../../components/Input';
 import { ExaminationClass, ExaminationSubject, Item } from '../../../types';
-import { Trash2, FileText, Copy, Layout, RotateCw, Calculator, Hash, Truck, ChevronDown, ChevronUp, Pencil, X, AlertTriangle, Users, Plus, Minus, Loader2 } from 'lucide-react';
+import { Trash2, FileText, Copy, Layout, RotateCw, Calculator, Hash, Truck, ChevronDown, ChevronUp, Pencil, X, AlertTriangle, Users, Plus, Minus, Loader2, TrendingUp, Info } from 'lucide-react';
 import { useData } from '../../../context/DataContext';
 import { examinationBatchService } from '../../../services/examinationBatchService';
 import OverrideDialog from './OverrideDialog';
+
+export const calculateExaminationPricing = (
+  bom: number,
+  adjustmentRate: number,
+  profitMargin: number,
+  learners: number
+) => {
+  const adjustedCost = bom + (bom * adjustmentRate);
+  const marginAmount = adjustedCost * profitMargin;
+  const total = adjustedCost + marginAmount;
+  const rawFeePerLearner = learners > 0 ? total / learners : 0;
+  
+  // Ensure floating point precision up to 2 decimal places before rounding
+  const precisionFee = Number(rawFeePerLearner.toFixed(2));
+  const feePerLearner = Math.round(precisionFee / 50) * 50;
+  
+  return {
+    adjustedCost: Number(adjustedCost.toFixed(2)),
+    marginAmount: Number(marginAmount.toFixed(2)),
+    total: Number(total.toFixed(2)),
+    feePerLearner
+  };
+};
 
 interface ManageSubjectsDialogProps {
   open: boolean;
@@ -103,7 +126,6 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const [localTonerId, setLocalTonerId] = useState<string>('');
   const [isAdvancedPricingOpen, setIsAdvancedPricingOpen] = useState(false);
   const [isAdjustmentsOpen, setIsAdjustmentsOpen] = useState(false);
-  const [applyPreviewRounding, setApplyPreviewRounding] = useState(true);
   const [isPersistingSelections, setIsPersistingSelections] = useState(false);
   const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false);
   const [isApplyingOverride, setIsApplyingOverride] = useState(false);
@@ -111,6 +133,14 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
   const [subjectFormError, setSubjectFormError] = useState<string | null>(null);
   const [backendAdjustments, setBackendAdjustments] = useState<any[] | null>(null);
   const [adjustmentSourceWarning, setAdjustmentSourceWarning] = useState<string | null>(null);
+  const [isMarginOpen, setIsMarginOpen] = useState(false);
+  const [globalMargin, setGlobalMargin] = useState<any>(null);
+
+  useEffect(() => {
+    import('../../../utils/getEffectiveMargin').then(({ getEffectiveMargin }) => {
+      getEffectiveMargin(null, null, false).then(setGlobalMargin);
+    });
+  }, []);
 
   // Learner Count Management
   const [learnerCount, setLearnerCount] = useState<number>(0);
@@ -175,6 +205,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
     materialTotalCost: number;
     adjustmentTotalCost: number;
     calculatedTotalCost: number;
+    marginAmount?: number;
   } | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -417,10 +448,27 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         tonerUnitCost: tonerUnitCost > 0 ? tonerUnitCost : undefined,
         tonerPagesPerUnit: tonerPagesPerUnit > 0 ? tonerPagesPerUnit : undefined,
         paperConversionRate: paperConversionRate > 0 ? paperConversionRate : undefined,
-        applyRounding: applyPreviewRounding,
-        rounding_method: applyPreviewRounding ? 'ALWAYS_UP_50' : undefined,
-        rounding_value: applyPreviewRounding ? 50 : undefined
+        applyRounding: true,
+        rounding_method: 'ALWAYS_UP_50',
+        rounding_value: 50
       });
+
+      const adjustmentRateDec = effectiveAdjustments.reduce((sum, adj) => {
+        const isPct = String(adj.type).toUpperCase().includes('PERCENT');
+        return isPct ? sum + (Number(adj.value ?? adj.percentage ?? 0) / 100) : sum;
+      }, 0);
+      const profitMarginDec = globalMargin ? (globalMargin.margin_value / 100) : 0;
+      
+      const localPricing = calculateExaminationPricing(
+        result.totalBomCost,
+        adjustmentRateDec,
+        profitMarginDec,
+        examinationClass.number_of_learners || 0
+      );
+
+      result.totalCost = localPricing.total;
+      result.expectedFeePerLearner = localPricing.feePerLearner;
+      result.calculatedTotalCost = localPricing.total;
 
       setPreview({
         totalSheets: result.totalSheets,
@@ -431,7 +479,8 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         expectedFeePerLearner: result.expectedFeePerLearner,
         materialTotalCost: result.materialTotalCost,
         adjustmentTotalCost: result.adjustmentTotalCost,
-        calculatedTotalCost: result.calculatedTotalCost
+        calculatedTotalCost: result.calculatedTotalCost,
+        marginAmount: localPricing.marginAmount
       });
 
       // Automatically sync only when values truly changed. This prevents repeated
@@ -446,7 +495,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
         || Math.abs(result.adjustmentTotalCost - adjustmentPersisted) > 0.01
         || Math.abs(result.calculatedTotalCost - calculatedPersisted) > 0.01;
 
-      if (applyPreviewRounding && !isLocked && (isManualTrigger || hasMetricDelta)) {
+      if (!isLocked && (isManualTrigger || hasMetricDelta)) {
         const syncSignature = [
           examinationClass.id,
           result.expectedFeePerLearner.toFixed(2),
@@ -454,8 +503,7 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
           result.adjustmentTotalCost.toFixed(2),
           result.calculatedTotalCost.toFixed(2),
           String(localPaperId || ''),
-          String(localTonerId || ''),
-          applyPreviewRounding ? '1' : '0'
+          String(localTonerId || '')
         ].join('|');
 
         if (autoSyncSignatureRef.current !== syncSignature) {
@@ -489,7 +537,6 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
       setIsPreviewLoading(false);
     }
   }, [
-    applyPreviewRounding,
     examinationClass?.id,
     examinationClass?.expected_fee_per_learner,
     (examinationClass as any)?.material_total_cost,
@@ -500,7 +547,9 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
     paperMaterials,
     tonerMaterials,
     onSaveClassPricing,
-    isLocked
+    isLocked,
+    effectiveAdjustments,
+    globalMargin
   ]);
 
   // Fetch and sync preview when class or materials change
@@ -891,6 +940,8 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                 <span className="opacity-30 mx-1">•</span>
                 <span className="text-slate-900 inline-flex items-center"><span className="text-indigo-400 mr-1 uppercase text-[11px]">Adjust:</span> {companyConfig?.currencySymbol || 'MWK'} {preview.totalAdjustments.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                 <span className="opacity-30 mx-1">•</span>
+                <span className="text-slate-900 inline-flex items-center"><span className="text-emerald-500 mr-1 uppercase text-[11px]">Margin:</span> {companyConfig?.currencySymbol || 'MWK'} {(preview.marginAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                <span className="opacity-30 mx-1">•</span>
                 <span className="text-slate-900 inline-flex items-center"><span className="text-indigo-400 mr-1 uppercase text-[11px]">Total:</span> {companyConfig?.currencySymbol || 'MWK'} {preview.totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                 <span className="opacity-30 mx-1">•</span>
                 <span className="text-blue-700 font-bold inline-flex items-center"><span className="text-blue-400 mr-1 uppercase text-[11px]">Fee/Learner:</span> {companyConfig?.currencySymbol || 'MWK'} {preview.expectedFeePerLearner.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
@@ -935,6 +986,8 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                     Final Fee: <span className="font-semibold">{currencySymbol} {finalFeePerLearner.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                     <span className="mx-2 text-slate-400">|</span>
                     Total Amount: <span className="font-semibold">{currencySymbol} {liveTotalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span className="mx-2 text-slate-400">|</span>
+                    Total Margin: <span className="font-semibold text-emerald-600">{currencySymbol} {(preview?.marginAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className={`text-[10px] font-bold uppercase tracking-wider ${hasManualOverride ? 'text-amber-700' : 'text-slate-500'}`}>
                     {hasManualOverride ? 'Status: Manual Override Active' : 'Status: Auto Pricing'}
@@ -1012,18 +1065,10 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                     </div>
                   </div>
                   <div className="mt-4 pt-3 border-t border-slate-200">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                        checked={applyPreviewRounding}
-                        onChange={(e) => setApplyPreviewRounding(e.target.checked)}
-                      />
-                      Apply fee rounding to nearest 50 in preview
-                    </label>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Disable to view raw per-learner fee without rounding adjustment.
-                    </p>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-2 rounded-lg border border-blue-100">
+                      <Info className="w-4 h-4" />
+                      Fee per learner is automatically rounded to the nearest 50.
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1073,6 +1118,44 @@ export const ManageSubjectsDialog: React.FC<ManageSubjectsDialogProps> = ({
                       return <p className="text-xs text-slate-400 italic">No active market adjustments found.</p>;
                     })()}
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* Global Default Margin Section */}
+            <div className="border-t border-slate-200 pt-4 mt-4">
+              <button
+                type="button"
+                onClick={() => setIsMarginOpen(!isMarginOpen)}
+                className="w-full flex items-center justify-between text-left group"
+              >
+                <div className="flex flex-col gap-1">
+                  <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" /> Global Default Margin
+                  </h4>
+                  <p className="text-[10px] text-emerald-600 uppercase font-medium">Applied after material costs and adjustments</p>
+                </div>
+                <div className="h-8 w-8 flex items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 group-hover:bg-emerald-200 transition-colors">
+                  {isMarginOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </div>
+              </button>
+
+              {isMarginOpen && (
+                <div className="mt-3 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 animate-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                      <TrendingUp size={20} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-emerald-900">Base Profit Margin</div>
+                      <div className="text-lg font-bold text-emerald-700">
+                        {globalMargin ? `${globalMargin.margin_value}%` : '0%'}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-emerald-700/80">
+                    This margin is applied system-wide to calculate the final Total and Fee per Learner.
+                  </p>
                 </div>
               )}
             </div>
