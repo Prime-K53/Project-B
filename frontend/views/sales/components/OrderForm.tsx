@@ -371,6 +371,23 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         () => examinationDetails.classes.reduce((sum, entry) => sum + Math.max(0, Number(entry.learners) || 0), 0),
         [examinationDetails]
     );
+    const getPricingDisplayMeta = (label: string) => {
+        const normalized = String(label || '').toLowerCase();
+
+        if (normalized.includes('transport') || normalized.includes('logistics') || normalized.includes('delivery')) {
+            return { priority: 0, Icon: Truck, iconClass: 'text-blue-500', textClass: 'text-blue-600' };
+        }
+        if (normalized.includes('waste') || normalized.includes('wastage') || normalized.includes('shrinkage')) {
+            return { priority: 1, Icon: Scale, iconClass: 'text-rose-500', textClass: 'text-rose-600' };
+        }
+        if (normalized.includes('round')) {
+            return { priority: 3, Icon: Tag, iconClass: 'text-purple-500', textClass: normalized.includes('-') ? 'text-rose-600' : 'text-purple-600' };
+        }
+        if (normalized.includes('profit') || normalized.includes('margin')) {
+            return { priority: 4, Icon: TrendingUp, iconClass: 'text-emerald-500', textClass: 'text-emerald-600' };
+        }
+        return { priority: 2, Icon: Tag, iconClass: 'text-indigo-500', textClass: 'text-indigo-600' };
+    };
     // Check if price is locked (approved Quote/Order)
     const isPriceLocked = (!localUnlock) && (initialData?.isPriceLocked || (formData.status === 'Approved' || formData.status === 'Completed' || formData.status === 'Paid'));
 
@@ -843,6 +860,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     }, [quotationLineItems, formData.discount, inventory, marketAdjustments, companyConfig]);
 
     const finalDisplayTotal = analysis.totalAmount;
+    const orderedAdjustmentEntries = useMemo(() => {
+        return Object.entries(analysis.adjustmentBreakdown).sort(([nameA], [nameB]) => {
+            const metaA = getPricingDisplayMeta(nameA);
+            const metaB = getPricingDisplayMeta(nameB);
+            if (metaA.priority !== metaB.priority) return metaA.priority - metaB.priority;
+            return nameA.localeCompare(nameB);
+        });
+    }, [analysis.adjustmentBreakdown]);
 
     useEffect(() => {
         if (!initialData) {
@@ -2709,58 +2734,36 @@ const handleVariantSelect = async (variant: ProductVariant) => {
 
                                     {/* Market Adjustment Breakdown */}
                                     <div className="space-y-1.5 pt-2 border-t border-slate-50">
-                                        {Object.entries(analysis.adjustmentBreakdown).map(([name, amount]) => {
+                                        {orderedAdjustmentEntries.map(([name, amount]) => {
                                             if ((amount as number) <= 0) return null;
-                                            const n = name.toLowerCase();
-                                            let Icon = Tag;
-                                            let colorClass = "text-indigo-500";
-                                            let textClass = "text-indigo-600";
-
-                                            if (n.includes('profit') || n.includes('margin')) {
-                                                Icon = TrendingUp;
-                                                colorClass = "text-emerald-500";
-                                                textClass = "text-emerald-600";
-                                            } else if (n.includes('transport') || n.includes('logistics') || n.includes('delivery')) {
-                                                Icon = Truck;
-                                                colorClass = "text-blue-500";
-                                                textClass = "text-blue-600";
-                                            } else if (n.includes('wastage') || n.includes('shrinkage')) {
-                                                Icon = Scale;
-                                                colorClass = "text-amber-500";
-                                                textClass = "text-amber-600";
-                                            }
+                                            const meta = getPricingDisplayMeta(name);
+                                            const Icon = meta.Icon;
 
                                             return (
                                                 <div key={name} className="flex justify-between items-center">
                                                     <span className="text-slate-400 text-[11px] font-normal tracking-tight flex items-center gap-1.5">
-                                                        <Icon size={10} className={colorClass} /> • {name}
+                                                        <Icon size={10} className={meta.iconClass} /> {name}
                                                     </span>
-                                                    <span className={`${textClass} font-mono text-[11px] font-medium`}>+{currency}{(amount as number).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    <span className={`${meta.textClass} font-mono text-[11px] font-medium`}>+{currency}{(amount as number).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                 </div>
                                             );
                                         })}
-                                        {(() => {
-                                            const profitMargin = analysis.pricingSummary.profitMarginTotal;
-                                            if (profitMargin > 0) {
-                                                return (
-                                                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
-                                                        <span className="text-emerald-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
-                                                            <TrendingUp size={10} className="text-emerald-500" /> • Profit Margin
-                                                        </span>
-                                                        <span className="text-emerald-600 font-mono text-[11px] font-semibold">+{currency}{profitMargin.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                    </div>
-                                                );
-                                            }
-                                            return null;
-                                        })()}
                                         {Math.abs(analysis.pricingSummary.roundingTotal) > 0.0001 && (
                                             <div className="flex justify-between items-center">
-                                                <span className="text-blue-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
-                                                    <Tag size={10} className="text-blue-500" /> â€¢ Round Up
+                                                <span className="text-purple-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                                    <Tag size={10} className="text-purple-500" /> Round Up
                                                 </span>
-                                                <span className={`font-mono text-[11px] font-semibold ${analysis.pricingSummary.roundingTotal >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                                <span className={`font-mono text-[11px] font-semibold ${analysis.pricingSummary.roundingTotal >= 0 ? 'text-purple-600' : 'text-rose-600'}`}>
                                                     {analysis.pricingSummary.roundingTotal >= 0 ? '+' : ''}{currency}{analysis.pricingSummary.roundingTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                                 </span>
+                                            </div>
+                                        )}
+                                        {analysis.pricingSummary.profitMarginTotal > 0 && (
+                                            <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
+                                                <span className="text-emerald-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                                    <TrendingUp size={10} className="text-emerald-500" /> Profit Margin
+                                                </span>
+                                                <span className="text-emerald-600 font-mono text-[11px] font-semibold">+{currency}{analysis.pricingSummary.profitMarginTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                             </div>
                                         )}
                                     </div>

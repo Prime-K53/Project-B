@@ -124,6 +124,44 @@ const DB_VERSION = 32;
 
 let dbPromise: Promise<IDBPDatabase<NexusDB>> | null = null;
 
+const isRecoverableDbConnectionError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) return false;
+    if (error.name === 'VersionError' || error.name === 'InvalidStateError') return true;
+
+    const message = String(error.message || '').toLowerCase();
+    return message.includes('database connection is closing')
+        || message.includes('connection is closing')
+        || message.includes('connection is closed');
+};
+
+const resetDbConnection = async (db?: IDBPDatabase<NexusDB> | null) => {
+    try {
+        db?.close();
+    } catch { }
+    dbPromise = null;
+};
+
+const withDbRecovery = async <T>(operation: (db: IDBPDatabase<NexusDB>) => Promise<T>): Promise<T> => {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const db = await initDB();
+        try {
+            return await operation(db);
+        } catch (error) {
+            lastError = error;
+            if (!isRecoverableDbConnectionError(error) || attempt === 1) {
+                throw error;
+            }
+
+            console.warn('[DB] Recovering from stale IndexedDB connection, reopening database...');
+            await resetDbConnection(db);
+        }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error('IndexedDB operation failed.');
+};
+
 // Handle HMR and page reloads by closing the connection
 if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => {
@@ -460,22 +498,21 @@ export const dbService = {
     },
 
     async executeAtomicOperation<T>(stores: (keyof NexusDB)[], operation: (tx: any) => Promise<T>): Promise<T> {
-        const db = await initDB();
-        const tx = db.transaction(stores as any, 'readwrite');
-        try {
-            const result = await operation(tx);
-            await tx.done;
-            emitDataChange(stores.map((store) => String(store)));
-            return result;
-        } catch (err) {
-            console.error("Atomic transaction failed. Data rolled back locally.", err);
-            // Auto-repair: If it's a version error, try to refresh connection
-            if (err instanceof Error && err.name === 'VersionError') {
-                dbPromise = null;
-                await initDB();
+        return withDbRecovery(async (db) => {
+            const tx = db.transaction(stores as any, 'readwrite');
+            try {
+                const result = await operation(tx);
+                await tx.done;
+                emitDataChange(stores.map((store) => String(store)));
+                return result;
+            } catch (err) {
+                console.error("Atomic transaction failed. Data rolled back locally.", err);
+                if (isRecoverableDbConnectionError(err)) {
+                    await resetDbConnection(db);
+                }
+                throw err;
             }
-            throw err;
-        }
+        });
     },
 
     async connectToLocalFile(): Promise<boolean> {
@@ -544,39 +581,43 @@ export const dbService = {
     },
 
     async getAll<T>(storeName: keyof NexusDB): Promise<T[]> {
-        const db = await initDB();
-        if (!db.objectStoreNames.contains(storeName as any)) {
-            console.warn(`Object store "${storeName}" not found in IndexedDB.`);
-            return [];
-        }
-        return db.getAll(storeName as any) as Promise<T[]>;
+        return withDbRecovery(async (db) => {
+            if (!db.objectStoreNames.contains(storeName as any)) {
+                console.warn(`Object store "${storeName}" not found in IndexedDB.`);
+                return [];
+            }
+            return db.getAll(storeName as any) as Promise<T[]>;
+        });
     },
 
     async get<T>(storeName: keyof NexusDB, id: string): Promise<T | undefined> {
-        const db = await initDB();
-        if (!db.objectStoreNames.contains(storeName as any)) {
-            console.warn(`Object store "${storeName}" not found in IndexedDB.`);
-            return undefined;
-        }
-        return db.get(storeName as any, id) as Promise<T | undefined>;
+        return withDbRecovery(async (db) => {
+            if (!db.objectStoreNames.contains(storeName as any)) {
+                console.warn(`Object store "${storeName}" not found in IndexedDB.`);
+                return undefined;
+            }
+            return db.get(storeName as any, id) as Promise<T | undefined>;
+        });
     },
 
     async put<T>(storeName: keyof NexusDB, item: T): Promise<string> {
-        const db = await initDB();
-        if (typeof item === 'object' && item !== null) {
-            (item as any)._updatedAt = new Date().toISOString();
-        }
-        const res = await db.put(storeName as any, item as any);
-        this.triggerSync();
-        emitDataChange([String(storeName)]);
-        return res as string;
+        return withDbRecovery(async (db) => {
+            if (typeof item === 'object' && item !== null) {
+                (item as any)._updatedAt = new Date().toISOString();
+            }
+            const res = await db.put(storeName as any, item as any);
+            this.triggerSync();
+            emitDataChange([String(storeName)]);
+            return res as string;
+        });
     },
 
     async getSetting<T>(key: string): Promise<T | undefined> {
         try {
-            const db = await initDB();
-            if (!db.objectStoreNames.contains('settings')) return undefined;
-            return db.get('settings', key);
+            return withDbRecovery(async (db) => {
+                if (!db.objectStoreNames.contains('settings')) return undefined;
+                return db.get('settings', key);
+            });
         } catch (e) {
             console.warn("[DB] Error getting setting:", key, e);
             return undefined;
@@ -584,10 +625,11 @@ export const dbService = {
     },
 
     async saveSetting<T>(key: string, value: T): Promise<void> {
-        const db = await initDB();
-        await db.put('settings', { id: key, ...value as any });
-        this.triggerSync();
-        emitDataChange(['settings']);
+        await withDbRecovery(async (db) => {
+            await db.put('settings', { id: key, ...value as any });
+            this.triggerSync();
+            emitDataChange(['settings']);
+        });
     },
 
     async factoryReset() {
@@ -599,30 +641,33 @@ export const dbService = {
     },
 
     async delete(storeName: keyof NexusDB, id: string): Promise<void> {
-        const db = await initDB();
-        await db.delete(storeName as any, id);
-        this.triggerSync();
-        emitDataChange([String(storeName)]);
+        await withDbRecovery(async (db) => {
+            await db.delete(storeName as any, id);
+            this.triggerSync();
+            emitDataChange([String(storeName)]);
+        });
     },
 
     async saveFile(file: File): Promise<string> {
         const id = `FILE-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        const db = await initDB();
-        await db.put('files', {
-            id,
-            blob: file,
-            name: file.name,
-            type: file.type,
-            created: new Date().toISOString()
+        return withDbRecovery(async (db) => {
+            await db.put('files', {
+                id,
+                blob: file,
+                name: file.name,
+                type: file.type,
+                created: new Date().toISOString()
+            });
+            return id;
         });
-        return id;
     },
 
     async getFile(id: string): Promise<string | null> {
-        const db = await initDB();
-        const fileRecord = await db.get('files', id);
-        if (!fileRecord) return null;
-        return URL.createObjectURL(fileRecord.blob);
+        return withDbRecovery(async (db) => {
+            const fileRecord = await db.get('files', id);
+            if (!fileRecord) return null;
+            return URL.createObjectURL(fileRecord.blob);
+        });
     },
 
     async downloadBackupManual() {

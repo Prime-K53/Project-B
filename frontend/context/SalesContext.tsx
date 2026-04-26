@@ -211,6 +211,31 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
+    const pushTransactionAlert = async (details: {
+        title: string;
+        message: string;
+        module?: string;
+        severity?: string;
+        type?: string;
+        actionUrl?: string;
+    }) => {
+        try {
+            await addAlert({
+                id: `ALERT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                title: details.title,
+                message: details.message,
+                type: details.type || 'INFO',
+                module: details.module || 'Sales',
+                severity: details.severity || 'Medium',
+                actionUrl: details.actionUrl,
+                date: new Date().toISOString(),
+                read: false
+            } as any);
+        } catch (alertError) {
+            console.error('[SalesContext] Failed to publish transaction alert', alertError);
+        }
+    };
+
     const normalizeCustomerPaymentTerms = (customer: Customer, oldCustomer?: Customer): Customer => {
         const normalizedSegment = (customer.segment || oldCustomer?.segment || 'Individual') as Customer['segment'];
         const normalizedCustomer = { ...customer, segment: normalizedSegment };
@@ -357,6 +382,15 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         newValue: invoice
                     });
 
+                    await pushTransactionAlert({
+                        title: 'Recurring Invoice Generated',
+                        message: `Invoice #${invId} created for ${sub.customerName}.`,
+                        module: 'Subscriptions',
+                        severity: 'Low',
+                        type: 'SUCCESS',
+                        actionUrl: '/sales-flow/subscriptions'
+                    });
+
                     count++;
                 } catch (err: any) {
                     console.error("Recurring billing error for sub", sub.id, err);
@@ -416,6 +450,15 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await salesStore.fetchSalesData();
             await finance.fetchFinanceData?.();
 
+            await pushTransactionAlert({
+                title: 'POS Sale Completed',
+                message: `Sale #${id} posted for ${saleToProcess.customerName || 'Walk-in Customer'} (${formatNotificationAmount(saleToProcess.totalAmount)}).`,
+                module: 'POS',
+                severity: 'Low',
+                type: 'SUCCESS',
+                actionUrl: '/pos'
+            });
+
             return { success: true, id: id };
         } catch (error: any) {
             console.error("Sale Error:", error);
@@ -458,6 +501,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             // Refresh data
             await salesStore.fetchSalesData();
+            await pushTransactionAlert({
+                title: 'Refund Processed',
+                message: `Refund posted for Sale #${saleId} (${formatNotificationAmount(calculatedRefundAmount)}).`,
+                module: 'Sales',
+                severity: 'Medium',
+                type: 'INFO',
+                actionUrl: '/pos'
+            });
         } catch (error: any) {
             notify(`Refund Failed: ${error.message}`, 'error');
         }
@@ -835,6 +886,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
 
             notify(`Payment #${payment.id} posted successfully`, "success");
+            await pushTransactionAlert({
+                title: 'Customer Payment Posted',
+                message: `Payment #${payment.id} received from ${payment.customerName} (${formatNotificationAmount(finalPayment.amount)}).`,
+                module: 'Payments',
+                severity: 'Low',
+                type: 'SUCCESS',
+                actionUrl: '/sales-flow/payments'
+            });
 
             const isPosPayment = finalPayment.notes?.includes('POS') || (finalPayment as any).reference?.includes('POS');
             if (!isPosPayment) {
@@ -858,6 +917,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await salesStore.fetchSalesData();
             await finance.fetchFinanceData?.();
             notify(`Payment #${id} voided successfully`, "success");
+            await pushTransactionAlert({
+                title: 'Customer Payment Voided',
+                message: `Payment #${id} was voided.`,
+                module: 'Payments',
+                severity: 'Medium',
+                type: 'WARNING',
+                actionUrl: '/sales-flow/payments'
+            });
             addAuditLog({
                 action: 'DELETE',
                 entityType: 'CustomerPayment',
@@ -934,6 +1001,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await salesStore.fetchSalesData();
             await finance.fetchFinanceData?.();
             notify(`Sale #${sale.id} updated successfully`, "success");
+            await pushTransactionAlert({
+                title: 'POS Sale Updated',
+                message: `Sale #${sale.id} was updated.`,
+                module: 'POS',
+                severity: 'Low',
+                type: 'INFO',
+                actionUrl: '/pos'
+            });
             addAuditLog({
                 action: 'UPDATE',
                 entityType: 'POSSale',
@@ -954,6 +1029,14 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             await salesStore.fetchSalesData();
             await finance.fetchFinanceData?.();
             notify(`Payment #${payment.id} updated successfully`, "success");
+            await pushTransactionAlert({
+                title: 'Customer Payment Updated',
+                message: `Payment #${payment.id} for ${payment.customerName} was updated.`,
+                module: 'Payments',
+                severity: 'Low',
+                type: 'INFO',
+                actionUrl: '/sales-flow/payments'
+            });
             addAuditLog({
                 action: 'UPDATE',
                 entityType: 'CustomerPayment',

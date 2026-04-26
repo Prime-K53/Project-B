@@ -46,7 +46,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
     const handleCancel = useCallback(() => {
         setActivePaymentMethod(null);
-        handleCancel();
+        onCancel();
     }, [onCancel]);
 
     // Auto-calculate change when amount received changes
@@ -248,6 +248,7 @@ const canCompleteSale = useMemo(() => {
         if (!adjustmentSummary || adjustmentSummary.length === 0) return 0;
         return adjustmentSummary.reduce((sum, adj) => sum + (adj.totalAmount || 0), 0);
     }, [adjustmentSummary]);
+    const roundingTotal = Number.isFinite(_roundingAccumulation) ? _roundingAccumulation : 0;
 
     const creditStatus = useMemo(() => {
         if (!customerName) return { available: 0, blocked: true, reason: 'Walk-in' };
@@ -294,10 +295,14 @@ const canCompleteSale = useMemo(() => {
                                         <span className="text-slate-500">Total Adjustments</span>
                                         <span className="font-mono text-emerald-700 font-semibold">+{currency}{formatNumber(adjustmentTotal)}</span>
                                     </div>
+                                    {Math.abs(roundingTotal) > 0.0001 && (
                                     <div className="flex items-center justify-between text-[11px]">
                                         <span className="text-slate-500">Round Up</span>
-                                        <span className="font-mono text-blue-600 font-semibold">+{currency}{formatNumber(_roundingAccumulation)}</span>
+                                        <span className={`font-mono font-semibold ${roundingTotal >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                                            {roundingTotal >= 0 ? '+' : ''}{currency}{formatNumber(roundingTotal)}
+                                        </span>
                                     </div>
+                                    )}
                                     <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-100">
                                         <span className="text-slate-500 font-bold">Profit Margin</span>
                                         <span className="font-mono text-emerald-600 font-bold">{currency}{formatNumber(totalProfitMargin)}</span>

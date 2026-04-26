@@ -16,6 +16,7 @@ type PricingCarrier = {
     roundedPrice?: number | null;
     originalPrice?: number | null;
     baseCost?: number | null;
+    roundingDifference?: number | null;
   } | null;
 };
 
@@ -60,6 +61,27 @@ export function resolveStoredCalculatedPrice(source?: PricingCarrier | null): nu
     inferredCalculated,
     roundedPrice
   );
+}
+
+export function resolveStoredRoundingDifference(source?: PricingCarrier | null): number {
+  if (!source) return 0;
+
+  const explicitRoundingDifference = toFiniteNumber(
+    source.smartPricingSnapshot?.roundingDifference ?? source.rounding_difference
+  );
+
+  if (explicitRoundingDifference !== undefined) {
+    return Math.round((explicitRoundingDifference + Number.EPSILON) * 100) / 100;
+  }
+
+  const roundedPrice = resolveStoredSellingPrice(source);
+  const calculatedPrice = resolveStoredCalculatedPrice(source);
+
+  if (roundedPrice > 0 && calculatedPrice > 0) {
+    return Math.round(((roundedPrice - calculatedPrice) + Number.EPSILON) * 100) / 100;
+  }
+
+  return 0;
 }
 
 export function resolveStoredCost(source?: PricingCarrier | null): number {

@@ -1,4 +1,5 @@
 import { PricingBreakdownSnapshot } from '../types';
+import { resolveStoredRoundingDifference } from './pricing';
 
 const roundMoney = (value: unknown): number => {
   const parsed = Number(value);
@@ -183,7 +184,7 @@ export const buildPricingBreakdownSnapshot = (
     smartSnapshot?.roundingDifference
     ?? item.roundingDifference
     ?? item.rounding_difference
-    ?? 0
+    ?? resolveStoredRoundingDifference(item)
   );
 
   const explicitMargin = Number(

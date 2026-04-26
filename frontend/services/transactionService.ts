@@ -15,7 +15,6 @@ import { MultiCurrencyJournalEntry, MultiCurrencyTransactionLine, CurrencyGainLo
 
 import { assertInvoiceNumberFormat, calculateDueDate, generateNextId, resolveCustomerPaymentTerms, roundToCurrency } from '../utils/helpers';
 import { extractProfitMargin } from '../utils/financial/extractors';
-import { generateNextSalesInvoiceNumber } from './documentNumberService';
 import { pagesToReams, pagesToTonerKg } from '../utils/printConversions';
 import { inferSignatureInputMode, resolveSignatureDataUrl } from '../utils/signatureUtils';
 import {
@@ -1544,7 +1543,10 @@ export const transactionService = {
                     }
                 }
                 if (!invoiceId) {
-                    invoiceId = await generateNextSalesInvoiceNumber(getCompanyConfig());
+                    // Avoid nested/non-transactional async work inside an active IDB transaction.
+                    // Calling document-number service here can commit this tx early, causing
+                    // "TransactionInactiveError: The transaction has finished" on later puts.
+                    invoiceId = generateNextId('INV', existingInvoices as any[]);
                 }
 
                 const invoice: Invoice = {

@@ -981,13 +981,32 @@ const DashboardContent: React.FC = () => {
   const nextSubscription = (() => {
     const activeSubs = (subscriptions as any[]).filter(s => String(s.status || '').toLowerCase() === 'active');
     if (activeSubs.length === 0) return null;
-    const sorted = [...activeSubs].sort((a, b) => {
-      const dateA = new Date(a.nextDueDate || a.nextBillingDate || a.dueDate || '9999-12-31').getTime();
-      const dateB = new Date(b.nextDueDate || b.nextBillingDate || b.dueDate || '9999-12-31').getTime();
+    const enriched = activeSubs.map((sub) => {
+      const lastGeneratedInvoice = [...(invoices as any[])]
+        .filter(inv => inv.customerName === sub.customerName && String(inv.id || '').includes('REC'))
+        .sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime())[0] || null;
+      const nextRunAt = sub.nextRunDate || sub.nextDueDate || sub.nextBillingDate || sub.dueDate || null;
+      const amountDue = toSafeNumber(sub.total ?? sub.totalAmount ?? lastGeneratedInvoice?.totalAmount);
+
+      return {
+        ...sub,
+        nextRunAt,
+        nextDueDate: nextRunAt,
+        nextBillingDate: nextRunAt,
+        dueDate: nextRunAt,
+        totalAmount: amountDue,
+        amountDue,
+        lastGeneratedInvoice
+      };
+    });
+
+    const sorted = [...enriched].sort((a, b) => {
+      const dateA = new Date(a.nextRunAt || '9999-12-31').getTime();
+      const dateB = new Date(b.nextRunAt || '9999-12-31').getTime();
       return dateA - dateB;
     });
     const next = sorted[0];
-    if (!next || (!next.planName && !next.customerName && !next.frequency)) return null;
+    if (!next || (!next.customerName && !next.planName && !next.frequency)) return null;
     return next;
   })();
 
@@ -1013,7 +1032,7 @@ const DashboardContent: React.FC = () => {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontSize: 28, fontWeight: 800, color: '#f59e0b', letterSpacing: '-0.02em', lineHeight: 1 }}>
-              {nextSubscription ? (nextSubscription.planName || 'Active') : 'Enterprise'}
+              {nextSubscription ? formatSubName(nextSubscription.customerName || nextSubscription.planName || 'Active') : 'Enterprise'}
             </div>
             <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500, marginTop: 4 }}>
               {nextSubscription ? `${nextSubscription.customerName || 'Company account'} · ${nextSubscription.frequency || 'Pro'}` : 'Prime ERP Management System'}
@@ -1029,7 +1048,7 @@ const DashboardContent: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 11, color: '#64748b' }}>Amount due</div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#b45309', backgroundColor: '#fffbeb', padding: '1px 8px', borderRadius: 6 }}>
-              {formatShortCurrency(currency, toSafeNumber(nextSubscription?.totalAmount))}
+              {formatShortCurrency(currency, toSafeNumber(nextSubscription?.amountDue))}
             </div>
           </div>
         </div>

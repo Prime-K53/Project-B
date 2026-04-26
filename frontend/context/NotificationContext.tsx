@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { ExaminationBatchNotification } from '../types';
 import { examinationNotificationService } from '../services/examinationNotificationService';
 import { dbService } from '../services/db';
+import { NOTIFICATION_SYNC_KEY, NOTIFICATION_UPDATE_EVENT, publishSystemAlert } from '../services/systemAlertService';
 
 interface NotificationContextType {
   // State
@@ -76,15 +77,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     setLoading(true);
     try {
       const user = examinationNotificationService.getCurrentUserId();
-      if (!user) {
-        setNotifications([]);
-        return;
-      }
       userIdRef.current = user;
 
       // Parallel fetch from both sources
       const [examNotifs, systemAlerts] = await Promise.all([
-        examinationNotificationService.getUserNotifications(user, maxNotifications),
+        user
+          ? examinationNotificationService.getUserNotifications(user, maxNotifications)
+          : Promise.resolve([]),
         dbService.getAll<any>('alerts')
       ]);
 
@@ -106,13 +105,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
       const mappedSystem: UnifiedNotification[] = systemAlerts.map(a => ({
         id: a.id,
         type: a.type?.toUpperCase() || 'SYSTEM',
-        priority: (a.type === 'error' ? 'High' : (a.type === 'warning' ? 'Medium' : 'Low')) as any,
+        priority: (a.priority || a.severity || (a.type === 'error' ? 'High' : (a.type === 'warning' ? 'Medium' : 'Low'))) as any,
         title: a.title || 'System Alert',
         message: a.message,
         is_read: !!a.read,
         created_at: a.date || a._updatedAt || new Date().toISOString(),
         read_at: a.readAt,
-        module: 'System',
+        module: a.module || 'System',
         actionUrl: a.actionUrl || '/audit'
       }));
 
@@ -135,7 +134,22 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
 
   const markAsRead = useCallback(async (notificationId: string) => {
     try {
-      await examinationNotificationService.markAsRead(notificationId);
+      const notification = notifications.find(n => n.id === notificationId);
+      if (!notification) return;
+
+      if (notification.module === 'Examination') {
+        await examinationNotificationService.markAsRead(notificationId);
+      } else {
+        const storedAlert = await dbService.get<any>('alerts', notificationId);
+        if (storedAlert) {
+          await dbService.put('alerts', {
+            ...storedAlert,
+            read: true,
+            readAt: new Date().toISOString()
+          });
+        }
+      }
+
       setNotifications(prev =>
         prev.map(n =>
           n.id === notificationId
@@ -175,17 +189,14 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
   }, [notifications]);
 
   const notify = useCallback(async (options: NotifyOptions) => {
-    const id = `notif-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    const newNotif: any = {
-      id,
+    await publishSystemAlert({
       type: options.type?.toUpperCase() || 'INFO',
+      title: options.title,
       message: options.message,
-      date: new Date().toISOString(),
-      read: false
-    };
-
-    await dbService.put('alerts', newNotif);
-    await fetchNotifications(false);
+      module: options.module || 'System',
+      priority: options.priority
+    });
+    await fetchNotifications(true);
   }, [fetchNotifications]);
 
   const clearAllRead = useCallback(async () => {
@@ -228,13 +239,16 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
 
   // Listen for storage events (for cross-tab sync)
   useEffect(() => {
+    const handleNotificationUpdate = () => {
+      fetchNotifications(true);
+    };
+
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'nexus_notification_update' && e.newValue) {
+      if (e.key === NOTIFICATION_SYNC_KEY && e.newValue) {
         try {
           const data = JSON.parse(e.newValue);
-          if (data.userId === userIdRef.current) {
-            // Refresh notifications from another tab
-            fetchNotifications(false);
+          if (!data.userId || data.userId === userIdRef.current) {
+            fetchNotifications(true);
           }
         } catch (err) {
           // Ignore invalid data
@@ -242,8 +256,12 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
       }
     };
 
+    window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate as EventListener);
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate as EventListener);
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, [fetchNotifications]);
 
   const value: NotificationContextType = {

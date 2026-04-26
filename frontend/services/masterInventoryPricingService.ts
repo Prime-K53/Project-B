@@ -79,6 +79,65 @@ const sumSnapshotAmounts = (snapshots: AdjustmentSnapshot[]): number => {
     return roundToCurrency(snapshots.reduce((sum, snapshot) => sum + (snapshot.calculatedAmount || 0), 0));
 };
 
+const resolveGlobalMargin = (
+    companyConfig: CompanyConfig | undefined,
+    fallbackMarginPercent?: number
+): { marginAmount: (baseAmount: number) => number; marginPercent: (baseAmount: number) => number } => {
+    const configuredMargin = companyConfig?.pricingSettings?.globalDefaultMargin;
+    const marginType = configuredMargin?.margin_type;
+    const marginValue = Number(configuredMargin?.margin_value ?? fallbackMarginPercent ?? 0) || 0;
+
+    if (marginType === 'fixed_amount') {
+        return {
+            marginAmount: () => roundToCurrency(marginValue),
+            marginPercent: (baseAmount: number) => (
+                baseAmount > 0
+                    ? roundToCurrency((marginValue / baseAmount) * 100)
+                    : 0
+            )
+        };
+    }
+
+    return {
+        marginAmount: (baseAmount: number) => roundToCurrency(baseAmount * (marginValue / 100)),
+        marginPercent: () => roundToCurrency(marginValue)
+    };
+};
+
+const calculateStationeryLinePricing = ({
+    baseCost,
+    selectedAdjustmentIds,
+    applicableAdjustments,
+    companyConfig,
+    fallbackMarginPercent
+}: {
+    baseCost: number;
+    selectedAdjustmentIds?: string[];
+    applicableAdjustments: MarketAdjustment[];
+    companyConfig?: CompanyConfig;
+    fallbackMarginPercent?: number;
+}) => {
+    const safeBaseCost = roundToCurrency(Math.max(0, Number(baseCost) || 0));
+    const selectedIds = Array.from(new Set((selectedAdjustmentIds || []).filter(Boolean)));
+    const selectedAdjustments = applicableAdjustments.filter(adj => selectedIds.includes(adj.id));
+    const adjustmentSnapshots = buildSnapshotsFromBaseCost(safeBaseCost, selectedAdjustments);
+    const adjustmentTotal = sumSnapshotAmounts(adjustmentSnapshots);
+    const subtotalBeforeMargin = roundToCurrency(safeBaseCost + adjustmentTotal);
+    const marginResolver = resolveGlobalMargin(companyConfig, fallbackMarginPercent);
+    const marginAmount = marginResolver.marginAmount(subtotalBeforeMargin);
+    const marginPercent = marginResolver.marginPercent(subtotalBeforeMargin);
+
+    return {
+        cost: safeBaseCost,
+        selectedAdjustmentIds: selectedIds,
+        adjustmentSnapshots,
+        adjustmentTotal,
+        marginAmount,
+        marginPercent,
+        calculatedPrice: roundToCurrency(subtotalBeforeMargin + marginAmount)
+    };
+};
+
 const snapshotsChanged = (oldSnapshots: AdjustmentSnapshot[] | undefined, newSnapshots: AdjustmentSnapshot[]): boolean => {
     return JSON.stringify(oldSnapshots || []) !== JSON.stringify(newSnapshots || []);
 };
@@ -116,7 +175,11 @@ const applyRoundedFieldsToVariant = (
     sourceVariant: ProductVariant,
     targetVariant: ProductVariant,
     calculatedPrice: number,
-    companyConfig?: CompanyConfig
+    companyConfig?: CompanyConfig,
+    options?: {
+        methodOverride?: PricingRoundingMethod;
+        customStepOverride?: number;
+    }
 ): void => {
     const normalizedCalculatedPrice = roundToCurrency(Number(calculatedPrice || 0));
     const existingRoundedPrice = resolveStoredSellingPrice(sourceVariant);
@@ -130,6 +193,8 @@ const applyRoundedFieldsToVariant = (
     const rounded = applyProductPriceRounding({
         calculatedPrice: normalizedCalculatedPrice,
         companyConfig,
+        methodOverride: options?.methodOverride,
+        customStepOverride: options?.customStepOverride,
         existingCalculatedPrice: Number.isFinite(existingCalculatedPrice) ? existingCalculatedPrice : undefined,
         existingRoundedPrice: Number.isFinite(existingRoundedPrice) ? existingRoundedPrice : undefined,
         existingRoundingDifference: Number.isFinite(existingDifference) ? existingDifference : undefined,
@@ -148,7 +213,11 @@ const applyRoundedFieldsToItem = (
     sourceItem: Item,
     targetItem: Item,
     calculatedPrice: number,
-    companyConfig?: CompanyConfig
+    companyConfig?: CompanyConfig,
+    options?: {
+        methodOverride?: PricingRoundingMethod;
+        customStepOverride?: number;
+    }
 ): void => {
     const normalizedCalculatedPrice = roundToCurrency(Number(calculatedPrice || 0));
     const existingRoundedPrice = resolveStoredSellingPrice(sourceItem);
@@ -162,6 +231,8 @@ const applyRoundedFieldsToItem = (
     const rounded = applyProductPriceRounding({
         calculatedPrice: normalizedCalculatedPrice,
         companyConfig,
+        methodOverride: options?.methodOverride,
+        customStepOverride: options?.customStepOverride,
         existingCalculatedPrice: Number.isFinite(existingCalculatedPrice) ? existingCalculatedPrice : undefined,
         existingRoundedPrice: Number.isFinite(existingRoundedPrice) ? existingRoundedPrice : undefined,
         existingRoundingDifference: Number.isFinite(existingDifference) ? existingDifference : undefined,
@@ -195,8 +266,27 @@ const repriceVariant = (
     let nextCost = roundToCurrency(resolveStoredCost(variant));
     let nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(variant));
     let nextSnapshots: AdjustmentSnapshot[] = [...(variant.adjustmentSnapshots || [])];
+    const variantRoundingMethod = ((variant as any).selectedRoundingMethod || parentItem.pricingConfig?.selectedRoundingMethod) as PricingRoundingMethod | undefined;
+    const variantCustomRoundingStep = Number((variant as any).customRoundingStep ?? parentItem.pricingConfig?.customRoundingStep) || undefined;
 
-    if (variant.pricingSource === 'static' || parentItem.pricingConfig?.manualOverride) {
+    if (parentItem.type === 'Stationery' && !(variant as any).manualOverride) {
+        const stationeryPricing = calculateStationeryLinePricing({
+            baseCost: resolveStoredCost(variant),
+            selectedAdjustmentIds: (variant as any).selectedAdjustmentIds || parentItem.pricingConfig?.selectedAdjustmentIds,
+            applicableAdjustments,
+            companyConfig,
+            fallbackMarginPercent: Number(variant.marginPercent ?? parentItem.marginPercent ?? 0)
+        });
+
+        nextCost = stationeryPricing.cost;
+        nextCalculatedPrice = stationeryPricing.calculatedPrice;
+        nextSnapshots = stationeryPricing.adjustmentSnapshots || [];
+        nextVariant.marginAmount = stationeryPricing.marginAmount;
+        nextVariant.marginPercent = stationeryPricing.marginPercent;
+        (nextVariant as any).selectedAdjustmentIds = stationeryPricing.selectedAdjustmentIds;
+        (nextVariant as any).selectedRoundingMethod = variantRoundingMethod;
+        (nextVariant as any).customRoundingStep = variantCustomRoundingStep;
+    } else if (variant.pricingSource === 'static' || parentItem.pricingConfig?.manualOverride) {
         nextCost = roundToCurrency(resolveStoredCost(variant));
         nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(variant));
         nextSnapshots = variant.adjustmentSnapshots || [];
@@ -238,7 +328,10 @@ const repriceVariant = (
     nextVariant.cost_price = nextCost;
     nextVariant.adjustmentSnapshots = nextSnapshots;
     nextVariant.adjustmentTotal = sumSnapshotAmounts(nextSnapshots);
-    applyRoundedFieldsToVariant(variant, nextVariant, nextCalculatedPrice, companyConfig);
+    applyRoundedFieldsToVariant(variant, nextVariant, nextCalculatedPrice, companyConfig, {
+        methodOverride: variantRoundingMethod,
+        customStepOverride: variantCustomRoundingStep
+    });
 
     const pricingChanged =
         numbersDiffer(variant.calculated_price, nextVariant.calculated_price) ||
@@ -288,11 +381,34 @@ const repriceItem = (
     const nextPricingConfig = item.pricingConfig ? { ...item.pricingConfig } : item.pricingConfig;
     let variantChanges = 0;
     const roundingLogs: LogRoundingEventInput[] = [];
+    const itemRoundingMethod = item.pricingConfig?.selectedRoundingMethod as PricingRoundingMethod | undefined;
+    const itemCustomRoundingStep = Number(item.pricingConfig?.customRoundingStep) || undefined;
 
     if (item.pricingConfig?.manualOverride) {
         nextCost = roundToCurrency(resolveStoredCost(item));
         nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(item));
         nextSnapshots = item.adjustmentSnapshots || [];
+    } else if (item.type === 'Stationery') {
+        const stationeryPricing = calculateStationeryLinePricing({
+            baseCost: resolveStoredCost(item),
+            selectedAdjustmentIds: item.pricingConfig?.selectedAdjustmentIds,
+            applicableAdjustments,
+            companyConfig,
+            fallbackMarginPercent: Number(item.marginPercent || 0)
+        });
+
+        nextCost = stationeryPricing.cost;
+        nextCalculatedPrice = stationeryPricing.calculatedPrice;
+        nextSnapshots = stationeryPricing.adjustmentSnapshots || [];
+        nextItem.marginPercent = stationeryPricing.marginPercent;
+        nextItem.costPerPiece = stationeryPricing.cost;
+        nextItem.profitPerPiece = roundToCurrency(nextCalculatedPrice - stationeryPricing.cost);
+
+        if (nextPricingConfig) {
+            nextPricingConfig.totalCost = stationeryPricing.cost;
+            nextPricingConfig.marketAdjustment = stationeryPricing.adjustmentTotal;
+            nextPricingConfig.selectedAdjustmentIds = stationeryPricing.selectedAdjustmentIds;
+        }
     } else if (item.pricingConfig && !item.pricingConfig.manualOverride) {
         const spec = calculateItemFinancials(
             Number(item.pages || 1),
@@ -365,7 +481,7 @@ const repriceItem = (
     nextItem.cost_price = nextCost;
     nextItem.adjustmentSnapshots = nextSnapshots;
 
-    if (item.type === 'Material') {
+    if (item.type === 'Raw Material') {
         // Materials are cost-only entities in this workflow.
         const storedCalculatedPrice = resolveStoredCalculatedPrice(item);
         const storedRoundedPrice = resolveStoredSellingPrice(item);
@@ -379,11 +495,21 @@ const repriceItem = (
         nextItem.rounding_method = item.rounding_method;
         nextItem.price = nextItem.selling_price;
     } else {
-        applyRoundedFieldsToItem(item, nextItem, nextCalculatedPrice, companyConfig);
+        applyRoundedFieldsToItem(item, nextItem, nextCalculatedPrice, companyConfig, {
+            methodOverride: itemRoundingMethod,
+            customStepOverride: itemCustomRoundingStep
+        });
     }
 
     if (nextPricingConfig) {
         nextItem.pricingConfig = nextPricingConfig;
+    }
+
+    if (item.type === 'Stationery') {
+        nextItem.sellingPricePerPiece = nextItem.selling_price ?? nextItem.price;
+        nextItem.costPerPiece = nextCost;
+        nextItem.profitPerPiece = roundToCurrency((nextItem.selling_price ?? nextItem.price ?? 0) - nextCost);
+        nextItem.markup_percent = roundToCurrency(nextItem.marginPercent ?? item.marginPercent ?? 0);
     }
 
     if (item.variants && item.variants.length > 0) {
@@ -413,7 +539,7 @@ const repriceItem = (
         pricingConfigChanged(item.pricingConfig, nextItem.pricingConfig) ||
         JSON.stringify(item.variants || []) !== JSON.stringify(nextItem.variants || []);
 
-    if (item.type !== 'Material' && itemPricingChanged) {
+    if (item.type !== 'Raw Material' && itemPricingChanged) {
         roundingLogs.push({
             productId: nextItem.id,
             productName: nextItem.name,
@@ -471,7 +597,7 @@ export const repriceMasterInventoryFromAdjustments = async (
     ]);
 
     const activeAdjustments = adjustments.filter(isAdjustmentActive);
-    const candidates = inventory.filter((item) => item.type !== 'Material');
+    const candidates = inventory.filter((item) => item.type !== 'Raw Material');
     const updatedItems: Item[] = [];
     let updatedVariantCount = 0;
     const roundingLogs: LogRoundingEventInput[] = [];

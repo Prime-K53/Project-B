@@ -22,14 +22,14 @@ import { buildPosReceiptDoc } from '../services/receiptCalculationService';
 import { api } from '../services/api';
 import { customerNotificationService } from '../services/customerNotificationService';
 
-import { generateNextId, roundFinancial, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
+import { generateNextId, roundToCurrency, formatNumber, downloadBlob } from '../utils/helpers';
 import { attachDocumentSecurity } from '../utils/documentSecurity';
-import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredSellingPrice } from '../utils/pricing';
+import { resolveStoredCalculatedPrice, resolveStoredCost, resolveStoredRoundingDifference, resolveStoredSellingPrice } from '../utils/pricing';
 import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/pricingEngine';
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 const POS: React.FC = () => {
-  const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
+  const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, addAlert, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
   const { postZReportToLedger, fetchFinanceData } = useFinance();
   const currency = companyConfig.currencySymbol;
 
@@ -270,7 +270,7 @@ const POS: React.FC = () => {
     setShowPaymentModal(true);
   };
 
-  const { total, processedItems, totalProfitMargin } = useMemo(() => {
+  const { total, processedItems } = useMemo(() => {
     const items = cart.map(item => {
       const itemCost = Number(item.cost || item.cost_price || 0);
       const itemPrice = Number(item.price || 0);
@@ -284,17 +284,16 @@ const POS: React.FC = () => {
     });
 
     const subTotal = items.reduce((sum, i) => sum + i.totalAmount, 0);
-    const totalMargin = items.reduce((sum, i) => sum + (i._calcMargin || 0), 0);
     const finalTotal = subTotal;
 
     return {
       total: finalTotal,
-      processedItems: items,
-      totalProfitMargin: totalMargin
+      processedItems: items
     };
   }, [cart]);
 
   const payableTotal = total;
+  const pricingSummary = useMemo(() => summarizePricingBreakdown(cart as any[]), [cart]);
 
   // Calculate adjustment summary from cart items for display in totals section
   const cartAdjustmentSummary = useMemo(() => {
@@ -323,36 +322,29 @@ const POS: React.FC = () => {
     return summary.filter((entry) => Math.abs(entry.totalAmount) > 0.0001);
   }, [cart]);
 
-  const roundingAccumulation = useMemo(() => {
-    const totalRounding = cart.reduce((sum, item) => {
-      const qty = Number(item.quantity || 0);
-      if (!qty) return sum;
+  const roundingAccumulation = Number(pricingSummary.roundingTotal || 0);
 
-      const serviceDetails = (item as any).serviceDetails;
-      if (serviceDetails && isFinite(Number(serviceDetails.calculatedTotalPrice))) {
-        const calculated = Number(serviceDetails.calculatedTotalPrice);
-        const rounded = Number(serviceDetails.totalPrice ?? (item.price * qty));
-        if (isFinite(calculated) && isFinite(rounded)) {
-          return sum + (rounded - calculated);
-        }
-      }
+  const buildStoredPricingState = (source: any, fallbackCost: number, adjustmentTotalValue: number) => {
+    const storedSellingPrice = resolveStoredSellingPrice(source as any);
+    const storedCalculatedPrice = resolveStoredCalculatedPrice(source as any);
+    const storedRoundingDifference = resolveStoredRoundingDifference(source as any);
+    const normalizedPrice = storedSellingPrice > 0
+      ? storedSellingPrice
+      : roundToCurrency(storedCalculatedPrice + storedRoundingDifference);
+    const normalizedCalculatedPrice = storedCalculatedPrice > 0
+      ? storedCalculatedPrice
+      : roundToCurrency(normalizedPrice - storedRoundingDifference);
+    const normalizedRoundingDifference = roundToCurrency(
+      storedRoundingDifference || (normalizedPrice - normalizedCalculatedPrice)
+    );
 
-      const directDiff = Number((item as any).rounding_difference);
-      if (isFinite(directDiff)) {
-        return sum + (directDiff * qty);
-      }
-
-      const calculated = resolveStoredCalculatedPrice(item as any);
-      const rounded = resolveStoredSellingPrice(item as any);
-      if (isFinite(calculated) && isFinite(rounded)) {
-        return sum + ((rounded - calculated) * qty);
-      }
-
-      return sum;
-    }, 0);
-
-    return roundToCurrency(totalRounding);
-  }, [cart]);
+    return {
+      price: normalizedPrice,
+      calculatedPrice: normalizedCalculatedPrice,
+      roundingDifference: normalizedRoundingDifference,
+      marginAmount: roundToCurrency(normalizedPrice - fallbackCost - adjustmentTotalValue - normalizedRoundingDifference)
+    };
+  };
 
   const addToCart = async (item: any) => {
     if (item.type !== 'Service') {
@@ -385,6 +377,9 @@ const POS: React.FC = () => {
         isActive: true
       };
     });
+    const marketAdjustmentTotal = marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0);
+    const baseStoredCost = resolveStoredCost(baseItem as any) || Number(baseItem.cost || 0);
+    const baseStoredPricing = buildStoredPricingState(baseItem, baseStoredCost, marketAdjustmentTotal);
 
     // For variants: use the stored selling price directly — it was already computed by
     // the SmartPricing engine and stored on the variant. Re-running calculateSellingPrice
@@ -409,18 +404,24 @@ const POS: React.FC = () => {
 
     if (isVariant && variantStoredPrice > 0) {
       // Use variant's pre-computed price — no recalculation needed
-      resolvedPrice = variantStoredPrice;
+      const variantStoredPricing = buildStoredPricingState(item, variantStoredCost, variantAdjTotal);
+      resolvedPrice = variantStoredPricing.price || variantStoredPrice;
       resolvedCost = variantStoredCost;
       resolvedAdjTotal = variantAdjTotal;
-      // Use variant's adjustment data
       resolvedAdjSnaps = variantAdjSnaps;
+      marginAmount = variantStoredPricing.marginAmount;
+      roundingDifference = variantStoredPricing.roundingDifference;
+      calculatedPrice = variantStoredPricing.calculatedPrice;
     } else if (basePrice != null && basePrice > 0) {
       // Pricing engine returns empty snapshots when basePrice exists
       // Use our marketAdjustmentsInput as the adjustment snapshots
-      resolvedPrice = basePrice;
-      resolvedCost = Number(baseItem.cost);
-      resolvedAdjTotal = marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0);
+      resolvedPrice = baseStoredPricing.price || basePrice;
+      resolvedCost = baseStoredCost;
+      resolvedAdjTotal = marketAdjustmentTotal;
       resolvedAdjSnaps = marketAdjustmentsInput;
+      marginAmount = baseStoredPricing.marginAmount;
+      roundingDifference = baseStoredPricing.roundingDifference;
+      calculatedPrice = baseStoredPricing.calculatedPrice;
     } else {
       // Non-variant or variant without stored price — run the engine
       const pricing = await calculateSellingPrice({
@@ -456,7 +457,10 @@ const POS: React.FC = () => {
           cost_price: resolvedCost,
           adjustmentTotal: resolvedAdjTotal,
           adjustmentSnapshots: resolvedAdjSnaps,
-          productionCostSnapshot
+          productionCostSnapshot,
+          marginAmount,
+          rounding_difference: roundingDifference,
+          calculated_price: calculatedPrice
         } : i);
       }
       return [...prev, {
@@ -532,10 +536,13 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     setCart(prev => prev.map(item => {
       if (item.id === id) {
         const currentCost = Number(item.cost || item.cost_price || 0);
+        const adjustmentTotal = Number((item as any).adjustmentTotal || 0);
         return {
           ...item,
           price: roundToCurrency(newPrice),
-          marginAmount: roundToCurrency(newPrice - currentCost),
+          marginAmount: roundToCurrency(newPrice - currentCost - adjustmentTotal),
+          rounding_difference: 0,
+          calculated_price: roundToCurrency(newPrice),
           manual_override: true
         };
       }
@@ -658,15 +665,19 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
     );
 
     if (isCartItemVariant && cartVariantStoredPrice > 0) {
+      const variantStoredPricing = buildStoredPricingState(itemInCart, resolveStoredCost(itemInCart as any), cartVariantAdjustmentTotal);
       setCart(prev => prev.map(i => i.id === id ? {
         ...i,
-        price: cartVariantStoredPrice,
-        selling_price: cartVariantStoredPrice,
+        price: variantStoredPricing.price || cartVariantStoredPrice,
+        selling_price: variantStoredPricing.price || cartVariantStoredPrice,
         cost: resolveStoredCost(itemInCart as any),
         cost_price: resolveStoredCost(itemInCart as any),
         originalPrice: (itemInCart as any).originalPrice,
         adjustmentSnapshots: cartVariantAdjustmentSnapshots,
         adjustmentTotal: cartVariantAdjustmentTotal,
+        rounding_difference: variantStoredPricing.roundingDifference,
+        marginAmount: variantStoredPricing.marginAmount,
+        calculated_price: variantStoredPricing.calculatedPrice,
         manual_override: false,
         productionCostSnapshot: (itemInCart as any).productionCostSnapshot
       } : i));
@@ -675,6 +686,27 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
     const effectiveCost = isCartItemVariant ? resolveStoredCost(itemInCart as any) : Number(baseItem.cost);
     const effectiveBasePrice = isCartItemVariant ? resolveStoredSellingPrice(itemInCart as any) : resolveStoredSellingPrice(baseItem);
+    const effectiveAdjustmentTotal = marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0);
+
+    if (effectiveBasePrice > 0) {
+      const storedPricing = buildStoredPricingState(baseItem, effectiveCost, effectiveAdjustmentTotal);
+      setCart(prev => prev.map(i => i.id === id ? {
+        ...i,
+        price: storedPricing.price || effectiveBasePrice,
+        selling_price: storedPricing.price || effectiveBasePrice,
+        cost: effectiveCost,
+        cost_price: effectiveCost,
+        originalPrice: (itemInCart as any).originalPrice,
+        adjustmentSnapshots: marketAdjustmentsInput,
+        adjustmentTotal: effectiveAdjustmentTotal,
+        rounding_difference: storedPricing.roundingDifference,
+        marginAmount: storedPricing.marginAmount,
+        calculated_price: storedPricing.calculatedPrice,
+        manual_override: false,
+        productionCostSnapshot: (itemInCart as any).productionCostSnapshot
+      } : i));
+      return;
+    }
 
     const pricing = await calculateSellingPrice({
       itemId: baseItem.id,
@@ -847,21 +879,50 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
     if (isCartItemVariant && cartVariantStoredPrice > 0) {
       // Keep existing variant price — only update quantity
+      const variantStoredPricing = buildStoredPricingState(itemInCart, resolveStoredCost(itemInCart as any), cartVariantAdjustmentTotal);
       setCart(prev => prev.map(i => i.id === id ? {
         ...i,
         quantity: newQty,
-        price: cartVariantStoredPrice,
-        selling_price: cartVariantStoredPrice,
+        price: variantStoredPricing.price || cartVariantStoredPrice,
+        selling_price: variantStoredPricing.price || cartVariantStoredPrice,
         cost_price: resolveStoredCost(itemInCart as any),
         originalPrice: (itemInCart as any).originalPrice,
         adjustmentSnapshots: cartVariantAdjustmentSnapshots,
         adjustmentTotal: cartVariantAdjustmentTotal,
+        rounding_difference: variantStoredPricing.roundingDifference,
+        marginAmount: variantStoredPricing.marginAmount,
+        calculated_price: variantStoredPricing.calculatedPrice,
         productionCostSnapshot: (itemInCart as any).productionCostSnapshot
       } : i));
       return;
     }
 
     const effectiveCost = isCartItemVariant ? resolveStoredCost(itemInCart as any) : Number(baseItem.cost);
+    const effectiveAdjustmentTotal = marketAdjustmentsInput.reduce((sum: number, adj: any) => sum + (adj.calculatedAmount || 0), 0);
+
+    if (!(itemInCart as any).manual_override) {
+      const storedBasePrice = resolveStoredSellingPrice(baseItem as any);
+      if (storedBasePrice > 0) {
+        const storedPricing = buildStoredPricingState(baseItem, effectiveCost, effectiveAdjustmentTotal);
+        setCart(prev => prev.map(i => i.id === id ? {
+          ...i,
+          quantity: newQty,
+          price: storedPricing.price || storedBasePrice,
+          selling_price: storedPricing.price || storedBasePrice,
+          cost: effectiveCost,
+          cost_price: effectiveCost,
+          originalPrice: (itemInCart as any).originalPrice,
+          adjustmentSnapshots: marketAdjustmentsInput,
+          adjustmentTotal: effectiveAdjustmentTotal,
+          rounding_difference: storedPricing.roundingDifference,
+          marginAmount: storedPricing.marginAmount,
+          calculated_price: storedPricing.calculatedPrice,
+          productionCostSnapshot: (itemInCart as any).productionCostSnapshot
+        } : i));
+        return;
+      }
+    }
+
     const effectiveBasePrice = (itemInCart as any).manual_override
       ? itemInCart.price
       : (isCartItemVariant ? resolveStoredSellingPrice(itemInCart as any) : resolveStoredSellingPrice(baseItem));
@@ -1076,6 +1137,18 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       setLastSale(receiptSale as any);
       setShowPaymentModal(false);
 
+      await addAlert?.({
+        id: `ALERT-SALE-${saleId}-${Date.now()}`,
+        title: 'POS Sale Completed',
+        message: `Sale #${saleId} posted for ${receiptSale.customerName || 'Walk-in Customer'} (${currency}${formatNumber(payableTotal)}).`,
+        type: 'SUCCESS',
+        module: 'POS',
+        severity: 'Low',
+        actionUrl: '/pos',
+        date: new Date().toISOString(),
+        read: false
+      } as any);
+
       const previewData = buildValidatedPosReceipt(receiptSale);
 
       // Proactively start PDF generation in background if possible, 
@@ -1140,6 +1213,17 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       });
 
       await fetchSalesData?.();
+      await addAlert?.({
+        id: `ALERT-REFUND-${saleId}-${Date.now()}`,
+        title: 'Refund Processed',
+        message: `Refund posted for Sale #${saleId} (${currency}${formatNumber(calculatedRefundAmount)}).`,
+        type: 'INFO',
+        module: 'POS',
+        severity: 'Medium',
+        actionUrl: '/pos',
+        date: new Date().toISOString(),
+        read: false
+      } as any);
       notify(`Refund processed for Sale #${saleId}`, 'success');
       setShowReturnsModal(false);
     } catch (error: any) {
@@ -1230,6 +1314,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
             onPay={handlePay}
             totals={{ subtotal: total, discount: 0, total: payableTotal }}
             adjustmentSummary={cartAdjustmentSummary}
+            pricingSummary={pricingSummary}
           />
         </div>
       </div>
@@ -1278,7 +1363,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           availableCredit={0}
           walletBalance={customers.find((c: any) => c.name === selectedCustomerName || c.id === selectedCustomerName)?.walletBalance || 0}
           loyaltyPoints={customers.find((c: any) => c.name === selectedCustomerName || c.id === selectedCustomerName)?.loyaltyPoints || 0}
-          totalProfitMargin={totalProfitMargin}
+          totalProfitMargin={pricingSummary.profitMarginTotal}
           subAccountName={selectedSubAccount}
           adjustmentSummary={cartAdjustmentSummary}
           roundingAccumulation={roundingAccumulation}

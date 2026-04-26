@@ -5,6 +5,7 @@ import { generateNextId } from '../utils/helpers';
 import { dbService } from '../services/db';
 import { DEFAULT_PRICING_SETTINGS } from '../services/pricingRoundingService';
 import { syncDocumentNumberSeriesConfig } from '../services/documentNumberService';
+import { publishSystemAlert } from '../services/systemAlertService';
 import { isPasswordProtectionEnabled, normalizeSecuritySettings, withNormalizedSecurityConfig } from '../utils/securitySettings';
 import { DEFAULT_SHARED_NUMBERING_RULE, normalizeCompanyNumberingConfig } from '../utils/numbering';
 
@@ -629,8 +630,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addAlert = useCallback(async (alert: SystemAlert) => {
-    await dbService.put('alerts', alert);
-    setAlerts(prev => [alert, ...prev]);
+    const persistedAlert = await publishSystemAlert({
+      id: alert.id,
+      type: alert.type,
+      title: alert.title,
+      message: alert.message,
+      module: alert.module,
+      severity: alert.severity,
+      priority: alert.priority,
+      actionUrl: alert.actionUrl,
+      metadata: alert.metadata,
+      date: alert.date,
+      read: alert.read,
+      readAt: alert.readAt
+    });
+
+    setAlerts(prev => [persistedAlert as any, ...prev.filter(a => a.id !== persistedAlert.id)]);
   }, []);
 
   const dismissAlert = useCallback(async (id: string) => {

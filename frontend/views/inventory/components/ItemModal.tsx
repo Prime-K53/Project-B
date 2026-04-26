@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
 import { X, Save, Plus, Trash2, AlertCircle, Package, DollarSign, Hash, MapPin, Truck, Tag, FileText, Box, Layers, ArrowRight, Wand2, Grid, Scale, RefreshCw, Eye, EyeOff, Info, Check, Edit3, TrendingUp } from 'lucide-react';
-import { Item, Warehouse, ProductVariant, PricingConfig, FinishingOption, AdjustmentSnapshot, BOMTemplate } from '../../../types';
+import { Item, Warehouse, ProductVariant, PricingConfig, FinishingOption, AdjustmentSnapshot, BOMTemplate, PricingRoundingMethod } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { generateAutoSKU, generateAutoBarcode, generateBulkVariants } from '../../../utils/skuGenerator';
 import { pricingService } from '../../../services/pricingService';
@@ -518,6 +518,61 @@ const ItemModal: React.FC<ItemModalProps> = ({
         });
     };
 
+    const handleManualStationeryPriceChange = (value: number) => {
+        const safeValue = roundMoney(Math.max(0, Number(value) || 0));
+        setFormData(prev => ({
+            ...prev,
+            price: safeValue,
+            selling_price: safeValue,
+            calculated_price: safeValue,
+            rounding_difference: 0,
+            rounding_method: undefined,
+            pricingConfig: {
+                ...prev.pricingConfig!,
+                manualOverride: true
+            }
+        }));
+    };
+
+    const toggleStationeryManualOverride = (enabled: boolean) => {
+        setFormData(prev => {
+            if (enabled) {
+                const currentPrice = Number(prev.price) || stationeryAutoPricing.sellingPrice;
+                return {
+                    ...prev,
+                    price: currentPrice,
+                    selling_price: currentPrice,
+                    calculated_price: currentPrice,
+                    rounding_difference: 0,
+                    rounding_method: undefined,
+                    pricingConfig: {
+                        ...prev.pricingConfig!,
+                        manualOverride: true
+                    }
+                };
+            }
+
+            return {
+                ...prev,
+                cost: stationeryAutoPricing.costPrice,
+                cost_price: stationeryAutoPricing.costPrice,
+                marginPercent: stationeryAutoPricing.marginPercent,
+                price: stationeryAutoPricing.sellingPrice,
+                selling_price: stationeryAutoPricing.sellingPrice,
+                calculated_price: stationeryAutoPricing.calculatedPrice,
+                rounding_difference: stationeryAutoPricing.roundingDifference,
+                rounding_method: stationeryAutoPricing.roundingMethod,
+                adjustmentSnapshots: stationeryAutoPricing.adjustmentSnapshots,
+                pricingConfig: {
+                    ...prev.pricingConfig!,
+                    manualOverride: false,
+                    marketAdjustment: stationeryAutoPricing.adjustmentTotal,
+                    totalCost: stationeryAutoPricing.costPrice
+                }
+            };
+        });
+    };
+
     const resolveRoundingBasePrice = () => {
         if (formData.pricingConfig?.manualOverride) {
             return Number(formData.price) || 0;
@@ -713,7 +768,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
     useEffect(() => {
         // Wait for BOM to load first
         if (bomLoading) return;
-        if (formData.type === 'Raw Material' || formData.type === 'Material' || !formData.pricingConfig || formData.pricingConfig.manualOverride) return;
+        if (formData.type === 'Raw Material' || formData.type === 'Material' || formData.type === 'Stationery' || !formData.pricingConfig || formData.pricingConfig.manualOverride) return;
         // SmartPricing products: price is computed by the engine and stored in smartPricing snapshot.
         // Do NOT overwrite with calculateItemFinancials which uses parent cost=0 and produces K0.
         if (formData.smartPricing && formData.type === 'Product') return;
@@ -795,6 +850,19 @@ dbService.getAll<BOMTemplate>('bomTemplates')
         return trimmed ? { Attribute: trimmed } : {};
     };
 
+    const roundMoney = (value: number) => Number((Number(value) || 0).toFixed(2));
+
+    const companyDefaultRoundingMethod = (companyConfig?.pricingSettings?.defaultMethod || 'ALWAYS_UP_50') as PricingRoundingMethod;
+    const companyDefaultCustomRoundingStep = Number(companyConfig?.pricingSettings?.customStep) || 50;
+
+    const getRoundingMethodLabel = (method?: string) => {
+        if (!method) {
+            return `Company Default (${ROUNDING_METHOD_OPTIONS.find(option => option.value === companyDefaultRoundingMethod)?.label || companyDefaultRoundingMethod})`;
+        }
+
+        return ROUNDING_METHOD_OPTIONS.find(option => option.value === method)?.label || method;
+    };
+
     const calculateAdjustmentAmount = (adjustment: any, baseCost: number) => {
         const normalizedType = String(adjustment?.type || '').toUpperCase();
         const rawValue = Number(adjustment?.percentage ?? adjustment?.value ?? 0);
@@ -802,34 +870,17 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             ? baseCost * (rawValue / 100)
             : Number(adjustment?.value || 0);
 
-        return Number(amount.toFixed(2));
+        return roundMoney(amount);
     };
 
-    const calculateStationeryVariantPricing = (variantLike: Partial<ProductVariant>) => {
-        const costPrice = Number(variantLike.cost_price ?? variantLike.cost ?? 0);
-        const rawSelectedIds = Array.isArray((variantLike as any).selectedAdjustmentIds)
-            ? (variantLike as any).selectedAdjustmentIds
-            : (formData.pricingConfig?.selectedAdjustmentIds || []);
-        const selectedAdjustmentIds = Array.from(new Set(rawSelectedIds));
-        
-        // Use Global Margin by default if configured
-        let marginAmount = 0;
-        let marginPercent = Number(variantLike.marginPercent ?? formData.marginPercent ?? 0);
+    const buildStationeryAdjustmentSnapshots = (selectedAdjustmentIds: string[], baseCost: number) => {
+        const uniqueIds = Array.from(new Set(selectedAdjustmentIds.filter(Boolean)));
 
-        if (globalMargin) {
-            if (globalMargin.margin_type === 'percentage') {
-                marginPercent = globalMargin.margin_value;
-                marginAmount = costPrice * (marginPercent / 100);
-            } else {
-                marginAmount = globalMargin.margin_value;
-                marginPercent = costPrice > 0 ? (marginAmount / costPrice) * 100 : 0;
-            }
-        } else {
-            marginAmount = costPrice * (marginPercent / 100);
-        }
-
-        const adjustmentSnapshots = selectedAdjustmentIds
-            .map((adjustmentId: string) => stationeryAdjustmentOptions.find(adj => adj.id === adjustmentId))
+        return uniqueIds
+            .map((adjustmentId: string) => (
+                stationeryAdjustmentOptions.find(adj => adj.id === adjustmentId)
+                || activeMarketAdjustments.find(adj => adj.id === adjustmentId)
+            ))
             .filter(Boolean)
             .map((adjustment: any) => ({
                 name: adjustment.name,
@@ -838,28 +889,206 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                 percentage: (String(adjustment.type || '').toUpperCase() === 'PERCENTAGE' || String(adjustment.type || '').toUpperCase() === 'PERCENT')
                     ? Number(adjustment.percentage ?? adjustment.value ?? 0)
                     : undefined,
-                calculatedAmount: calculateAdjustmentAmount(adjustment, costPrice)
-            }));
+                calculatedAmount: calculateAdjustmentAmount(adjustment, baseCost)
+            })) as AdjustmentSnapshot[];
+    };
 
-        const adjustmentTotal = Number(adjustmentSnapshots
-            .reduce((sum, snapshot) => sum + Number(snapshot.calculatedAmount || 0), 0)
-            .toFixed(2));
+    const resolveStationeryMargin = (baseForMargin: number, fallbackMarginPercent: number) => {
+        if (globalMargin) {
+            if (globalMargin.margin_type === 'fixed_amount') {
+                const marginAmount = roundMoney(globalMargin.margin_value);
+                return {
+                    marginAmount,
+                    marginPercent: baseForMargin > 0 ? roundMoney((marginAmount / baseForMargin) * 100) : 0,
+                    label: `Global Fixed (${currency}${marginAmount.toFixed(2)})`
+                };
+            }
 
-        const sellingPrice = Number((costPrice + marginAmount + adjustmentTotal).toFixed(2));
-        marginPercent = costPrice > 0
-            ? Number(((marginAmount / costPrice) * 100).toFixed(2))
-            : Number(variantLike.marginPercent ?? formData.marginPercent ?? 0);
+            const marginPercent = roundMoney(globalMargin.margin_value);
+            return {
+                marginAmount: roundMoney(baseForMargin * (marginPercent / 100)),
+                marginPercent,
+                label: `Global ${marginPercent}%`
+            };
+        }
 
+        const marginPercent = roundMoney(fallbackMarginPercent);
         return {
-            costPrice,
-            marginAmount,
+            marginAmount: roundMoney(baseForMargin * (marginPercent / 100)),
             marginPercent,
-            selectedAdjustmentIds,
-            adjustmentSnapshots,
-            adjustmentTotal,
-            sellingPrice
+            label: `${marginPercent}%`
         };
     };
+
+    const calculateStationeryPricingLine = ({
+        costPrice,
+        selectedAdjustmentIds,
+        marginPercentFallback,
+        selectedRoundingMethod,
+        customRoundingStep
+    }: {
+        costPrice: number;
+        selectedAdjustmentIds?: string[];
+        marginPercentFallback?: number;
+        selectedRoundingMethod?: PricingRoundingMethod;
+        customRoundingStep?: number;
+    }) => {
+        const safeCostPrice = roundMoney(Math.max(0, Number(costPrice) || 0));
+        const normalizedSelectedIds = Array.from(new Set((selectedAdjustmentIds || []).filter(Boolean)));
+        const adjustmentSnapshots = buildStationeryAdjustmentSnapshots(normalizedSelectedIds, safeCostPrice);
+        const adjustmentTotal = roundMoney(
+            adjustmentSnapshots.reduce((sum, snapshot) => sum + Number(snapshot.calculatedAmount || 0), 0)
+        );
+        const subtotalBeforeMargin = roundMoney(safeCostPrice + adjustmentTotal);
+        const marginDetails = resolveStationeryMargin(
+            subtotalBeforeMargin,
+            Number(marginPercentFallback || 0)
+        );
+        const preRoundedPrice = roundMoney(subtotalBeforeMargin + marginDetails.marginAmount);
+        const roundingResult = applyProductPriceRounding({
+            calculatedPrice: preRoundedPrice,
+            companyConfig,
+            methodOverride: selectedRoundingMethod,
+            customStepOverride: customRoundingStep,
+            trackAnalytics: false
+        });
+
+        return {
+            costPrice: safeCostPrice,
+            selectedAdjustmentIds: normalizedSelectedIds,
+            adjustmentSnapshots,
+            adjustmentTotal,
+            subtotalBeforeMargin,
+            marginAmount: marginDetails.marginAmount,
+            marginPercent: marginDetails.marginPercent,
+            marginLabel: marginDetails.label,
+            calculatedPrice: roundingResult.originalPrice,
+            sellingPrice: roundingResult.roundedPrice,
+            roundingDifference: roundMoney(roundingResult.roundingDifference ?? 0),
+            roundingMethod: roundingResult.methodUsed,
+            customRoundingStep: customRoundingStep ?? companyDefaultCustomRoundingStep,
+            wasRounded: Boolean(roundingResult.wasRounded)
+        };
+    };
+
+    const calculateStationeryVariantAutoPricing = (variantLike: Partial<ProductVariant>) => {
+        return calculateStationeryPricingLine({
+            costPrice: Number(variantLike.cost_price ?? variantLike.cost ?? 0),
+            selectedAdjustmentIds: Array.isArray((variantLike as any).selectedAdjustmentIds)
+                ? (variantLike as any).selectedAdjustmentIds
+                : (formData.pricingConfig?.selectedAdjustmentIds || []),
+            marginPercentFallback: Number(variantLike.marginPercent ?? formData.marginPercent ?? 0),
+            selectedRoundingMethod: ((variantLike as any).selectedRoundingMethod || formData.pricingConfig?.selectedRoundingMethod) as PricingRoundingMethod | undefined,
+            customRoundingStep: Number((variantLike as any).customRoundingStep ?? formData.pricingConfig?.customRoundingStep) || undefined
+        });
+    };
+
+    const stationeryAutoPricing = useMemo(() => calculateStationeryPricingLine({
+        costPrice: derivedCostPerPiece || formData.cost || 0,
+        selectedAdjustmentIds: formData.pricingConfig?.selectedAdjustmentIds || [],
+        marginPercentFallback: Number(formData.marginPercent || 0),
+        selectedRoundingMethod: formData.pricingConfig?.selectedRoundingMethod,
+        customRoundingStep: Number(formData.pricingConfig?.customRoundingStep) || undefined
+    }), [
+        derivedCostPerPiece,
+        formData.cost,
+        formData.marginPercent,
+        formData.pricingConfig?.selectedAdjustmentIds,
+        formData.pricingConfig?.selectedRoundingMethod,
+        formData.pricingConfig?.customRoundingStep,
+        stationeryAdjustmentOptions,
+        activeMarketAdjustments,
+        globalMargin,
+        companyConfig
+    ]);
+
+    const displayedStationeryUnitPrice = isItemManualOverride
+        ? Number(formData.price) || 0
+        : stationeryAutoPricing.sellingPrice;
+
+    useEffect(() => {
+        if (formData.type !== 'Stationery' || formData.pricingConfig?.manualOverride) return;
+
+        setFormData(prev => {
+            if (prev.type !== 'Stationery' || prev.pricingConfig?.manualOverride) {
+                return prev;
+            }
+
+            const adjustmentSnapshotsChanged = JSON.stringify(prev.adjustmentSnapshots || []) !== JSON.stringify(stationeryAutoPricing.adjustmentSnapshots || []);
+            const selectedIdsChanged = JSON.stringify(prev.pricingConfig?.selectedAdjustmentIds || []) !== JSON.stringify(stationeryAutoPricing.selectedAdjustmentIds || []);
+            const hasChanged =
+                roundMoney(Number(prev.cost) || 0) !== stationeryAutoPricing.costPrice
+                || roundMoney(Number(prev.cost_price ?? prev.cost) || 0) !== stationeryAutoPricing.costPrice
+                || roundMoney(Number(prev.marginPercent) || 0) !== stationeryAutoPricing.marginPercent
+                || roundMoney(Number(prev.calculated_price) || 0) !== stationeryAutoPricing.calculatedPrice
+                || roundMoney(Number(prev.price) || 0) !== stationeryAutoPricing.sellingPrice
+                || roundMoney(Number(prev.selling_price ?? prev.price) || 0) !== stationeryAutoPricing.sellingPrice
+                || roundMoney(Number(prev.rounding_difference) || 0) !== stationeryAutoPricing.roundingDifference
+                || prev.rounding_method !== stationeryAutoPricing.roundingMethod
+                || adjustmentSnapshotsChanged
+                || selectedIdsChanged
+                || roundMoney(Number(prev.pricingConfig?.marketAdjustment) || 0) !== stationeryAutoPricing.adjustmentTotal
+                || roundMoney(Number(prev.pricingConfig?.totalCost) || 0) !== stationeryAutoPricing.costPrice;
+
+            if (!hasChanged) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                cost: stationeryAutoPricing.costPrice,
+                cost_price: stationeryAutoPricing.costPrice,
+                marginPercent: stationeryAutoPricing.marginPercent,
+                calculated_price: stationeryAutoPricing.calculatedPrice,
+                price: stationeryAutoPricing.sellingPrice,
+                selling_price: stationeryAutoPricing.sellingPrice,
+                rounding_difference: stationeryAutoPricing.roundingDifference,
+                rounding_method: stationeryAutoPricing.roundingMethod,
+                adjustmentSnapshots: stationeryAutoPricing.adjustmentSnapshots,
+                pricingConfig: {
+                    ...prev.pricingConfig!,
+                    selectedAdjustmentIds: stationeryAutoPricing.selectedAdjustmentIds,
+                    marketAdjustment: stationeryAutoPricing.adjustmentTotal,
+                    totalCost: stationeryAutoPricing.costPrice
+                }
+            };
+        });
+    }, [
+        formData.type,
+        formData.pricingConfig?.manualOverride,
+        stationeryAutoPricing
+    ]);
+
+    useEffect(() => {
+        if (formData.type !== 'Stationery' || !(formData.variants?.length)) return;
+
+        setFormData(prev => {
+            if (prev.type !== 'Stationery' || !(prev.variants?.length)) {
+                return prev;
+            }
+
+            const updatedVariants = (prev.variants || []).map(variant => (
+                recalculateStationeryVariantPrice(variant as ProductVariant, {}) as ProductVariant
+            ));
+
+            if (JSON.stringify(prev.variants || []) === JSON.stringify(updatedVariants)) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                variants: updatedVariants
+            };
+        });
+    }, [
+        formData.type,
+        formData.pricingConfig?.selectedAdjustmentIds,
+        formData.pricingConfig?.selectedRoundingMethod,
+        formData.pricingConfig?.customRoundingStep,
+        globalMargin,
+        stationeryAdjustmentOptions,
+        activeMarketAdjustments
+    ]);
 
     const patchPricingConfig = (patch: Partial<PricingConfig>) => {
         setFormData(prev => ({
@@ -914,30 +1143,34 @@ dbService.getAll<BOMTemplate>('bomTemplates')
         incomingPatch: Partial<ProductVariant>
     ): Partial<ProductVariant> => {
         const nextVariant = { ...currentVariant, ...incomingPatch };
-        const {
-            costPrice,
-            marginAmount,
-            marginPercent,
-            selectedAdjustmentIds,
-            adjustmentSnapshots,
-            adjustmentTotal,
-            sellingPrice
-        } = calculateStationeryVariantPricing(nextVariant);
+        const autoPricing = calculateStationeryVariantAutoPricing(nextVariant);
+        const manualOverride = Boolean((nextVariant as any).manualOverride);
+        const manualPrice = roundMoney(Math.max(
+            0,
+            Number(nextVariant.selling_price ?? nextVariant.price ?? autoPricing.sellingPrice) || 0
+        ));
 
         return {
             ...nextVariant,
-            cost: costPrice,
-            cost_price: costPrice,
-            marginAmount,
-            marginPercent,
-            selectedAdjustmentIds,
-            adjustmentSnapshots,
-            adjustmentTotal,
-            calculated_price: sellingPrice,
-            price: sellingPrice,
-            selling_price: sellingPrice,
-            rounding_difference: 0,
-            rounding_method: undefined
+            cost: autoPricing.costPrice,
+            cost_price: autoPricing.costPrice,
+            marginAmount: autoPricing.marginAmount,
+            marginPercent: autoPricing.marginPercent,
+            selectedAdjustmentIds: autoPricing.selectedAdjustmentIds,
+            adjustmentSnapshots: autoPricing.adjustmentSnapshots,
+            adjustmentTotal: autoPricing.adjustmentTotal,
+            selectedRoundingMethod: ((nextVariant as any).selectedRoundingMethod || formData.pricingConfig?.selectedRoundingMethod) as PricingRoundingMethod | undefined,
+            customRoundingStep: Number((nextVariant as any).customRoundingStep ?? formData.pricingConfig?.customRoundingStep) || undefined,
+            autoCalculatedPrice: autoPricing.calculatedPrice,
+            autoSellingPrice: autoPricing.sellingPrice,
+            autoRoundingDifference: autoPricing.roundingDifference,
+            autoRoundingMethod: autoPricing.roundingMethod,
+            manualOverride,
+            calculated_price: manualOverride ? manualPrice : autoPricing.calculatedPrice,
+            price: manualOverride ? manualPrice : autoPricing.sellingPrice,
+            selling_price: manualOverride ? manualPrice : autoPricing.sellingPrice,
+            rounding_difference: manualOverride ? 0 : autoPricing.roundingDifference,
+            rounding_method: manualOverride ? undefined : autoPricing.roundingMethod
         };
     };
 
@@ -974,6 +1207,61 @@ dbService.getAll<BOMTemplate>('bomTemplates')
         setNewVariant(recalculateStationeryVariantPrice(newVariant, { selectedAdjustmentIds: nextIds }));
     };
 
+    const handleStationeryVariantManualPriceChange = (variantId: string, value: number) => {
+        const safeValue = roundMoney(Math.max(0, Number(value) || 0));
+        handleStationeryVariantChange(variantId, {
+            manualOverride: true,
+            price: safeValue,
+            selling_price: safeValue,
+            calculated_price: safeValue
+        } as Partial<ProductVariant>);
+    };
+
+    const toggleStationeryVariantManualOverride = (variant: Partial<ProductVariant>, enabled: boolean) => {
+        if (enabled) {
+            const currentPrice = roundMoney(resolveVariantBasePrice(variant as ProductVariant) || calculateStationeryVariantAutoPricing(variant).sellingPrice);
+            return recalculateStationeryVariantPrice(variant, {
+                manualOverride: true,
+                price: currentPrice,
+                selling_price: currentPrice,
+                calculated_price: currentPrice
+            } as Partial<ProductVariant>);
+        }
+
+        return recalculateStationeryVariantPrice(variant, {
+            manualOverride: false
+        } as Partial<ProductVariant>);
+    };
+
+    const handleNewStationeryManualPriceChange = (value: number) => {
+        const safeValue = roundMoney(Math.max(0, Number(value) || 0));
+        setNewVariant(recalculateStationeryVariantPrice(newVariant, {
+            manualOverride: true,
+            price: safeValue,
+            selling_price: safeValue,
+            calculated_price: safeValue
+        }));
+    };
+
+    const toggleNewStationeryManualOverride = (enabled: boolean) => {
+        if (enabled) {
+            const currentPrice = roundMoney(
+                Number(newVariant.selling_price ?? newVariant.price ?? calculateStationeryVariantAutoPricing(newVariant).sellingPrice) || 0
+            );
+            setNewVariant(recalculateStationeryVariantPrice(newVariant, {
+                manualOverride: true,
+                price: currentPrice,
+                selling_price: currentPrice,
+                calculated_price: currentPrice
+            }));
+            return;
+        }
+
+        setNewVariant(recalculateStationeryVariantPrice(newVariant, {
+            manualOverride: false
+        }));
+    };
+
     const createNewVariantDraft = (): Partial<ProductVariant> => {
         const baseDraft: Partial<ProductVariant> = {
             id: '',
@@ -988,19 +1276,45 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             pages: 1,
             pricingSource: 'static',
             inheritsParentBOM: false,
+            manualOverride: false,
             selectedAdjustmentIds: formData.type === 'Stationery'
                 ? [...(formData.pricingConfig?.selectedAdjustmentIds || [])]
-                : []
+                : [],
+            selectedRoundingMethod: formData.type === 'Stationery'
+                ? formData.pricingConfig?.selectedRoundingMethod
+                : undefined,
+            customRoundingStep: formData.type === 'Stationery'
+                ? formData.pricingConfig?.customRoundingStep
+                : undefined
         };
 
         if (formData.type === 'Stationery') {
-            return recalculateStationeryVariantPrice(baseDraft, {
-                marginAmount: Number((((derivedCostPerPiece || 0) * (formData.marginPercent || 0)) / 100).toFixed(2))
-            });
+            return recalculateStationeryVariantPrice(baseDraft, {});
         }
 
         return baseDraft;
     };
+
+    useEffect(() => {
+        if (formData.type !== 'Stationery' || !showVariantForm) return;
+
+        setNewVariant(prev => {
+            const updated = recalculateStationeryVariantPrice(prev, {});
+            if (JSON.stringify(prev || {}) === JSON.stringify(updated || {})) {
+                return prev;
+            }
+            return updated;
+        });
+    }, [
+        formData.type,
+        showVariantForm,
+        formData.pricingConfig?.selectedAdjustmentIds,
+        formData.pricingConfig?.selectedRoundingMethod,
+        formData.pricingConfig?.customRoundingStep,
+        globalMargin,
+        stationeryAdjustmentOptions,
+        activeMarketAdjustments
+    ]);
 
     const validateForm = (): boolean => {
         const newErrors: FormErrors = {};
@@ -1051,14 +1365,23 @@ dbService.getAll<BOMTemplate>('bomTemplates')
         setIsSubmitting(true);
 
         try {
+            const effectiveStationeryPricing = formData.type === 'Stationery'
+                ? stationeryAutoPricing
+                : null;
+
             const normalizedPricingConfig = formData.pricingConfig
                 ? {
                     ...formData.pricingConfig,
-                    marketAdjustment: Number(formData.pricingConfig.marketAdjustment) || 0,
+                    marketAdjustment: effectiveStationeryPricing
+                        ? effectiveStationeryPricing.adjustmentTotal
+                        : (Number(formData.pricingConfig.marketAdjustment) || 0),
+                    totalCost: effectiveStationeryPricing
+                        ? effectiveStationeryPricing.costPrice
+                        : Number(formData.pricingConfig.totalCost) || formData.pricingConfig.totalCost,
                     finishingOptions: formData.pricingConfig.finishingOptions || [],
                     manualOverride:
                         formData.pricingConfig.manualOverride ??
-                        (formData.type === 'Service' || formData.type === 'Raw Material' || formData.type === 'Material' || formData.type === 'Stationery')
+                        (formData.type === 'Service' || formData.type === 'Raw Material' || formData.type === 'Material')
                 }
                 : undefined;
 
@@ -1069,7 +1392,21 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                     roundingDifference: 0,
                     roundingMethod: undefined as string | undefined
                 }
+                : effectiveStationeryPricing
+                    ? {
+                        calculatedPrice: effectiveStationeryPricing.calculatedPrice,
+                        sellingPrice: effectiveStationeryPricing.sellingPrice,
+                        roundingDifference: effectiveStationeryPricing.roundingDifference,
+                        roundingMethod: effectiveStationeryPricing.roundingMethod
+                    }
                 : applyRoundingToPrice(resolveRoundingBasePrice(), item || undefined);
+
+            const resolvedCost = formData.type === 'Stationery'
+                ? roundMoney(effectiveStationeryPricing?.costPrice ?? derivedCostPerPiece ?? formData.cost ?? 0)
+                : (Number(formData.cost) || 0);
+            const resolvedMarginPercent = formData.type === 'Stationery'
+                ? roundMoney(effectiveStationeryPricing?.marginPercent ?? formData.marginPercent ?? 0)
+                : (Number(formData.marginPercent) || 0);
 
             const itemData: Item = {
                 id: formData.id || generateId(),
@@ -1078,8 +1415,9 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                 sku: formData.sku!.trim(),
                 description: formData.description?.trim() || '',
                 price: roundedPricing.sellingPrice,
-                cost: Number(formData.cost) || 0,
-                cost_price: Number(formData.cost) || 0,
+                cost: resolvedCost,
+                cost_price: resolvedCost,
+                marginPercent: resolvedMarginPercent,
                 calculated_price: roundedPricing.calculatedPrice,
                 selling_price: roundedPricing.sellingPrice,
                 rounding_difference: roundedPricing.roundingDifference,
@@ -1106,14 +1444,23 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                 isVariantParent: (formData.variants && formData.variants.length > 0) || formData.isVariantParent || false,
                 locationStock: hasStockFunctionality ? (formData.locationStock || []) : [],
                 reserved: hasStockFunctionality ? (formData.reserved || 0) : 0,
-                adjustmentSnapshots: formData.adjustmentSnapshots || [],
+                adjustmentSnapshots: effectiveStationeryPricing?.adjustmentSnapshots || formData.adjustmentSnapshots || [],
                 pricingConfig: normalizedPricingConfig,
-                smartPricing: formData.smartPricing
+                smartPricing: formData.smartPricing,
+                sellingPricePerPiece: roundedPricing.sellingPrice,
+                costPerPiece: resolvedCost,
+                profitPerPiece: roundMoney(roundedPricing.sellingPrice - resolvedCost),
+                markup_percent: resolvedMarginPercent,
+                manual_override: Boolean(normalizedPricingConfig?.manualOverride)
             };
 
             // Ensure variants have correct saved prices
             if (itemData.variants && itemData.variants.length > 0) {
                 itemData.variants = itemData.variants.map(v => {
+                    if (formData.type === 'Stationery') {
+                        return recalculateStationeryVariantPrice(v as ProductVariant, {}) as ProductVariant;
+                    }
+
                     const snap = (v as any).smartPricingSnapshot;
 
                     // SmartPricing variants: price was already computed by the engine.
@@ -1240,6 +1587,9 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             adjustmentTotal: (isDynamic && smartResult) ? (smartResult.marketAdjustmentTotal ?? 0) : undefined,
             pricingSource: newVariant.pricingSource || 'static',
             inheritsParentBOM: newVariant.inheritsParentBOM ?? false,
+            manualOverride: Boolean((newVariant as any).manualOverride),
+            selectedRoundingMethod: (newVariant as any).selectedRoundingMethod,
+            customRoundingStep: (newVariant as any).customRoundingStep,
             ...(isDynamic && smartResult ? { smartPricingSnapshot: smartResult } : {})
         };
         const nextVariant = formData.type === 'Stationery'
@@ -1247,7 +1597,10 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                 ...variant,
                 attributes: newVariant.attributes || {},
                 marginAmount: (newVariant as any).marginAmount,
-                selectedAdjustmentIds: (newVariant as any).selectedAdjustmentIds || formData.pricingConfig?.selectedAdjustmentIds || []
+                selectedAdjustmentIds: (newVariant as any).selectedAdjustmentIds || formData.pricingConfig?.selectedAdjustmentIds || [],
+                selectedRoundingMethod: (newVariant as any).selectedRoundingMethod || formData.pricingConfig?.selectedRoundingMethod,
+                customRoundingStep: (newVariant as any).customRoundingStep ?? formData.pricingConfig?.customRoundingStep,
+                manualOverride: Boolean((newVariant as any).manualOverride)
             }, {}) as ProductVariant
             : variant;
 
@@ -1434,12 +1787,16 @@ dbService.getAll<BOMTemplate>('bomTemplates')
             id: generateId(),
             sku: generateAutoSKU(formData.type || 'ITEM', formData.name || 'UNK', v.attributes),
             name: `${formData.name} - ${v.name}`,
-            adjustmentSnapshots: getAdjustmentSnapshots(v.cost),
+            adjustmentSnapshots: getAdjustmentSnapshots(Number(v.cost) || 0),
+            manualOverride: false,
             selectedAdjustmentIds: formData.type === 'Stationery'
                 ? [...(formData.pricingConfig?.selectedAdjustmentIds || [])]
                 : [],
-            marginAmount: formData.type === 'Stationery'
-                ? Number(((Number(v.cost || 0) * (formData.marginPercent || 0)) / 100).toFixed(2))
+            selectedRoundingMethod: formData.type === 'Stationery'
+                ? formData.pricingConfig?.selectedRoundingMethod
+                : undefined,
+            customRoundingStep: formData.type === 'Stationery'
+                ? formData.pricingConfig?.customRoundingStep
                 : undefined,
             attributes: v.attributes || {}
         })).map(variant => (
@@ -2259,12 +2616,14 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                           </div>
                                                           <div>
                                                               <h3 className="text-lg font-bold text-slate-900">Stationery Pricing</h3>
-                                                              <p className="text-xs text-slate-500">Pack-based costing</p>
+                                                              <p className="text-xs text-slate-500">CP + adjustments + global margin + rounding</p>
                                                           </div>
                                                       </div>
                                                       <div className="text-right">
-                                                          <div className="text-2xl font-bold text-orange-600">{currency}{((derivedCostPerPiece || 0) + (activeMarginAmount || 0)).toFixed(2)}</div>
-                                                          <div className="text-[10px] text-slate-500 uppercase tracking-wide">Per Unit (Incl. Margin)</div>
+                                                          <div className="text-2xl font-bold text-orange-600">{currency}{displayedStationeryUnitPrice.toFixed(2)}</div>
+                                                          <div className="text-[10px] text-slate-500 uppercase tracking-wide">
+                                                              {isItemManualOverride ? 'Final Manual Price / Unit' : 'Auto Selling Price / Unit'}
+                                                          </div>
                                                       </div>
                                                   </div>
                                               </div>
@@ -2294,7 +2653,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                   {formData.isStationeryPack ? (
                                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                           <div>
-                                                              <label className={styles.label}>Cost per Pack</label>
+                                                              <label className={styles.label}>Cost Per Pack</label>
                                                               <input
                                                                   type="number"
                                                                   value={formData.costPerPack || 0}
@@ -2315,9 +2674,9 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                               />
                                                           </div>
                                                           <div>
-                                                              <label className={styles.label}>Margin % (Global)</label>
+                                                              <label className={styles.label}>Global Margin</label>
                                                               <div className={styles.input + " bg-slate-100 text-slate-500 cursor-not-allowed flex justify-between items-center"}>
-                                                                  <span>{activeMarginPercent}%</span>
+                                                                  <span>{stationeryAutoPricing.marginLabel}</span>
                                                                   <Info className="w-3.5 h-3.5 text-slate-400" />
                                                               </div>
                                                           </div>
@@ -2325,7 +2684,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                   ) : (
                                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                           <div>
-                                                              <label className={styles.label}>Cost Per Unit (Incl. Margin)</label>
+                                                              <label className={styles.label}>Cost Price (CP) / Unit</label>
                                                               <input
                                                                   type="number"
                                                                   value={formData.cost || 0}
@@ -2336,15 +2695,118 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                               />
                                                           </div>
                                                           <div>
-                                                              <label className={styles.label}>Margin % (Global)</label>
+                                                              <label className={styles.label}>Global Margin</label>
                                                               <div className={styles.input + " bg-slate-100 text-slate-500 cursor-not-allowed flex justify-between items-center"}>
-                                                                  <span>{activeMarginPercent}%</span>
+                                                                  <span>{stationeryAutoPricing.marginLabel}</span>
                                                                   <Info className="w-3.5 h-3.5 text-slate-400" />
                                                               </div>
                                                           </div>
                                                       </div>
                                                   )}
+
+                                                  <div className={`grid grid-cols-1 ${((formData.pricingConfig?.selectedRoundingMethod || companyDefaultRoundingMethod) === 'ALWAYS_UP_CUSTOM') ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 mt-4`}>
+                                                      <div>
+                                                          <label className={styles.label}>Rounding Rule</label>
+                                                          <select
+                                                              value={formData.pricingConfig?.selectedRoundingMethod || '__DEFAULT__'}
+                                                              onChange={(e) => patchPricingConfig({
+                                                                  selectedRoundingMethod: e.target.value === '__DEFAULT__'
+                                                                      ? undefined
+                                                                      : e.target.value as PricingRoundingMethod
+                                                              })}
+                                                              className={styles.select}
+                                                          >
+                                                              <option value="__DEFAULT__">{getRoundingMethodLabel(undefined)}</option>
+                                                              {ROUNDING_METHOD_OPTIONS.map((option) => (
+                                                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                                              ))}
+                                                          </select>
+                                                      </div>
+                                                      {((formData.pricingConfig?.selectedRoundingMethod || companyDefaultRoundingMethod) === 'ALWAYS_UP_CUSTOM') && (
+                                                          <div>
+                                                              <label className={styles.label}>Custom Step</label>
+                                                              <input
+                                                                  type="number"
+                                                                  min="1"
+                                                                  value={Number(formData.pricingConfig?.customRoundingStep ?? companyDefaultCustomRoundingStep)}
+                                                                  onChange={(e) => patchPricingConfig({
+                                                                      customRoundingStep: Math.max(1, Number(e.target.value) || companyDefaultCustomRoundingStep)
+                                                                  })}
+                                                                  className={styles.input}
+                                                              />
+                                                          </div>
+                                                      )}
+                                                      <div>
+                                                          <label className={styles.label}>Auto Price Before Rounding</label>
+                                                          <div className={styles.input + " bg-slate-100 text-slate-600 cursor-not-allowed"}>
+                                                              {currency}{stationeryAutoPricing.calculatedPrice.toFixed(2)}
+                                                          </div>
+                                                      </div>
+                                                  </div>
                                               </div>
+
+                                              <div className="flex justify-end">
+                                                  <button
+                                                      type="button"
+                                                      onClick={() => setShowManualOverrideCard(prev => !prev)}
+                                                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${showManualOverrideCard ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                                                  >
+                                                      {showManualOverrideCard ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                      {showManualOverrideCard ? 'Hide Manual Override Pricing' : 'Manual Override Pricing'}
+                                                  </button>
+                                              </div>
+
+                                              {showManualOverrideCard && (
+                                                  <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 shadow-sm">
+                                                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                                                          <div className="space-y-1.5">
+                                                              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Manual Override Pricing</div>
+                                                              <div className="text-xs text-slate-700">
+                                                                  Auto Price: <span className="font-semibold">{currency}{stationeryAutoPricing.sellingPrice.toFixed(2)}</span>
+                                                                  <span className="mx-2 text-slate-400">|</span>
+                                                                  Final Price: <span className="font-semibold">{currency}{displayedStationeryUnitPrice.toFixed(2)}</span>
+                                                                  <span className="mx-2 text-slate-400">|</span>
+                                                                  Difference: <span className={`font-semibold ${displayedStationeryUnitPrice >= stationeryAutoPricing.sellingPrice ? 'text-emerald-600' : 'text-rose-600'}`}>{displayedStationeryUnitPrice >= stationeryAutoPricing.sellingPrice ? '+' : '-'}{currency}{Math.abs(displayedStationeryUnitPrice - stationeryAutoPricing.sellingPrice).toFixed(2)}</span>
+                                                              </div>
+                                                              <div className={`text-[10px] font-bold uppercase tracking-wider ${isItemManualOverride ? 'text-amber-700' : 'text-slate-500'}`}>
+                                                                  {isItemManualOverride ? 'Status: Manual Override Active' : 'Status: Auto Pricing'}
+                                                              </div>
+                                                          </div>
+                                                          <div className="flex flex-col sm:flex-row gap-2">
+                                                              <div className="relative">
+                                                                  <input
+                                                                      type="number"
+                                                                      min="0"
+                                                                      step="0.01"
+                                                                      value={displayedStationeryUnitPrice}
+                                                                      onChange={(e) => handleManualStationeryPriceChange(Number(e.target.value))}
+                                                                      className="w-full sm:w-40 px-3 py-2.5 bg-white border border-amber-200 rounded-xl text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-amber-100"
+                                                                  />
+                                                                  <div className="absolute left-3 top-1.5 text-[10px] uppercase tracking-wider text-slate-400">Override Price</div>
+                                                              </div>
+                                                              {!isItemManualOverride ? (
+                                                                  <button
+                                                                      type="button"
+                                                                      onClick={() => toggleStationeryManualOverride(true)}
+                                                                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700"
+                                                                  >
+                                                                      <Edit3 className="w-3.5 h-3.5" />
+                                                                      Activate Override
+                                                                  </button>
+                                                              ) : (
+                                                                  <button
+                                                                      type="button"
+                                                                      onClick={() => toggleStationeryManualOverride(false)}
+                                                                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-amber-700 border border-amber-200 text-xs font-semibold hover:bg-amber-100"
+                                                                  >
+                                                                      <RefreshCw className="w-3.5 h-3.5" />
+                                                                      Return to Auto
+                                                                  </button>
+                                                              )}
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              )}
 
                                               {/* Cost Breakdown */}
                                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2354,11 +2816,11 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                   </div>
                                                   <div className={styles.glassMetric}>
                                                       <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Cost/Unit</div>
-                                                      <div className="text-lg font-bold text-slate-800">{currency}{(derivedCostPerPiece || 0).toFixed(2)}</div>
+                                                      <div className="text-lg font-bold text-slate-800">{currency}{stationeryAutoPricing.costPrice.toFixed(2)}</div>
                                                   </div>
                                                   <div className={styles.glassMetric + " border-green-200 bg-green-50"}>
-                                                      <div className="text-[10px] font-semibold text-green-600 uppercase tracking-wide mb-1">Sell/Unit</div>
-                                                      <div className="text-lg font-bold text-green-700">{currency}{((derivedCostPerPiece || 0) + (activeMarginAmount || 0)).toFixed(2)}</div>
+                                                      <div className="text-[10px] font-semibold text-green-600 uppercase tracking-wide mb-1">{isItemManualOverride ? 'Final / Unit' : 'Auto / Unit'}</div>
+                                                      <div className="text-lg font-bold text-green-700">{currency}{displayedStationeryUnitPrice.toFixed(2)}</div>
                                                   </div>
                                               </div>
 
@@ -2369,8 +2831,9 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                       Market Adjustments
                                                   </h3>
                                                   <div className="space-y-2">
-                                                      {activeMarketAdjustments.slice(0, 4).map(adj => {
+                                                      {stationeryAdjustmentOptions.length > 0 ? stationeryAdjustmentOptions.map((adj: any) => {
                                                           const isSelected = formData.pricingConfig?.selectedAdjustmentIds?.includes(adj.id) || false;
+                                                          const adjustmentAmount = calculateAdjustmentAmount(adj, stationeryAutoPricing.costPrice);
                                                           return (
                                                               <div key={adj.id} className={styles.row + " rounded-lg " + (isSelected ? "bg-slate-50" : "")}>
                                                                   <label className="flex items-center gap-3 cursor-pointer flex-1">
@@ -2386,20 +2849,22 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                       <div>
                                                                           <div className="text-sm font-medium text-slate-700">{adj.name}</div>
                                                                           <div className="text-[10px] text-slate-400">
-                                                                              {adj.type === 'PERCENTAGE' ? `${adj.value}%` : `${currency}${adj.value}`}
+                                                                              {String(adj.type || '').toUpperCase().includes('PERCENT')
+                                                                                  ? `${adj.value}%`
+                                                                                  : `${currency}${Number(adj.value || 0).toFixed(2)}`}
                                                                           </div>
                                                                       </div>
                                                                   </label>
                                                                   {isSelected && (
                                                                       <div className={styles.priceTag + " bg-emerald-50 text-emerald-700 border border-emerald-200"}>
-                                                                          +{currency}{adj.type === 'PERCENTAGE' 
-                                                                              ? ((derivedCostPerPiece || 0) * adj.value / 100).toFixed(2)
-                                                                              : adj.value.toFixed(2)}
+                                                                          +{currency}{adjustmentAmount.toFixed(2)}
                                                                       </div>
                                                                   )}
                                                               </div>
                                                           );
-                                                      })}
+                                                      }) : (
+                                                          <div className="text-sm text-slate-400 italic">No active adjustments for this category.</div>
+                                                      )}
                                                   </div>
                                               </div>
 
@@ -2414,21 +2879,44 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                   <div className="space-y-3 relative">
                                                       <div className="flex justify-between text-sm">
                                                           <span className="text-slate-400">Cost/Unit</span>
-                                                          <span className="text-slate-200 font-medium">{currency}{(derivedCostPerPiece || 0).toFixed(2)}</span>
+                                                          <span className="text-slate-200 font-medium">{currency}{stationeryAutoPricing.costPrice.toFixed(2)}</span>
+                                                      </div>
+                                                      {stationeryAutoPricing.adjustmentSnapshots.map((snapshot, idx) => (
+                                                          <div key={`${snapshot.name}-${idx}`} className="flex justify-between text-sm">
+                                                              <span className="text-emerald-400">{snapshot.name}</span>
+                                                              <span className="text-emerald-400 font-medium">+{currency}{Number(snapshot.calculatedAmount || 0).toFixed(2)}</span>
+                                                          </div>
+                                                      ))}
+                                                      <div className="flex justify-between text-sm">
+                                                          <span className="text-slate-400">Subtotal Before Margin</span>
+                                                          <span className="text-slate-200 font-medium">{currency}{stationeryAutoPricing.subtotalBeforeMargin.toFixed(2)}</span>
                                                       </div>
                                                       <div className="flex justify-between text-sm">
-                                                          <span className="text-slate-400">Margin ({formData.marginPercent || 0}%)</span>
-                                                          <span className="text-green-400 font-medium">+{currency}{((derivedCostPerPiece || 0) * (formData.marginPercent || 0) / 100).toFixed(2)}</span>
+                                                          <span className="text-green-400">Margin ({stationeryAutoPricing.marginLabel})</span>
+                                                          <span className="text-green-400 font-medium">+{currency}{stationeryAutoPricing.marginAmount.toFixed(2)}</span>
                                                       </div>
                                                       <div className="flex justify-between text-sm">
-                                                          <span className="text-emerald-400">Adjustments</span>
-                                                          <span className="text-emerald-400 font-medium">+{currency}{((derivedCostPerPiece || 0) * (formData.marginPercent || 0) / 100).toFixed(2)}</span>
+                                                          <span className="text-purple-400">Rounding ({getRoundingMethodLabel(stationeryAutoPricing.roundingMethod)})</span>
+                                                          <span className="text-purple-400 font-medium">
+                                                              {stationeryAutoPricing.roundingDifference >= 0 ? '+' : '-'}
+                                                              {currency}{Math.abs(stationeryAutoPricing.roundingDifference).toFixed(2)}
+                                                          </span>
                                                       </div>
                                                       <div className={styles.premiumDivider + " my-4 bg-slate-600"}></div>
+                                                      <div className="flex justify-between text-sm">
+                                                          <span className="text-slate-400">Auto Price</span>
+                                                          <span className="text-slate-200 font-medium">{currency}{stationeryAutoPricing.sellingPrice.toFixed(2)}</span>
+                                                      </div>
+                                                      {isItemManualOverride && (
+                                                          <div className="flex justify-between text-sm">
+                                                              <span className="text-amber-300">Manual Override</span>
+                                                              <span className="text-amber-300 font-medium">{currency}{displayedStationeryUnitPrice.toFixed(2)}</span>
+                                                          </div>
+                                                      )}
                                                       <div className="flex justify-between items-center">
-                                                          <span className="text-slate-300 font-semibold">Per Unit (Incl. Margin)</span>
+                                                          <span className="text-slate-300 font-semibold">Final Selling Price</span>
                                                           <span className="text-2xl font-bold text-white">
-                                                              {currency}{((derivedCostPerPiece || 0) + (activeMarginAmount || 0)).toFixed(2)}
+                                                              {currency}{displayedStationeryUnitPrice.toFixed(2)}
                                                           </span>
                                                       </div>
                                                   </div>
@@ -2719,7 +3207,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                         <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border border-blue-200 shadow-lg space-y-6">
                                             {formData.type === 'Stationery' ? (
                                                 <>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                                                         <div>
                                                             <label className="block text-xs font-medium text-slate-600 mb-1">Variant Name</label>
                                                             <input
@@ -2768,6 +3256,23 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                              </div>
                                                          </div>
                                                         <div>
+                                                            <label className="block text-xs font-medium text-slate-600 mb-1">Rounding Rule</label>
+                                                            <select
+                                                                value={(newVariant as any).selectedRoundingMethod || '__DEFAULT__'}
+                                                                onChange={(e) => setNewVariant(recalculateStationeryVariantPrice(newVariant, {
+                                                                    selectedRoundingMethod: e.target.value === '__DEFAULT__'
+                                                                        ? undefined
+                                                                        : e.target.value as PricingRoundingMethod
+                                                                }))}
+                                                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                            >
+                                                                <option value="__DEFAULT__">{getRoundingMethodLabel(undefined)}</option>
+                                                                {ROUNDING_METHOD_OPTIONS.map((option) => (
+                                                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div>
                                                             <label className="block text-xs font-medium text-slate-600 mb-1">Adjustment</label>
                                                             <details className="relative">
                                                                 <summary className="list-none cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
@@ -2778,7 +3283,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                 <div className="absolute left-0 top-full z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
                                                                     <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Single or multiple</div>
                                                                     <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                                                                        {stationeryAdjustmentOptions.length > 0 ? stationeryAdjustmentOptions.map((adjustment) => {
+                                                                        {stationeryAdjustmentOptions.length > 0 ? stationeryAdjustmentOptions.map((adjustment: any) => {
                                                                             const isSelected = ((newVariant as any).selectedAdjustmentIds || []).includes(adjustment.id);
                                                                             return (
                                                                                 <label key={adjustment.id} className="flex items-start gap-3 rounded-lg border border-slate-100 px-3 py-2 hover:bg-slate-50">
@@ -2808,20 +3313,57 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                 +{currency}{Number((newVariant as any).adjustmentTotal || 0).toFixed(2)}
                                                             </div>
                                                         </div>
+                                                        {(((newVariant as any).selectedRoundingMethod || formData.pricingConfig?.selectedRoundingMethod || companyDefaultRoundingMethod) === 'ALWAYS_UP_CUSTOM') && (
+                                                            <div>
+                                                                <label className="block text-xs font-medium text-slate-600 mb-1">Custom Step</label>
+                                                                <input
+                                                                    type="number"
+                                                                    min="1"
+                                                                    value={Number((newVariant as any).customRoundingStep ?? formData.pricingConfig?.customRoundingStep ?? companyDefaultCustomRoundingStep)}
+                                                                    onChange={(e) => setNewVariant(recalculateStationeryVariantPrice(newVariant, {
+                                                                        customRoundingStep: Math.max(1, Number(e.target.value) || companyDefaultCustomRoundingStep)
+                                                                    }))}
+                                                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                                />
+                                                            </div>
+                                                        )}
                                                         <div>
                                                             <label className="block text-xs font-medium text-slate-600 mb-1">Selling Price ({currency})</label>
-                                                            <input
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={Number(newVariant.selling_price ?? newVariant.price ?? 0)}
-                                                                readOnly
-                                                                className="w-full px-3 py-2 border border-blue-200 bg-blue-50 rounded-lg text-sm font-semibold text-blue-700"
-                                                            />
+                                                            <div className="space-y-2">
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={Number(newVariant.selling_price ?? newVariant.price ?? 0)}
+                                                                    onChange={(e) => handleNewStationeryManualPriceChange(Number(e.target.value))}
+                                                                    readOnly={!Boolean((newVariant as any).manualOverride)}
+                                                                    className={`w-full px-3 py-2 rounded-lg text-sm font-semibold ${Boolean((newVariant as any).manualOverride) ? 'border border-amber-200 bg-white text-amber-700' : 'border border-blue-200 bg-blue-50 text-blue-700'}`}
+                                                                />
+                                                                <div className="flex items-center justify-between text-[11px]">
+                                                                    <span className="text-slate-400">Auto: {currency}{Number((newVariant as any).autoSellingPrice ?? calculateStationeryVariantAutoPricing(newVariant).sellingPrice).toFixed(2)}</span>
+                                                                    {!Boolean((newVariant as any).manualOverride) ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleNewStationeryManualOverride(true)}
+                                                                            className="text-amber-700 hover:text-amber-800 font-semibold"
+                                                                        >
+                                                                            Manual Override
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => toggleNewStationeryManualOverride(false)}
+                                                                            className="text-blue-700 hover:text-blue-800 font-semibold"
+                                                                        >
+                                                                            Return to Auto
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
 
                                                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                                                        <span className="font-semibold">Auto pricing:</span> CP + Margin + Adjustments = SP
+                                                        <span className="font-semibold">Auto pricing:</span> CP + Adjustments + Margin + Rounding = SP
                                                     </div>
                                                 </>
                                             ) : (
@@ -3043,7 +3585,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                 <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Attribute</th>
                                                                 <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Cost Price</th>
                                                                 <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-orange-400 uppercase tracking-wider">Margin</th>
-                                                                <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-amber-400 uppercase tracking-wider">Adjustment</th>
+                                                                <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-amber-400 uppercase tracking-wider">Adjustments & Rounding</th>
                                                                 <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">Selling Price</th>
                                                                 <th className="w-20 px-3 py-2.5"></th>
                                                             </tr>
@@ -3072,7 +3614,12 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                     )}
                                                     {formData.type === 'Stationery' ? (
                                                         <tbody className="divide-y divide-slate-50">
-                                                            {formData.variants.map((variant, idx) => (
+                                                            {formData.variants.map((variant, idx) => {
+                                                                const autoPricing = calculateStationeryVariantAutoPricing(variant);
+                                                                const variantManualOverride = Boolean((variant as any).manualOverride);
+                                                                const effectiveVariantRoundingMethod = ((variant as any).selectedRoundingMethod || formData.pricingConfig?.selectedRoundingMethod || companyDefaultRoundingMethod) as PricingRoundingMethod;
+
+                                                                return (
                                                                 <tr key={variant.id || idx} className="hover:bg-slate-50 transition-colors align-top">
                                                                     <td className="px-4 py-3">
                                                                         <input
@@ -3110,15 +3657,9 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                         />
                                                                     </td>
                                                                     <td className="px-3 py-3">
-                                                                        <input
-                                                                            type="number"
-                                                                            step="0.01"
-                                                                            value={Number((variant as any).marginAmount ?? 0)}
-                                                                            onChange={(e) => handleStationeryVariantChange(variant.id, {
-                                                                                marginAmount: Number(e.target.value)
-                                                                            })}
-                                                                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-right text-sm text-slate-700"
-                                                                        />
+                                                                        <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right text-sm text-slate-700">
+                                                                            {currency}{Number((variant as any).marginAmount ?? autoPricing.marginAmount).toFixed(2)}
+                                                                        </div>
                                                                         <div className="mt-1 text-[10px] text-slate-400">{Number(variant.marginPercent || 0).toFixed(1)}%</div>
                                                                     </td>
                                                                     <td className="px-3 py-3">
@@ -3131,7 +3672,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                             <div className="absolute left-0 top-full z-20 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
                                                                                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Single or multiple</div>
                                                                                 <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                                                                                    {stationeryAdjustmentOptions.length > 0 ? stationeryAdjustmentOptions.map((adjustment) => {
+                                                                                    {stationeryAdjustmentOptions.length > 0 ? stationeryAdjustmentOptions.map((adjustment: any) => {
                                                                                         const isSelected = ((variant as any).selectedAdjustmentIds || []).includes(adjustment.id);
                                                                                         return (
                                                                                             <label key={adjustment.id} className="flex items-start gap-3 rounded-lg border border-slate-100 px-3 py-2 hover:bg-slate-50">
@@ -3158,10 +3699,64 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                             </div>
                                                                         </details>
                                                                         <div className="mt-1 text-[11px] text-emerald-600">+{currency}{Number((variant as any).adjustmentTotal || 0).toFixed(2)}</div>
+                                                                        <select
+                                                                            value={(variant as any).selectedRoundingMethod || '__DEFAULT__'}
+                                                                            onChange={(e) => handleStationeryVariantChange(variant.id, {
+                                                                                selectedRoundingMethod: e.target.value === '__DEFAULT__'
+                                                                                    ? undefined
+                                                                                    : e.target.value as PricingRoundingMethod
+                                                                            } as Partial<ProductVariant>)}
+                                                                            className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700"
+                                                                        >
+                                                                            <option value="__DEFAULT__">{getRoundingMethodLabel(undefined)}</option>
+                                                                            {ROUNDING_METHOD_OPTIONS.map((option) => (
+                                                                                <option key={option.value} value={option.value}>{option.label}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        {effectiveVariantRoundingMethod === 'ALWAYS_UP_CUSTOM' && (
+                                                                            <input
+                                                                                type="number"
+                                                                                min="1"
+                                                                                value={Number((variant as any).customRoundingStep ?? formData.pricingConfig?.customRoundingStep ?? companyDefaultCustomRoundingStep)}
+                                                                                onChange={(e) => handleStationeryVariantChange(variant.id, {
+                                                                                    customRoundingStep: Math.max(1, Number(e.target.value) || companyDefaultCustomRoundingStep)
+                                                                                } as Partial<ProductVariant>)}
+                                                                                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700"
+                                                                            />
+                                                                        )}
                                                                     </td>
                                                                     <td className="px-3 py-3 text-right">
-                                                                        <div className="font-bold text-indigo-700 text-sm">{currency}{resolveVariantBasePrice(variant).toFixed(2)}</div>
-                                                                        <div className="text-[10px] text-slate-400">CP + Margin + Adjustments</div>
+                                                                        <div className="space-y-2">
+                                                                            <input
+                                                                                type="number"
+                                                                                step="0.01"
+                                                                                value={Number(variant.selling_price ?? variant.price ?? 0)}
+                                                                                onChange={(e) => handleStationeryVariantManualPriceChange(variant.id, Number(e.target.value))}
+                                                                                readOnly={!variantManualOverride}
+                                                                                className={`w-full rounded-lg px-3 py-2 text-right text-sm font-semibold ${variantManualOverride ? 'border border-amber-200 bg-white text-amber-700' : 'border border-blue-200 bg-blue-50 text-blue-700'}`}
+                                                                            />
+                                                                            <div className="flex items-center justify-between text-[10px]">
+                                                                                <span className="text-slate-400">Auto {currency}{Number((variant as any).autoSellingPrice ?? autoPricing.sellingPrice).toFixed(2)}</span>
+                                                                                {!variantManualOverride ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleStationeryVariantChange(variant.id, toggleStationeryVariantManualOverride(variant, true) as Partial<ProductVariant>)}
+                                                                                        className="text-amber-700 hover:text-amber-800 font-semibold"
+                                                                                    >
+                                                                                        Manual
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleStationeryVariantChange(variant.id, toggleStationeryVariantManualOverride(variant, false) as Partial<ProductVariant>)}
+                                                                                        className="text-blue-700 hover:text-blue-800 font-semibold"
+                                                                                    >
+                                                                                        Auto
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="text-[10px] text-slate-400">CP + Adjustments + Margin + Rounding</div>
+                                                                        </div>
                                                                     </td>
                                                                     <td className="px-3 py-3 text-center">
                                                                         <button
@@ -3173,7 +3768,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                                         </button>
                                                                     </td>
                                                                 </tr>
-                                                            ))}
+                                                            )})}
                                                         </tbody>
                                                     ) : (
                                                     <tbody className="divide-y divide-slate-50">

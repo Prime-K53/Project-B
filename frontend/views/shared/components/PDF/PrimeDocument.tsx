@@ -1355,20 +1355,21 @@ export const PrimeDocument = ({ type, data, configOverride = null }: DocProps) =
 if (type === 'POS_RECEIPT') {
   const r = data as any;
 
-  // Scaling factor (Reduced by 20% from 1.52 to 1.22)
-  const scale = 1.22;
-  const baseFontSize = 8 * scale;
-  const largeFontSize = 12 * scale;
-  const smallFontSize = 7 * scale;
-  const mediumFontSize = 9 * scale;
+  const receiptFontFamily = 'Courier';
+  const receiptBoldFontFamily = 'Courier-Bold';
+  const scale = 1;
+  const baseFontSize = 7.6 * scale;
+  const largeFontSize = 10 * scale;
+  const smallFontSize = 6.4 * scale;
+  const mediumFontSize = 8.4 * scale;
 
   return (
     <Document title={`Receipt - ${r.receiptNumber}`} author={companyName}>
-      <Page size="A4" style={[s.page, pageStyle, { padding: 0, backgroundColor: '#f9fafb' }]}>
-        <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 30 * scale, paddingHorizontal: 10 * scale }]}>
+      <Page size="A4" style={[s.page, pageStyle, { padding: 0, backgroundColor: '#f9fafb', fontFamily: receiptFontFamily }]}>
+        <View style={[s.posA4Wrapper, { width: 250 * scale, paddingVertical: 24 * scale, paddingHorizontal: 8 * scale, fontFamily: receiptFontFamily }]}>
             {/* Header - Replaced logo with Company Name, Address and Contacts */}
-            <View style={{ alignItems: 'center', marginBottom: 15 * scale }}>
-              <Text style={{ fontSize: 16 * scale, fontWeight: 'bold', textAlign: 'center', marginBottom: 4 * scale }}>{companyName}</Text>
+            <View style={{ alignItems: 'center', marginBottom: 12 * scale }}>
+              <Text style={{ fontFamily: receiptBoldFontFamily, fontSize: 14 * scale, textAlign: 'center', marginBottom: 3 * scale }}>{companyName}</Text>
               <Text style={{ fontSize: baseFontSize, textAlign: 'center', marginBottom: 2 * scale }}>{companyAddress}</Text>
               <Text style={{ fontSize: baseFontSize, textAlign: 'center' }}>{companyContact}</Text>
             </View>
@@ -1380,7 +1381,7 @@ if (type === 'POS_RECEIPT') {
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
                 <Text style={{ fontSize: baseFontSize, color: '#666' }}>Receipt #:</Text>
-                <Text style={{ fontSize: baseFontSize, fontWeight: 'bold' }}>{r.receiptNumber}</Text>
+                <Text style={{ fontFamily: receiptBoldFontFamily, fontSize: baseFontSize }}>{r.receiptNumber}</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 * scale }}>
                 <Text style={{ fontSize: baseFontSize, color: '#666' }}>Cashier:</Text>
@@ -1397,15 +1398,15 @@ if (type === 'POS_RECEIPT') {
             {/* PAID Stamp for POS receipts */}
             <View style={s.paidStampSmallContainer}>
               <View style={s.paidStampSmallBox}>
-                <Text style={s.paidStampSmallText}>PAID</Text>
+                <Text style={[s.paidStampSmallText, { fontFamily: receiptBoldFontFamily, fontSize: 18 * scale, letterSpacing: 2 * scale }]}>PAID</Text>
               </View>
             </View>
 
             {/* Items */}
             <View style={{ marginBottom: 15 * scale }}>
               <View style={{ flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#ccc', paddingBottom: 3 * scale, marginBottom: 5 * scale }}>
-                <Text style={{ flex: 3, fontSize: baseFontSize, fontWeight: 'bold' }}>Description</Text>
-                <Text style={{ flex: 1, fontSize: baseFontSize, fontWeight: 'bold', textAlign: 'right' }}>Total</Text>
+                <Text style={{ flex: 3, fontFamily: receiptBoldFontFamily, fontSize: baseFontSize }}>Description</Text>
+                <Text style={{ flex: 1, fontFamily: receiptBoldFontFamily, fontSize: baseFontSize, textAlign: 'right' }}>Total</Text>
               </View>
               {r.items.map((item: any, i: number) => (
                 <View key={i} style={{ marginBottom: 6 * scale }}>
@@ -1438,8 +1439,8 @@ if (type === 'POS_RECEIPT') {
                 </View>
               ) */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 * scale, paddingTop: 4 * scale, borderTopWidth: 0.5, borderTopColor: '#eee' }}>
-                <Text style={{ fontSize: largeFontSize, fontWeight: 'bold' }}>TOTAL</Text>
-                <Text style={{ fontSize: largeFontSize, fontWeight: 'bold' }}>{currency} {formatAmount(r.totalAmount)}</Text>
+                <Text style={{ fontFamily: receiptBoldFontFamily, fontSize: largeFontSize }}>TOTAL</Text>
+                <Text style={{ fontFamily: receiptBoldFontFamily, fontSize: largeFontSize }}>{currency} {formatAmount(r.totalAmount)}</Text>
               </View>
             </View>
 
@@ -1455,14 +1456,14 @@ if (type === 'POS_RECEIPT') {
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                 <Text style={{ fontSize: baseFontSize, color: '#666' }}>Change Given</Text>
-                <Text style={{ fontSize: baseFontSize, fontWeight: 'bold' }}>{formatAmount(r.changeGiven)}</Text>
+                <Text style={{ fontFamily: receiptBoldFontFamily, fontSize: baseFontSize }}>{formatAmount(r.changeGiven)}</Text>
               </View>
             </View>
 
             {/* Footer */}
-            <View style={{ marginTop: 25 * scale, alignItems: 'center' }}>
-              <Text style={{ textAlign: 'center', fontSize: mediumFontSize, fontWeight: 'bold' }}>Thank you for your business!</Text>
-              <Text style={{ textAlign: 'center', fontSize: smallFontSize, marginTop: 8 * scale, color: '#999', textTransform: 'uppercase', letterSpacing: 1 * scale }}>Powered by Prime ERP</Text>
+            <View style={{ marginTop: 18 * scale, alignItems: 'center' }}>
+              <Text style={{ fontFamily: receiptBoldFontFamily, textAlign: 'center', fontSize: mediumFontSize }}>Thank you for your business!</Text>
+              <Text style={{ textAlign: 'center', fontSize: smallFontSize, marginTop: 6 * scale, color: '#999', textTransform: 'uppercase', letterSpacing: 0.6 * scale }}>Powered by Prime ERP</Text>
             </View>
           </View>
         </Page>

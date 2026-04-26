@@ -24,6 +24,10 @@ interface CartSidebarProps {
     /** Adjustment summary for display in totals section */
     // TODO: normalise to adjustmentSnapshots — see cleanup tracker
     adjustmentSummary?: { adjustmentId: string; adjustmentName: string; totalAmount: number; itemCount: number; }[];
+    pricingSummary?: {
+        profitMarginTotal: number;
+        roundingTotal: number;
+    };
     rounding?: {
         enabled: boolean;
         applyRounding: boolean;
@@ -41,7 +45,7 @@ interface CartSidebarProps {
 }
 
 export const CartSidebar: React.FC<CartSidebarProps> = ({
-    cart, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, resetPriceOverride, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, rounding
+    cart, selectedCustomerName, selectedSubAccount, setSelectedSubAccount, onSelectCustomer, updateQuantity, updatePrice, resetPriceOverride, removeFromCart, clearCart, onPark, onReturn, onPay, totals, adjustmentSummary, pricingSummary, rounding
 }) => {
     const { companyConfig, invoices } = useData();
     const currency = companyConfig.currencySymbol;
@@ -51,11 +55,41 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
 
     const grandTotal = totals.total;
     const hasAdjustments = adjustmentSummary && adjustmentSummary.length > 0;
-    const totalAdjustments = hasAdjustments ? adjustmentSummary.reduce((sum, adj) => sum + adj.totalAmount, 0) : 0;
+    const roundingTotal = Number(pricingSummary?.roundingTotal || 0);
+    const profitMarginTotal = Number(pricingSummary?.profitMarginTotal || 0);
+    const hasPricingBreakdown = Boolean(hasAdjustments || Math.abs(roundingTotal) > 0.0001 || Math.abs(profitMarginTotal) > 0.0001 || rounding?.enabled);
     const overrideEligibleItems = useMemo(
         () => cart.filter((item: any) => !item?.isVariantParent),
         [cart]
     );
+
+    const getPricingDisplayMeta = (label: string) => {
+        const normalized = String(label || '').toLowerCase();
+
+        if (normalized.includes('transport') || normalized.includes('logistics') || normalized.includes('delivery')) {
+            return { priority: 0, Icon: Truck, iconClass: 'text-blue-500', textClass: 'text-blue-600' };
+        }
+        if (normalized.includes('waste') || normalized.includes('wastage') || normalized.includes('shrinkage')) {
+            return { priority: 1, Icon: Scale, iconClass: 'text-rose-500', textClass: 'text-rose-600' };
+        }
+        if (normalized.includes('round')) {
+            return { priority: 3, Icon: Tag, iconClass: 'text-purple-500', textClass: normalized.includes('-') ? 'text-rose-600' : 'text-purple-600' };
+        }
+        if (normalized.includes('profit') || normalized.includes('margin')) {
+            return { priority: 4, Icon: TrendingUp, iconClass: 'text-emerald-500', textClass: 'text-emerald-600' };
+        }
+        return { priority: 2, Icon: Tag, iconClass: 'text-indigo-500', textClass: 'text-indigo-600' };
+    };
+
+    const orderedAdjustmentSummary = useMemo(() => {
+        const rows = Array.isArray(adjustmentSummary) ? [...adjustmentSummary] : [];
+        return rows.sort((a, b) => {
+            const aMeta = getPricingDisplayMeta(a.adjustmentName);
+            const bMeta = getPricingDisplayMeta(b.adjustmentName);
+            if (aMeta.priority !== bMeta.priority) return aMeta.priority - bMeta.priority;
+            return a.adjustmentName.localeCompare(b.adjustmentName);
+        });
+    }, [adjustmentSummary]);
 
     const selectedOverrideItem = useMemo(
         () => overrideEligibleItems.find(item => item.id === selectedOverrideItemId) || overrideEligibleItems[0] || null,
@@ -189,7 +223,7 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                 {showManualOverrideCard && selectedOverrideItem && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-3">
                         <div className="space-y-1">
-                            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Manual Override Pricing</div>
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Override Pricing</div>
                             <div className="text-[11px] text-slate-600">
                                 Auto Price: <span className="font-semibold">{currency}{formatNumber(getAutomaticUnitPrice(selectedOverrideItem))}</span>
                                 <span className="mx-2 text-slate-400">|</span>
@@ -242,107 +276,66 @@ export const CartSidebar: React.FC<CartSidebarProps> = ({
                     </div>
                 )}
 
-                {/* Adjustment Breakdown */}
-                {hasAdjustments && (
+                {/* Pricing Breakdown */}
+                {hasPricingBreakdown && (
                     <div className="space-y-1.5 pt-2 border-t border-slate-50">
-                        {adjustmentSummary.map((adj, idx) => {
-                            const n = adj.adjustmentName.toLowerCase();
-                            let Icon = Tag;
-                            let colorClass = "text-indigo-500";
-                            let textClass = "text-indigo-600";
-
-                            if (n.includes('profit') || n.includes('margin')) {
-                                Icon = TrendingUp;
-                                colorClass = "text-emerald-500";
-                                textClass = "text-emerald-600";
-                            } else if (n.includes('transport') || n.includes('logistics') || n.includes('delivery')) {
-                                Icon = Truck;
-                                colorClass = "text-blue-500";
-                                textClass = "text-blue-600";
-                            } else if (n.includes('wastage') || n.includes('shrinkage')) {
-                                Icon = Scale;
-                                colorClass = "text-amber-500";
-                                textClass = "text-amber-600";
-                            }
-
-                                return (
+                        {orderedAdjustmentSummary.map((adj, idx) => {
+                            const meta = getPricingDisplayMeta(adj.adjustmentName);
+                            const Icon = meta.Icon;
+                            return (
                                 <div key={idx} className="flex justify-between items-center">
                                     <span className="text-slate-400 text-[11px] font-normal tracking-tight flex items-center gap-1.5">
-                                        <Icon size={10} className={colorClass} /> • {adj.adjustmentName}
+                                        <Icon size={10} className={meta.iconClass} /> {adj.adjustmentName}
                                     </span>
-                                    <span className={`${textClass} font-mono text-[11px] font-medium`}>+{currency}{formatNumber(adj.totalAmount)}</span>
+                                    <span className={`${meta.textClass} font-mono text-[11px] font-medium`}>+{currency}{formatNumber(adj.totalAmount)}</span>
                                 </div>
                             );
                         })}
-                        {(() => {
-                            const profitMargin = cart.reduce((sum, item) => {
-                                const itemCost = item.cost || 0;
-                                const itemPrice = item.price || 0;
-                                const margin = itemPrice - itemCost;
-                                return sum + (margin > 0 ? margin * item.quantity : 0);
-                            }, 0);
-                            if (profitMargin > 0) {
-                                return (
-                                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
-                                        <span className="text-emerald-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
-                                            <TrendingUp size={10} className="text-emerald-500" /> • Profit Margin
-                                        </span>
-                                        <span className="text-emerald-600 font-mono text-[11px] font-semibold">+{currency}{formatNumber(profitMargin)}</span>
-                                    </div>
-                                );
-                            }
-return null;
-                        })()}
-                    </div>
-                )}
-
-                {rounding?.enabled && (
-                    <div className="pt-2 border-t border-slate-200 space-y-2">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-slate-500 font-semibold">Apply Rounding</span>
-                            <label className="inline-flex items-center gap-2 text-[10px] text-slate-500">
-                                <input
-                                    type="checkbox"
-                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                    checked={rounding.applyRounding}
-                                    disabled={!rounding.manualOverrideAllowed}
-                                    onChange={e => rounding.onToggle?.(e.target.checked)}
-                                />
-                                {rounding.manualOverrideAllowed ? 'Enabled' : 'Locked'}
-                            </label>
-                        </div>
-
-                        {rounding.manualOverrideAllowed && rounding.methodOptions && (
-                            <div>
-                                <label className="text-[11px] text-slate-500 font-medium">Rounding Method</label>
-                                <select
-                                    className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg bg-white text-[11px] font-semibold text-slate-700"
-                                    value={rounding.method}
-                                    onChange={e => rounding.onMethodChange?.(e.target.value)}
-                                >
-                                    {rounding.methodOptions.map(option => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                    ))}
-                                </select>
+                        {(rounding?.enabled || Math.abs(roundingTotal) > 0.0001) && (
+                            <div className={`${orderedAdjustmentSummary.length > 0 ? 'space-y-1.5 pt-2 mt-2 border-t border-slate-100' : 'space-y-1.5'}`}>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-purple-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                        <Tag size={10} className="text-purple-500" /> Round Up
+                                        {rounding?.enabled && (
+                                            <label className="inline-flex items-center gap-1 ml-1 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-slate-300 text-purple-600 focus:ring-purple-500 w-3 h-3"
+                                                    checked={rounding.applyRounding}
+                                                    disabled={!rounding.manualOverrideAllowed}
+                                                    onChange={e => rounding.onToggle?.(e.target.checked)}
+                                                />
+                                                <span className="text-[9px] text-slate-400 font-normal">
+                                                    {rounding.manualOverrideAllowed ? (rounding.applyRounding ? 'On' : 'Off') : 'Locked'}
+                                                </span>
+                                            </label>
+                                        )}
+                                    </span>
+                                    <span className={`font-mono text-[11px] font-semibold ${roundingTotal >= 0 ? 'text-purple-600' : 'text-rose-600'}`}>
+                                        {roundingTotal >= 0 ? '+' : ''}{currency}{formatNumber(roundingTotal)}
+                                    </span>
+                                </div>
+                                {rounding?.enabled && rounding.manualOverrideAllowed && rounding.methodOptions && rounding.applyRounding && (
+                                    <select
+                                        className="w-full p-1 border border-purple-100 rounded-lg bg-white text-[10px] font-semibold text-slate-700"
+                                        value={rounding.method}
+                                        onChange={e => rounding.onMethodChange?.(e.target.value)}
+                                    >
+                                        {rounding.methodOptions.map(option => (
+                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
                         )}
-
-                        {rounding.showOriginalPrice !== false && (
-                            <div className="flex justify-between items-center text-[11px]">
-                                <span className="text-slate-400">Calculated Price</span>
-                                <span className="font-mono text-slate-700">{currency}{formatNumber(rounding.calculatedPrice)}</span>
+                        {profitMarginTotal > 0 && (
+                            <div className={`flex justify-between items-center ${orderedAdjustmentSummary.length > 0 || rounding?.enabled || Math.abs(roundingTotal) > 0.0001 ? 'pt-2 mt-2 border-t border-slate-100' : ''}`}>
+                                <span className="text-emerald-600 text-[11px] font-semibold tracking-tight flex items-center gap-1.5">
+                                    <TrendingUp size={10} className="text-emerald-500" /> Profit Margin
+                                </span>
+                                <span className="text-emerald-600 font-mono text-[11px] font-semibold">+{currency}{formatNumber(profitMarginTotal)}</span>
                             </div>
                         )}
-                        <div className="flex justify-between items-center text-[11px]">
-                            <span className="text-slate-400">Rounded Price</span>
-                            <span className="font-mono text-blue-700">{currency}{formatNumber(rounding.roundedPrice)}</span>
-                        </div>
-                        <div className="flex justify-between items-center text-[11px]">
-                            <span className="text-slate-400">Difference</span>
-                            <span className={`font-mono ${rounding.difference >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                {rounding.difference >= 0 ? '+' : ''}{currency}{formatNumber(rounding.difference)}
-                            </span>
-                        </div>
                     </div>
                 )}
 
@@ -366,7 +359,7 @@ return null;
                             disabled={cart.length === 0 || !selectedOverrideItem}
                             className={`flex items-center justify-center gap-2 py-2 rounded-full border font-bold text-xs transition-all disabled:opacity-50 ${showManualOverrideCard ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100' : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-50'}`}
                         >
-                            <Tag size={12} /> {showManualOverrideCard ? 'Close Override' : 'Manual Override Pricing'}
+                            <Tag size={12} /> {showManualOverrideCard ? 'Close Override' : 'Override'}
                         </button>
                         {companyConfig.transactionSettings?.pos?.allowReturns !== false && (
                             <button onClick={onReturn} className="flex items-center justify-center gap-2 py-2 rounded-full border border-slate-200 bg-white text-slate-800 font-bold text-xs hover:bg-slate-50 transition-all">
