@@ -273,7 +273,8 @@ const SmartPricing: React.FC = () => {
         setCopies(1);
         if (paperItems.length > 0) setSelectedPaperId(paperItems[0].id);
         if (tonerItems.length > 0) setSelectedTonerId(tonerItems[0].id);
-        setFinishingOptions(defaultFinishingOptions);
+        // Harden finishing options: reset enabled state but keep current prices
+        setFinishingOptions(prev => prev.map(opt => ({ ...opt, enabled: false })));
         setMarketAdjustmentEnabled(true);
     };
 
@@ -575,8 +576,8 @@ const SmartPricing: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    <div className="lg:col-span-3 space-y-4">
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                             <button 
                                 onClick={() => setPaperExpanded(!paperExpanded)}
@@ -793,7 +794,7 @@ const SmartPricing: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="lg:col-span-2 space-y-4">
                         <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden sticky top-6">
                             <div className="p-6 bg-gradient-to-r from-indigo-600 to-purple-600">
                                 <h3 className="text-white font-semibold text-lg">Price Summary</h3>
@@ -849,12 +850,10 @@ const SmartPricing: React.FC = () => {
                                     }
                                     return null;
                                 })}
-                                {profitMarginAmount > 0 && (
-                                    <div className="flex justify-between text-green-600">
-                                        <span>Profit Margin ({globalMargin?.margin_type === 'percentage' ? `${globalMargin.margin_value}%` : 'Fixed'})</span>
-                                        <span className="font-medium">+{formatCurrency(profitMarginAmount)}</span>
-                                    </div>
-                                )}
+                                <div className="flex justify-between text-green-600">
+                                    <span>Profit Margin ({(!globalMargin || globalMargin.margin_value === 0) ? '0%' : (globalMargin.margin_type === 'percentage' ? `${globalMargin.margin_value}%` : 'Fixed')})</span>
+                                    <span className="font-medium">+{formatCurrency(profitMarginAmount)}</span>
+                                </div>
                                 {roundingResult && roundingResult.wasRounded && (
                                     <div className="flex justify-between text-purple-600">
                                         <span>{formatRoundingLabel(roundingResult.methodUsed)}</span>
@@ -904,24 +903,6 @@ const SmartPricing: React.FC = () => {
                                 >
                                     {editingProductId ? 'Save Product' : 'Create Product'}
                                 </button>
-                            </div>
-                        </div>
-
-                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                            <h4 className="font-medium text-slate-800 mb-3">Inventory Stats</h4>
-                            <div className="space-y-2 text-sm">
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Paper Types</span>
-                                    <span className="font-medium">{paperItems.length}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Toner Types</span>
-                                    <span className="font-medium">{tonerItems.length}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="text-slate-500">Market Adjustments</span>
-                                    <span className="font-medium">{marketAdjustments.length}</span>
-                                </div>
                             </div>
                         </div>
                     </div>
