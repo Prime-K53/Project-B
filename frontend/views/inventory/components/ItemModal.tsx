@@ -69,6 +69,7 @@ const defaultItem: Partial<Item> = {
     unitsPerPack: 0,
 
     locationStock: [],
+    isCustomizableService: false, // Default: not a customizable service
     pricingConfig: {
         marketAdjustment: 0,
         finishingOptions: [],
@@ -1992,17 +1993,59 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                 onChange={(e) => {
                                                     const nextType = e.target.value as Item['type'];
                                                     const nextSupportsStock = isStockTrackedItemType(nextType);
-                                                    setFormData({
-                                                        ...formData,
-                                                        type: nextType,
-                                                        ...(nextSupportsStock ? {} : {
-                                                            stock: 0,
-                                                            reserved: 0,
-                                                            minStockLevel: 0,
-                                                            reorderPoint: 0,
-                                                            locationStock: []
-                                                        })
-                                                    });
+                                                    
+                                                    // Preserve price when converting Product to Service (for products without variants)
+                                                    const isConvertingToService = nextType === 'Service' && formData.type === 'Product';
+                                                    const hasNoVariants = !formData.variants || formData.variants.length === 0;
+                                                    // Check if product has BOM (Bill of Materials)
+                                                    const hasBOM = Boolean(formData.bomTemplateId || (formData.smartPricing && formData.smartPricing.bomTemplateId));
+                                                    
+                                                    if (isConvertingToService && hasNoVariants) {
+                                                        // Preserve current price by enabling manual override
+                                                        // FIX: Reset conversionRate to 1 to prevent price multiplication bug
+                                                        // If product has BOM, make it a customizable service
+                                                        setFormData({
+                                                            ...formData,
+                                                            type: nextType,
+                                                            price: formData.price,
+                                                            selling_price: formData.selling_price,
+                                                            cost: formData.cost,
+                                                            cost_price: formData.cost_price,
+                                                            conversionRate: 1, // FIX: Reset to prevent price * conversionRate multiplication
+                                                            ...(hasBOM ? {
+                                                                // Product has BOM - make it a customizable service
+                                                                bomTemplateId: formData.bomTemplateId,
+                                                                smartPricing: {
+                                                                    ...formData.smartPricing,
+                                                                    bomTemplateId: formData.smartPricing?.bomTemplateId || formData.bomTemplateId,
+                                                                    isCustomizableService: true
+                                                                }
+                                                            } : {}),
+                                                            pricingConfig: {
+                                                                ...formData.pricingConfig,
+                                                                manualOverride: true
+                                                            },
+                                                            ...(nextSupportsStock ? {} : {
+                                                                stock: 0,
+                                                                reserved: 0,
+                                                                minStockLevel: 0,
+                                                                reorderPoint: 0,
+                                                                locationStock: []
+                                                            })
+                                                        });
+                                                    } else {
+                                                        setFormData({
+                                                            ...formData,
+                                                            type: nextType,
+                                                            ...(nextSupportsStock ? {} : {
+                                                                stock: 0,
+                                                                reserved: 0,
+                                                                minStockLevel: 0,
+                                                                reorderPoint: 0,
+                                                                locationStock: []
+                                                            })
+                                                        });
+                                                    }
                                                 }}
                                                 className={`${styles.select} ${errors.type ? 'border-red-300 bg-red-50' : ''}`}
                                             >
@@ -2055,32 +2098,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
 
                                       {/* Product-specific sections removed: Print specifications eliminated per request */}
 
-                                     {/* Service-specific sections */}
-                                     {formData.type === 'Service' && (
-                                         <div className="border-b border-slate-100 pb-6">
-                                             <h3 className={styles.sectionTitle}>Service details</h3>
-                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                 <div>
-                                                     <label htmlFor="durationEstimate" className={styles.label}>Duration estimate</label>
-                                                     <input
-                                                         type="text"
-                                                         id="durationEstimate"
-                                                         className={styles.input}
-                                                         placeholder="e.g. 2-3 business days"
-                                                     />
-                                                 </div>
-                                                 <div>
-                                                     <label htmlFor="deliveryMethod" className={styles.label}>Delivery method</label>
-                                                     <select id="deliveryMethod" className={styles.select}>
-                                                         <option>Email</option>
-                                                         <option>Physical delivery</option>
-                                                         <option>Pickup</option>
-                                                         <option>Download</option>
-                                                     </select>
-                                                 </div>
-                                             </div>
-                                         </div>
-                                     )}
+                                     
 
                                      {/* Large Format Toggle */}
                                      <div className="flex items-center gap-3 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
@@ -2438,16 +2456,59 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                               <DollarSign className="w-6 h-6 text-white" />
                                                           </div>
                                                           <div>
-                                                              <h3 className="text-lg font-bold text-slate-900">Service Pricing</h3>
-                                                              <p className="text-xs text-slate-500">Time & scope based</p>
+                                                              <h3 className="text-lg font-bold text-slate-900">Service Pricing Engine</h3>
+                                                              <p className="text-xs text-slate-500">Time & scope based pricing</p>
                                                           </div>
                                                       </div>
                                                       <div className="text-right">
-                                                          <div className="text-2xl font-bold text-purple-600">{currency}{(formData.cost || 0).toFixed(2)}</div>
-                                                          <div className="text-[10px] text-slate-500 uppercase tracking-wide">Base Rate</div>
+                                                          <div className="text-2xl font-bold text-purple-600">{currency}{(formData.price || formData.cost || 0).toFixed(2)}</div>
+                                                          <div className="text-[10px] text-slate-500 uppercase tracking-wide">Selling Price</div>
                                                       </div>
                                                   </div>
                                               </div>
+
+                                              <div className="flex justify-end">
+                                                  <button
+                                                      type="button"
+                                                      onClick={() => setShowManualOverrideCard(prev => !prev)}
+                                                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${showManualOverrideCard ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                                                  >
+                                                      {showManualOverrideCard ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                      {showManualOverrideCard ? 'Hide Manual Override Pricing' : 'Manual Override Pricing'}
+                                                  </button>
+                                              </div>
+
+                                              {showManualOverrideCard && (
+                                              <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 shadow-sm">
+                                                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                                                      <div className="space-y-1.5">
+                                                          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Manual Override Pricing</div>
+                                                          <div className="text-xs text-slate-700">
+                                                              Auto Price: <span className="font-semibold">{currency}{(formData.price || formData.cost || 0).toFixed(2)}</span>
+                                                              <span className="mx-2 text-slate-400">|</span>
+                                                              Final Price: <span className="font-semibold">{currency}{(formData.price || formData.cost || 0).toFixed(2)}</span>
+                                                              <span className="mx-2 text-slate-400">|</span>
+                                                              Difference: <span className="font-semibold text-slate-500">0.00</span>
+                                                          </div>
+                                                          <div className={`text-[10px] font-bold uppercase tracking-wider ${isItemManualOverride ? 'text-amber-700' : 'text-slate-500'}`}>
+                                                              {isItemManualOverride ? 'Status: Manual Override Active' : 'Status: Auto Pricing'}
+                                                          </div>
+                                                      </div>
+                                                      <div className="flex flex-col sm:flex-row gap-2">
+                                                          <div className="relative">
+                                                              <input
+                                                                  type="number"
+                                                                  value={formData.price || formData.cost || 0}
+                                                                  onChange={(e) => setFormData({ ...formData, price: Number(e.target.value), cost: Number(e.target.value) })}
+                                                                  className={styles.input}
+                                                                  step="0.01"
+                                                                  min="0"
+                                                              />
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                              )}
 
                                               {/* Pricing Model */}
                                               <div className={styles.premiumCard}>
@@ -2458,11 +2519,15 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                       <div>
                                                           <label className={styles.label}>Pricing Model</label>
-                                                          <select className={styles.select}>
-                                                              <option>Fixed</option>
-                                                              <option>Hourly</option>
-                                                              <option>Per Page</option>
-                                                              <option>Per Session</option>
+                                                          <select 
+                                                              className={styles.select}
+                                                              value={formData.pricingModel || 'Fixed'}
+                                                              onChange={(e) => setFormData({ ...formData, pricingModel: e.target.value as any })}
+                                                          >
+                                                              <option value="Fixed">Fixed</option>
+                                                              <option value="Hourly">Hourly</option>
+                                                              <option value="Per Page">Per Page</option>
+                                                              <option value="Per Session">Per Session</option>
                                                           </select>
                                                       </div>
                                                       <div>
@@ -2489,10 +2554,14 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                       </div>
                                                       <div>
                                                           <label className={styles.label}>Tax Class</label>
-                                                          <select className={styles.select}>
-                                                              <option>Standard (15%)</option>
-                                                              <option>Exempt</option>
-                                                              <option>Zero-rated</option>
+                                                          <select 
+                                                              className={styles.select}
+                                                              value={formData.taxClass || 'Standard (15%)'}
+                                                              onChange={(e) => setFormData({ ...formData, taxClass: e.target.value })}
+                                                          >
+                                                              <option value="Standard (15%)">Standard (15%)</option>
+                                                              <option value="Exempt">Exempt</option>
+                                                              <option value="Zero-rated">Zero-rated</option>
                                                           </select>
                                                       </div>
                                                   </div>

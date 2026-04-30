@@ -167,7 +167,10 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ inventory, addToCart, 
                                 View
                             </button>
                         ) : (
-                            <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>{currency}{formatNumber(resolveStoredSellingPrice(item as any) || 0)}</span>
+                            <span className={`font-bold text-slate-800 ${viewMode === 'Small' ? 'text-xs' : 'text-sm'}`}>
+                                {currency}{formatNumber(resolveStoredSellingPrice(item as any) || 0)}
+                                {(item.type === 'Service' || item.category === 'Service') && item.pages ? '/page' : ''}
+                            </span>
                         )}
                         <div className="flex items-center gap-2">
                             {(item.type === 'Stationery' || item.type === 'Material' || item.type === 'Raw Material') && (

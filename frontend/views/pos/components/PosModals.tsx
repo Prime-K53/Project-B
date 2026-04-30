@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 // PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
-import { X, CheckCircle, Printer, Usb, Wallet, UserPlus, Save, ArrowRight, Calculator, DollarSign, Tag, ShieldCheck, Plus, Search, Building2, FileText, Clock } from 'lucide-react';
+import { X, CheckCircle, Printer, Usb, Wallet, UserPlus, Save, ArrowRight, Calculator, DollarSign, Tag, ShieldCheck, Plus, Search, Building2, FileText, Clock, Settings, Info, RefreshCw, Layers } from 'lucide-react';
 import { HeldOrder, Sale, Invoice, Item, ProductVariant, BillOfMaterial, WorkOrder, BOMTemplate } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { DEFAULT_ACCOUNTS, ACCOUNT_IDS } from '../../../constants';
@@ -214,98 +213,10 @@ export const ServiceCalculatorModal: React.FC<{
     const { inventory = [], marketAdjustments = [], companyConfig } = useData();
     const [pages, setPages] = useState(Math.max(1, Number(initialPages) || 1));
     const [copies, setCopies] = useState(Math.max(1, Number(initialCopies) || 1));
-    const [bomExpanded, setBomExpanded] = useState(false);
-    const [finishingExpanded, setFinishingExpanded] = useState(false);
-    const [adjustmentsExpanded, setAdjustmentsExpanded] = useState(false);
-    const [finishingOptions, setFinishingOptions] = useState([
-        {
-            id: 'binding',
-            type: 'Binding',
-            name: 'Binding',
-            quantity: 0,
-            cost: 0,
-            priceAdjustment: 0,
-            materialConversionRate: 1,
-            coversPerCopy: 0
-        },
-        {
-            id: 'pinning',
-            type: 'Stapling',
-            name: 'Pinning/Stapling',
-            quantity: 0,
-            cost: 0,
-            priceAdjustment: 0,
-            materialConversionRate: 5000,
-            coversPerCopy: 0
-        },
-        {
-            id: 'covers',
-            type: 'Covers',
-            name: 'Covers',
-            quantity: 0,
-            cost: 0,
-            priceAdjustment: 0,
-            materialConversionRate: 100,
-            coversPerCopy: 0
-        }
-    ]);
-
-    useEffect(() => {
-        setPages(Math.max(1, Number(initialPages) || 1));
-        setCopies(Math.max(1, Number(initialCopies) || 1));
-    }, [initialPages, initialCopies, service.id]);
-
+    const [isCalculating, setIsCalculating] = useState(false);
     const [enginePricing, setEnginePricing] = useState<DynamicServicePricingResult | null>(null);
 
-    const paper = useMemo(() => {
-        return inventory.find(i =>
-            i.type === 'Raw Material' &&
-            (i.name?.toLowerCase().includes('paper') || String(i.category || '').toLowerCase() === 'paper')
-        );
-    }, [inventory]);
-
-    const toner = useMemo(() => {
-        return inventory.find(i =>
-            i.type === 'Raw Material' &&
-            (i.name?.toLowerCase().includes('toner') || String(i.category || '').toLowerCase() === 'toner')
-        );
-    }, [inventory]);
-
-    const paperCost = useMemo(() => {
-        if (!paper) return 0;
-        const sheetsPerCopy = Math.ceil(pages / 2);
-        const totalSheets = sheetsPerCopy * copies;
-        const SHEETS_PER_REAM = 500;
-        const paperCostBasis = Number((paper as any).cost_price ?? (paper as any).cost_per_unit ?? paper.cost ?? 0);
-        const costPerSheet = paperCostBasis / SHEETS_PER_REAM;
-        return roundToCurrency(totalSheets * costPerSheet);
-    }, [paper, pages, copies]);
-
-    const tonerCost = useMemo(() => {
-        if (!toner) return 0;
-        const capacity = 20000;
-        const totalPages = pages * copies;
-        const tonerCostBasis = Number((toner as any).cost_price ?? (toner as any).cost_per_unit ?? toner.cost ?? 0);
-        const costPerPage = tonerCostBasis / capacity;
-        return roundToCurrency(totalPages * costPerPage);
-    }, [toner, pages, copies]);
-
-    const finishingCost = useMemo(() => {
-        const total = finishingOptions
-            .filter(opt => opt.coversPerCopy > 0)
-            .reduce((sum, opt) => {
-                const totalUsage = copies * opt.coversPerCopy;
-                const conversionRate = opt.materialConversionRate || 1;
-                if (conversionRate <= 0) return sum;
-                const materialUnitsNeeded = totalUsage / conversionRate;
-                return sum + (materialUnitsNeeded * opt.cost);
-            }, 0);
-        return roundToCurrency(total);
-    }, [finishingOptions, copies]);
-
-    const baseCost = useMemo(() => {
-        return roundToCurrency(paperCost + tonerCost + finishingCost);
-    }, [paperCost, tonerCost, finishingCost]);
+    const config = service.serviceConfig;
 
     const normalizedAdjustments = useMemo(() => {
         return (marketAdjustments || [])
@@ -318,25 +229,64 @@ export const ServiceCalculatorModal: React.FC<{
                 name: adj.name,
                 type: adj.type,
                 value: adj.value,
-                percentage: adj.type === 'PERCENTAGE' ? adj.value : undefined,
                 adjustmentId: adj.id,
                 isActive: true
             }));
     }, [marketAdjustments, service.category]);
 
+    const computePageScaledCost = useCallback((pageCount: number, copyCount: number): number => {
+        const sp = (service as any).smartPricing;
+
+        if (sp) {
+            let paperCost = 0;
+            const paper = inventory.find((i: any) => i.id === sp.paperItemId);
+            if (paper) {
+                const sheetsPerCopy = Math.ceil(pageCount / 2);
+                const totalSheets = sheetsPerCopy * copyCount;
+                const reamSize = Number((paper as any).conversionRate || (paper as any).conversion_rate || 500);
+                const paperUnitCost = Number((paper as any).cost_price || (paper as any).cost_per_unit || paper.cost || 0);
+                const costPerSheet = reamSize > 0 ? paperUnitCost / reamSize : 0;
+                paperCost = Number((totalSheets * costPerSheet).toFixed(2));
+            }
+
+            let tonerCost = 0;
+            const toner = inventory.find((i: any) => i.id === sp.tonerItemId);
+            if (toner) {
+                const capacity = 20000;
+                const totalPages = pageCount * copyCount;
+                const tonerUnitCost = Number((toner as any).cost_price || (toner as any).cost_per_unit || toner.cost || 0);
+                tonerCost = Number((totalPages * (tonerUnitCost / capacity)).toFixed(2));
+            }
+
+            const finishingCost = ((sp.finishingEnabled || []) as string[]).reduce((sum: number, id: string) => {
+                const FINISHING_DEFAULTS: Record<string, number> = {
+                    binding: 150, coverPages: 20, cutting: 30,
+                    holePunch: 20, folding: 15, stapling: 10
+                };
+                return sum + ((FINISHING_DEFAULTS[id] || 0) * copyCount);
+            }, 0);
+
+            return paperCost + tonerCost + finishingCost;
+        }
+
+        const flatCostPerCopy = config?.baseLaborCost || config?.baseRate || service.cost || 0;
+        const baselinePages = Number((service as any).pages) || 1;
+        const scaledCostPerCopy = flatCostPerCopy * (pageCount / baselinePages);
+        return scaledCostPerCopy * copyCount;
+    }, [service, inventory, config]);
+
     useEffect(() => {
         let mounted = true;
         const calculate = async () => {
-            if (!service.id || baseCost <= 0) {
-                setEnginePricing(null);
-                return;
-            }
-
+            setIsCalculating(true);
             try {
+                const baseCost = computePageScaledCost(pages, copies);
+
                 const result = await calculateServicePrice({
                     itemId: service.id,
                     categoryId: service.category,
                     baseCost: baseCost,
+                    basePrice: undefined,
                     pages: pages,
                     copies: copies,
                     adjustments: normalizedAdjustments,
@@ -345,14 +295,18 @@ export const ServiceCalculatorModal: React.FC<{
 
                 if (mounted) {
                     const totalPages = pages * copies;
+                    const unitCostPerCopy = copies > 0 ? roundToCurrency(baseCost / copies) : baseCost;
+                    const unitCostPerPage = totalPages > 0 ? roundToCurrency(baseCost / totalPages) : baseCost;
+                    const unitPricePerPage = totalPages > 0 ? roundToCurrency(result.unitPrice / totalPages) : result.unitPrice;
+
                     const transformed: DynamicServicePricingResult = {
                         pages,
                         copies,
                         totalPages,
-                        unitCostPerCopy: copies > 0 ? roundToCurrency(baseCost / copies) : baseCost,
+                        unitCostPerCopy,
                         unitPricePerCopy: result.unitPrice,
-                        unitCostPerPage: totalPages > 0 ? roundToCurrency(baseCost / totalPages) : baseCost,
-                        unitPricePerPage: totalPages > 0 ? roundToCurrency(result.unitPrice / totalPages) : result.unitPrice,
+                        unitCostPerPage,
+                        unitPricePerPage,
                         totalCost: baseCost,
                         totalPrice: result.totalPrice,
                         calculatedTotalPrice: result.totalPrice,
@@ -365,9 +319,9 @@ export const ServiceCalculatorModal: React.FC<{
                             pages,
                             copies,
                             totalPages,
-                            unitCostPerPage: totalPages > 0 ? roundToCurrency(baseCost / totalPages) : baseCost,
-                            unitPricePerPage: totalPages > 0 ? roundToCurrency(result.unitPrice / totalPages) : result.unitPrice,
-                            unitCostPerCopy: copies > 0 ? roundToCurrency(baseCost / copies) : baseCost,
+                            unitCostPerPage,
+                            unitPricePerPage,
+                            unitCostPerCopy,
                             unitPricePerCopy: result.unitPrice,
                             totalCost: baseCost,
                             totalPrice: result.totalPrice,
@@ -378,307 +332,156 @@ export const ServiceCalculatorModal: React.FC<{
                 }
             } catch (err) {
                 console.error('[ServiceCalculatorModal] Pricing engine error:', err);
+            } finally {
+                if (mounted) setIsCalculating(false);
             }
         };
 
         calculate();
         return () => { mounted = false; };
-    }, [service.id, service.category, baseCost, pages, copies, normalizedAdjustments]);
-
-    useEffect(() => {
-        const binding = inventory.find(i => i.name?.toLowerCase().includes('binding'));
-        const pinning = inventory.find(i => i.name?.toLowerCase().includes('staple') || i.name?.toLowerCase().includes('pin'));
-        const covers = inventory.find(i => i.name?.toLowerCase().includes('cover') || i.name?.toLowerCase().includes('card'));
-
-        setFinishingOptions(prev => prev.map(opt => {
-            let materialCost = 0;
-            let conversionRate = opt.materialConversionRate || 1;
-            let materialId: string | undefined;
-
-            if (opt.id === 'binding' && binding) {
-                materialCost = Number((binding as any).cost_price ?? (binding as any).cost_per_unit ?? binding.cost ?? 0);
-                conversionRate = Number((binding as any).conversionRate ?? (binding as any).conversion_rate ?? 1);
-                materialId = binding.id;
-            } else if (opt.id === 'pinning' && pinning) {
-                materialCost = Number((pinning as any).cost_price ?? (pinning as any).cost_per_unit ?? pinning.cost ?? 0);
-                conversionRate = Number((pinning as any).conversionRate ?? (pinning as any).conversion_rate ?? 5000);
-                materialId = pinning.id;
-            } else if (opt.id === 'covers' && covers) {
-                materialCost = Number((covers as any).cost_price ?? (covers as any).cost_per_unit ?? covers.cost ?? 0);
-                conversionRate = Number((covers as any).conversionRate ?? (covers as any).conversion_rate ?? 100);
-                materialId = covers.id;
-            }
-
-            return {
-                ...opt,
-                cost: materialCost,
-                materialConversionRate: conversionRate,
-                materialId
-            };
-        }));
-    }, [inventory]);
+    }, [service, pages, copies, normalizedAdjustments, computePageScaledCost]);
 
     const activePricing = enginePricing;
-
-    const adjustmentRows = enginePricing?.adjustmentSnapshots || [];
     const formatCurrency = (value: number) => `${currencySymbol}${formatNumber(value)}`;
-    const bomTotal = roundToCurrency(paperCost + tonerCost);
-    const toggleFinishingOption = (optionId: string) => {
-        setFinishingOptions(prev => prev.map(opt =>
-            opt.id === optionId
-                ? { ...opt, coversPerCopy: opt.coversPerCopy > 0 ? 0 : 1 }
-                : opt
-        ));
-    };
-    const updateFinishingOption = (optionId: string, coversPerCopy: number) => {
-        setFinishingOptions(prev => prev.map(opt =>
-            opt.id === optionId
-                ? { ...opt, coversPerCopy: Math.max(0, coversPerCopy) }
-                : opt
-        ));
-    };
-    const calculateMaterialUnits = (option: any) => {
-        if (option.coversPerCopy === 0) return 0;
-        const totalNeeded = copies * option.coversPerCopy;
-        const conversionRate = option.materialConversionRate || 1;
-        if (conversionRate <= 0) return 0;
-        return totalNeeded / conversionRate;
-    };
-    const calculateFinishingOptionCost = (option: any) => {
-        const materialUnitsNeeded = calculateMaterialUnits(option);
-        return roundToCurrency(materialUnitsNeeded * option.cost);
-    };
+
+    if (!activePricing) return null;
 
     return (
-        <div className="absolute inset-0 z-[80] bg-black/60 flex items-center justify-center p-4 backdrop-blur-[2px]">
-            <div className="bg-white rounded shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col overflow-hidden border border-[#d4d7dc]">
-                <div className="px-6 py-4 border-b border-[#d4d7dc] flex justify-between items-center bg-[#f4f5f8]">
-                    <div>
-                        <h2 className="text-sm font-bold text-[#393a3d] uppercase tracking-wider">Service Calculator</h2>
-                        <p className="text-[10px] text-[#6b6c7f] font-medium">{service.name}</p>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-md bg-slate-900/40">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col animate-in fade-in zoom-in-95 duration-200 font-sans">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                            <Settings className="w-4 h-4 text-indigo-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-[15px] font-semibold text-slate-800 leading-snug">Service Configuration</h2>
+                            <p className="text-[11px] text-slate-500 font-medium">{service.name}</p>
+                        </div>
                     </div>
-                    <button onClick={onClose} className="text-[#8d9096] hover:text-[#d52b1e]"><X size={20} /></button>
+                    <button onClick={onClose} className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors text-slate-400 hover:text-rose-500">
+                        <X size={18} />
+                    </button>
                 </div>
 
-                <div className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
+                <div className="p-4 space-y-4 overflow-y-auto custom-scrollbar flex-1">
                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-[11px] font-bold text-[#6b6c7f] uppercase tracking-wider mb-1.5">
-                                Number of Pages
+                        <div className="space-y-1.5">
+                            <label className="text-[12px] font-medium text-slate-600 flex items-center gap-1.5">
+                                <FileText className="w-3 h-3" /> Pages / Units
                             </label>
                             <input
                                 type="number"
                                 min={1}
+                                step={1}
                                 value={pages}
-                                onChange={e => setPages(Math.max(1, parseInt(e.target.value || '1', 10) || 1))}
-                                className="w-full p-2.5 border border-[#babec5] rounded text-sm focus:border-[#0077c5] outline-none font-medium text-[#393a3d]"
+                                onChange={e => {
+                                    const newValue = Math.max(1, parseInt(e.target.value || '1', 10) || 1);
+                                    setPages(newValue);
+                                }}
+                                onBlur={e => {
+                                    const finalValue = Math.max(1, parseInt(e.target.value || '1', 10) || 1);
+                                    setPages(finalValue);
+                                }}
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13.5px] font-semibold text-slate-800 focus:ring-1 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none transition-all tabular-nums"
                             />
                         </div>
-                        <div>
-                            <label className="block text-[11px] font-bold text-[#6b6c7f] uppercase tracking-wider mb-1.5">
-                                Quantity (Copies)
+                        <div className="space-y-1.5">
+                            <label className="text-[12px] font-medium text-slate-600 flex items-center gap-1.5">
+                                <Layers className="w-3 h-3" /> Quantity / Copies
                             </label>
                             <input
                                 type="number"
                                 min={1}
                                 value={copies}
                                 onChange={e => setCopies(Math.max(1, parseInt(e.target.value || '1', 10) || 1))}
-                                className="w-full p-2.5 border border-[#babec5] rounded text-sm focus:border-[#0077c5] outline-none font-medium text-[#393a3d]"
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[13.5px] font-semibold text-slate-800 focus:ring-1 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none transition-all tabular-nums"
                             />
                         </div>
                     </div>
 
-                    <div className="bg-[#f4f5f8] rounded border border-[#d4d7dc]">
-                        <button
-                            onClick={() => setBomExpanded(!bomExpanded)}
-                            className="w-full px-4 py-3 flex justify-between items-center text-xs font-bold text-[#6b6c7f] uppercase tracking-wider"
-                        >
-                            <span>Bill of Materials (BOM)</span>
-                            <span className="text-[10px] font-bold text-[#0077c5]">{bomExpanded ? 'Hide' : 'Show'}</span>
-                        </button>
-                        {bomExpanded && (
-                            <div className="px-4 pb-4 space-y-3">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-[#6b6c7f]">Service Dimensions</span>
-                                    <span className="font-bold text-[#393a3d]">{activePricing.pages} pages x {activePricing.copies} copies</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-[#6b6c7f]">Total Pages</span>
-                                    <span className="font-bold text-[#393a3d]">{activePricing.totalPages}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[#6b6c7f]">Paper Cost</span>
-                                        <span className="text-[10px] text-[#8d9096]">({Math.ceil(pages / 2) * copies} sheets)</span>
-                                    </div>
-                                    <span className="font-bold text-[#393a3d]">{formatCurrency(paperCost)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[#6b6c7f]">Toner Cost</span>
-                                        <span className="text-[10px] text-[#8d9096]">({pages * copies} pages)</span>
-                                    </div>
-                                    <span className="font-bold text-[#393a3d]">{formatCurrency(tonerCost)}</span>
-                                </div>
-                                <div className="pt-2 border-t border-[#d4d7dc] flex justify-between items-center text-xs">
-                                    <span className="font-bold text-[#393a3d] uppercase">BOM Total</span>
-                                    <span className="font-bold text-[#0077c5]">{formatCurrency(bomTotal)}</span>
-                                </div>
+                    <div className="bg-slate-50 rounded-lg border border-slate-100 p-4 space-y-3">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+                            <span className="text-[12px] font-semibold text-slate-600">Pricing Breakdown</span>
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 rounded-md border border-emerald-200">
+                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                                <span className="text-[10px] font-semibold text-emerald-700">Live</span>
                             </div>
-                        )}
-                    </div>
-
-                    <div className="bg-[#f4f5f8] rounded border border-[#d4d7dc]">
-                        <button
-                            onClick={() => setFinishingExpanded(!finishingExpanded)}
-                            className="w-full px-4 py-3 flex justify-between items-center text-xs font-bold text-[#6b6c7f] uppercase tracking-wider"
-                        >
-                            <span>Finishing Options</span>
-                            <span className="text-[10px] font-bold text-[#10b981]">{finishingExpanded ? 'Hide' : 'Show'}</span>
-                        </button>
-                        {finishingExpanded && (
-                            <div className="px-4 pb-4 space-y-3">
-                                {finishingOptions.map(option => {
-                                    const materialUnitsNeeded = calculateMaterialUnits(option);
-                                    const optionCost = calculateFinishingOptionCost(option);
-
-                                    return (
-                                        <div key={option.id} className="flex items-center justify-between py-1.5">
-                                            <div className="flex items-center gap-3">
-                                                <button
-                                                    onClick={() => toggleFinishingOption(option.id)}
-                                                    className={`w-10 h-6 rounded-full transition-colors relative ${option.coversPerCopy > 0 ? 'bg-[#0077c5]' : 'bg-[#d1d5db]'}`}
-                                                >
-                                                    <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${option.coversPerCopy > 0 ? 'left-5' : 'left-1'}`} />
-                                                </button>
-                                                <div>
-                                                    <span className={`text-xs block ${option.coversPerCopy > 0 ? 'text-[#393a3d]' : 'text-[#8d9096]'}`}>
-                                                        {option.name}
-                                                    </span>
-                                                    {option.coversPerCopy > 0 && (
-                                                        <span className="text-[10px] text-[#8d9096]">
-                                                            {option.coversPerCopy}/copy | {option.materialConversionRate} per unit
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {option.coversPerCopy > 0 && (
-                                                    <div className="flex flex-col items-end">
-                                                        <div className="flex items-center gap-1">
-                                                            <span className="text-[10px] text-[#8d9096]">covers/copy:</span>
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                value={option.coversPerCopy}
-                                                                onChange={(e) => updateFinishingOption(option.id, parseInt(e.target.value) || 0)}
-                                                                className="w-14 h-7 px-1 text-right text-xs rounded border border-[#d4d7dc] focus:border-[#0077c5] outline-none"
-                                                            />
-                                                        </div>
-                                                        <span className="text-[10px] text-[#8d9096]">
-                                                            {copies * option.coversPerCopy} total → {formatNumber(materialUnitsNeeded)} unit(s)
-                                                        </span>
-                                                    </div>
-                                                )}
-                                                {option.coversPerCopy > 0 && (
-                                                    <span className="text-xs font-bold text-[#393a3d] w-20 text-right">
-                                                        {formatCurrency(optionCost)}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {finishingCost > 0 && (
-                                    <div className="pt-2 border-t border-[#d4d7dc] flex justify-between items-center text-xs">
-                                        <span className="font-bold text-[#393a3d] uppercase">Finishing Total</span>
-                                        <span className="font-bold text-[#0077c5]">{formatCurrency(finishingCost)}</span>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="bg-[#f4f5f8] rounded border border-[#d4d7dc]">
-                        <button
-                            onClick={() => setAdjustmentsExpanded(!adjustmentsExpanded)}
-                            className="w-full px-4 py-3 flex justify-between items-center text-xs font-bold text-[#6b6c7f] uppercase tracking-wider"
-                        >
-                            <span>Market Adjustments</span>
-                            <span className="text-[10px] font-bold text-[#f59e0b]">{adjustmentsExpanded ? 'Hide' : 'Show'}</span>
-                        </button>
-                        {adjustmentsExpanded && (
-                            <div className="px-4 pb-4 space-y-2">
-                                {adjustmentRows.length > 0 ? (
-                                    adjustmentRows.map((adj, index) => {
-                                        const totalAdj = (Number(adj.calculatedAmount) || 0) * activePricing.copies;
-                                        return (
-                                            <div key={`${adj.name}-${index}`} className="flex justify-between items-center text-xs">
-                                                <span className="text-[#6b6c7f]">{adj.name}</span>
-                                                <span className="font-bold text-[#393a3d]">{formatCurrency(totalAdj)}</span>
-                                            </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-xs text-[#8d9096]">No market adjustments applied</div>
-                                )}
-                                <div className="pt-2 border-t border-[#d4d7dc] flex justify-between items-center text-xs">
-                                    <span className="font-bold text-[#393a3d] uppercase">Adjustment Total</span>
-                                    <span className="font-bold text-[#f59e0b]">{formatCurrency(activePricing.adjustmentTotal)}</span>
-                                </div>
-                                {(() => {
-                                    const cost = activePricing.unitCostPerCopy || activePricing.totalCost / activePricing.copies;
-                                    const price = activePricing.unitPricePerCopy;
-                                    const profit = (price - cost) * activePricing.copies;
-                                    if (profit > 0) {
-                                        return (
-                                            <div className="mt-2 pt-2 border-t border-[#d4d7dc] flex justify-between items-center text-xs">
-                                                <span className="font-bold text-emerald-600 uppercase">Profit Margin</span>
-                                                <span className="font-bold text-emerald-600">{formatCurrency(profit)}</span>
-                                            </div>
-                                        );
-                                    }
-                                    return null;
-                                })()}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="bg-[#f4f5f8] p-4 rounded border border-[#d4d7dc] space-y-2.5">
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="text-[#6b6c7f]">Unit Cost / Copy</span>
-                            <span className="font-bold text-[#393a3d]">{formatCurrency(activePricing.unitCostPerCopy)}</span>
                         </div>
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="text-[#6b6c7f]">Unit Price / Copy</span>
-                            <span className="font-bold text-[#0077c5]">{formatCurrency(activePricing.unitPricePerCopy)}</span>
-                        </div>
-                        {/* Hidden: Unit Price / Page */}
-                        {/*
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="text-[#6b6c7f]">Unit Price / Page</span>
-                            <span className="font-bold text-[#0077c5]">{formatCurrency(activePricing.unitPricePerPage)}</span>
-                        </div>
-                        */}
-                        <div className="pt-2 border-t border-[#d4d7dc] space-y-1.5">
-                            {/* Hidden: Cost Price (CP) */}
-                            {/*
-                            <div className="flex justify-between items-center text-xs">
-                                <span className="text-[#6b6c7f]">Cost Price (CP)</span>
-                                <span className="font-bold text-[#393a3d]">{formatCurrency(activePricing.totalCost)}</span>
-                            </div>
-                            */}
+
+                        <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                                <span className="text-xs font-bold text-[#393a3d] uppercase">Selling Price (SP)</span>
-                                <span className="text-xl font-bold text-[#0077c5]">{formatCurrency(activePricing.totalPrice)}</span>
+                                <div>
+                                    <span className="text-[13px] text-slate-700">Base Service Rate</span>
+                                    <p className="text-[10px] text-slate-400">{pages} pages × {copies} {copies === 1 ? 'copy' : 'copies'}</p>
+                                </div>
+                                <span className="text-[13px] font-semibold text-slate-800 tabular-nums">{formatCurrency(activePricing.totalCost)}</span>
+                            </div>
+
+                            {activePricing.adjustmentSnapshots && activePricing.adjustmentSnapshots.length > 0 && (
+                                activePricing.adjustmentSnapshots
+                                    .filter((adj: any) => adj.name?.toLowerCase().includes('margin') ? false : true)
+                                    .map((adj: any, i: number) => (
+                                    <div key={i} className="flex justify-between items-center">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-[13px] text-emerald-700">{adj.name}</span>
+                                            {adj.type === 'PERCENTAGE' && (
+                                                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 py-0.5 rounded font-semibold">+{adj.value}%</span>
+                                            )}
+                                        </div>
+                                        <span className="text-[13px] font-semibold text-emerald-700 tabular-nums">+{formatCurrency(adj.calculatedAmount)}</span>
+                                    </div>
+                                ))
+                            )}
+
+                            {activePricing.marginAmount > 0 && activePricing.unitCostPerCopy > 0 && (
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[13px] text-blue-700">Profit Margin</span>
+                                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-semibold">
+                                            +{Math.round((activePricing.marginAmount / (activePricing.unitCostPerCopy * activePricing.copies)) * 100)}%
+                                        </span>
+                                    </div>
+                                    <span className="text-[13px] font-semibold text-blue-700 tabular-nums">+{formatCurrency(activePricing.marginAmount)}</span>
+                                </div>
+                            )}
+
+                            {(activePricing.rounding_difference || 0) !== 0 && (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[13px] text-slate-500">Round Up</span>
+                                    <span className="text-[13px] font-medium text-slate-500 tabular-nums">
+                                        +{formatCurrency(activePricing.rounding_difference * activePricing.copies)}
+                                    </span>
+                                </div>
+                            )}
+
+                            <div className="pt-2 border-t border-slate-200/60 flex justify-between items-center">
+                                <span className="text-[13px] font-semibold text-slate-800">Total Price</span>
+                                <span className="text-[18px] font-bold text-indigo-600 tabular-nums">{formatCurrency(activePricing.totalPrice)}</span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="flex gap-3">
+                    <div className="relative overflow-hidden bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 rounded-lg p-4">
+                        <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/10 rounded-full -translate-y-1/3 translate-x-1/3"></div>
+                        <div className="relative flex justify-between items-end">
+                            <div>
+                                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Due</p>
+                                <h3 className="text-[22px] font-bold text-white tabular-nums">
+                                    {formatCurrency(activePricing.totalPrice)}
+                                </h3>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-[10px] font-medium text-slate-400">Total Items</div>
+                                <div className="text-[14px] font-semibold text-white tabular-nums">{activePricing.totalPages} <span className="text-[10px] text-slate-400 font-normal">pages</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2">
                         <button
                             onClick={onClose}
-                            className="flex-1 py-3 bg-white border border-[#babec5] text-[#393a3d] rounded-full font-bold text-sm hover:bg-[#f4f5f8]"
+                            className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg font-semibold text-[13px] hover:bg-slate-50 transition-all active:scale-[0.98]"
                         >
                             Cancel
                         </button>
@@ -690,9 +493,9 @@ export const ServiceCalculatorModal: React.FC<{
                                 lockedUnitPricePerCopy: activePricing.unitPricePerCopy,
                                 lockedUnitCostPerCopy: activePricing.unitCostPerCopy
                             })}
-                            className="flex-1 py-3 bg-[#2ca01c] text-white rounded-full font-bold text-sm hover:bg-[#248217] shadow-sm flex items-center justify-center gap-2"
+                            className="flex-[1.5] py-2 bg-indigo-600 text-white rounded-lg font-semibold text-[13px] hover:bg-indigo-700 shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
                         >
-                            Confirm <ArrowRight size={16} />
+                            Add to Order <ArrowRight size={16} />
                         </button>
                     </div>
                 </div>
@@ -769,7 +572,7 @@ export const CustomerModal: React.FC<{
                                 <label className="text-[11px] font-bold text-[#6b6c7f] uppercase">Contact info</label>
                                 <input
                                     className="w-full p-2.5 border border-[#babec5] rounded text-sm focus:border-[#0077c5] outline-none bg-white"
-                                    placeholder={getPlaceholder.phone()}
+                                    placeholder="Phone or Email"
                                     value={newCustomerContact}
                                     onChange={e => setNewCustomerContact(e.target.value)}
                                 />

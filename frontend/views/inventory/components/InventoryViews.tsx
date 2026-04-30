@@ -1,6 +1,5 @@
-
-import React, { useState, useEffect } from 'react';
-import { Edit2, Search, Eye, ArrowUp, ArrowDown, ArrowRight, Ruler, AlertCircle, Copy, Trash2, CheckSquare, Square, Warehouse as WarehouseIcon, MapPin, Package, Truck, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Edit2, Search, Eye, ArrowUp, ArrowDown, ArrowRight, Ruler, AlertCircle, Copy, Trash2, CheckSquare, Square, Warehouse as WarehouseIcon, MapPin, Package, Truck, ShieldCheck, MoreVertical, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { Item, Warehouse } from '../../../types';
 import { usePagination } from '../../../hooks/usePagination';
 import Pagination from '../../../components/Pagination';
@@ -19,8 +18,61 @@ interface ItemTableProps {
     onDuplicate: (item: Item) => void;
     onDelete: (id: string) => void;
     onBatchDelete: (ids: string[]) => void;
+    onAdjust?: (item: Item) => void;
+    onChangeType?: (item: Item) => void;
     initialSearch?: string;
 }
+
+const useContextMenu = () => {
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+    const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                setOpenMenuId(null);
+                setMenuPos(null);
+                setActiveSubmenu(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const handleRowClick = (e: React.MouseEvent, id: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (openMenuId === id) {
+            setOpenMenuId(null);
+        } else {
+            console.log('Menu trigger at:', e.clientX, e.clientY, 'pageY:', e.pageY);
+            
+            // Get mouse position - use page coordinates for absolute positioning
+            let x = e.pageX + 12;
+            let y = e.pageY + 12;
+            
+            const menuWidth = 256;
+            const menuHeight = 420;
+            
+            // Adjust if menu would go off right edge
+            if (x + menuWidth > window.innerWidth) {
+                x = window.innerWidth - menuWidth - 12;
+            }
+            // Adjust if menu would go off bottom edge
+            if (y + menuHeight > window.innerHeight) {
+                y = window.innerHeight - menuHeight - 12;
+            }
+            
+            setMenuPos({ x, y });
+            setOpenMenuId(id);
+            setActiveSubmenu(null);
+        }
+    };
+
+    return { openMenuId, menuPos, activeSubmenu, setActiveSubmenu, menuRef, handleRowClick, setOpenMenuId };
+};
 
 export const SkeletonLoader: React.FC<{ type: 'table' | 'grid' }> = ({ type }) => {
     if (type === 'table') {
@@ -78,6 +130,8 @@ export const ItemTable: React.FC<ItemTableProps> = ({
     onDuplicate,
     onDelete,
     onBatchDelete,
+    onAdjust,
+    onChangeType,
     initialSearch = ''
 }) => {
     const { companyConfig, triggerReplenishment, notify } = useData();
@@ -85,15 +139,77 @@ export const ItemTable: React.FC<ItemTableProps> = ({
     const currency = companyConfig.currencySymbol;
 
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterType, setFilterType] = useState<'All' | 'Material' | 'Product' | 'Service' | 'Stationery'>('All');
+    const [filterType, setFilterType] = useState<'Material' | 'Product' | 'Service' | 'Stationery'>('Product');
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [sortField, setSortField] = useState<keyof Item | 'category'>('name');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [expandedIds, setExpandedIds] = useState<string[]>([]);
     const location = useLocation();
     useHighlight();
+    const { openMenuId, menuPos, activeSubmenu, setActiveSubmenu, menuRef, handleRowClick, setOpenMenuId } = useContextMenu();
+
+    const currentItem = (items || []).find((i) => i.id === openMenuId);
 
     useEffect(() => { if (initialSearch) setSearchTerm(initialSearch); }, [initialSearch]);
+
+    const renderMenu = (item: Item) => {
+        if (!menuPos) return null;
+        
+        const x = menuPos.x;
+        const y = menuPos.y;
+        const menuWidth = 256;
+
+        const isMaterial = item.type === 'Material' || item.type === 'Raw Material' || item.type === 'Stationery';
+        const currentType = item.type;
+        
+        const spaceOnRight = window.innerWidth - (x + menuWidth);
+        const submenuDirectionClass = spaceOnRight < 160 ? "right-full" : "left-full";
+
+        return (
+            <div
+                ref={menuRef}
+                className="fixed w-64 bg-white/98 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 z-[9999] animate-in fade-in zoom-in-95 duration-100 flex flex-col py-1 text-left"
+                style={{ 
+                    top: y, 
+                    left: x,
+                    position: 'fixed'
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="px-4 py-2 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-tight bg-slate-50/50 rounded-t-xl">ITEM ACTIONS</div>
+                <button onClick={() => { setOpenMenuId(null); onView(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Eye size={14} /> View Details</button>
+                <button onClick={() => { setOpenMenuId(null); onEdit(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"><Edit2 size={14} /> Edit Item</button>
+                {isMaterial && onAdjust && (
+                    <button onClick={() => { setOpenMenuId(null); onAdjust(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-3 transition-colors"><SlidersHorizontal size={14} /> Adjust Stock</button>
+                )}
+                <div className="relative group">
+                    <button className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-between gap-3 transition-colors">
+                        <span className="flex items-center gap-3"><ArrowRight size={14} /> Change Type</span>
+                        <ChevronRight size={12} />
+                    </button>
+                    <div className={`absolute ${submenuDirectionClass} top-0 hidden group-hover:block w-40 bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-slate-200 py-1 text-left z-[80]`}>
+                        <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-tight bg-slate-50/50">CHANGE TYPE</div>
+                        {['Product', 'Service', 'Material', 'Stationery'].map(t => (
+                            <button key={t} onClick={() => { setOpenMenuId(null); onChangeType && onChangeType(item); }} className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 flex items-center gap-2 transition-colors ${currentType === t ? 'text-blue-600 bg-blue-50' : 'text-slate-700'}`}>
+                                {currentType === t && <CheckSquare size={12} />}
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                
+                <div className="my-1 border-t border-slate-200"></div>
+                <button onClick={() => { setOpenMenuId(null); onDuplicate(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Copy size={14} /> Duplicate Item</button>
+                
+                {!item.isProtected && (
+                    <>
+                        <div className="my-1 border-t border-slate-200"></div>
+                        <button onClick={() => { setOpenMenuId(null); onDelete(item.id); }} className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"><Trash2 size={14} /> Delete</button>
+                    </>
+                )}
+            </div>
+        );
+    };
 
     const handleSmartReplenish = async (item: Item) => {
         try {
@@ -128,7 +244,7 @@ export const ItemTable: React.FC<ItemTableProps> = ({
 
     const filteredItems = items.filter(item => {
         const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.sku.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesType = filterType === 'All' || item.type === filterType;
+        const matchesType = item.type === filterType || (filterType === 'Material' && item.type === 'Raw Material');
         return matchesSearch && matchesType;
     }).sort((a, b) => {
         let valA = a[sortField as keyof Item];
@@ -172,7 +288,7 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                 )}
 
                 <div className="flex items-center gap-1 overflow-x-auto ml-auto bg-white/50 p-1 rounded-xl border border-white/60">
-                    {['All', 'Product', 'Material', 'Stationery', 'Service'].map(type => (
+                    {['Product', 'Material', 'Stationery', 'Service'].map(type => (
                         <button key={type} onClick={() => setFilterType(type as any)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap uppercase tracking-tight ${filterType === type ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-white/80'}`}>{type}</button>
                     ))}
                 </div>
@@ -190,10 +306,11 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                             <th className="table-header px-4 py-2 w-[15%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
                             <th className="table-header px-4 py-2 w-[10%] cursor-pointer hover:text-blue-600 text-center" onClick={() => handleSort('stock')}>Stock {renderSortIcon('stock')}</th>
                             <th className="table-header px-4 py-2 w-[15%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Price {renderSortIcon('price')}</th>
-                            <th className="table-header px-4 py-2 w-[15%] text-right">Actions</th>
+                            <th className="table-header px-4 py-2 w-[10%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('salesCount' as any)}>Sales {renderSortIcon('salesCount' as any)}</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100/50">
+                        {openMenuId && menuPos && currentItem && renderMenu(currentItem)}
                         {currentItems.length === 0 ? (
                             <tr>
                                 <td colSpan={6} className="px-4 py-20 text-center">
@@ -216,10 +333,11 @@ export const ItemTable: React.FC<ItemTableProps> = ({
 
                             return (
                                 <React.Fragment key={`${item.id}-${item.sku}`}>
-                                    <tr 
+                                    <tr  
                                         id={`item-${item.id}`}
-                                        className={`transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/50'} ${isExpanded ? 'bg-slate-50' : ''} ${item.isProtected ? 'opacity-95' : ''}`} 
-                                        onClick={() => onView(item)}
+                                        className={`transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/40' : 'hover:bg-amber-50/30'} ${isExpanded ? 'bg-amber-50/20' : ''} ${item.isProtected ? 'opacity-95' : ''}`}
+                                        onClick={(e) => handleRowClick(e, item.id)}
+                                        onContextMenu={(e) => handleRowClick(e, item.id)}
                                     >
                                         <td className="table-body-cell text-center" onClick={(e) => { e.stopPropagation(); handleToggleSelect(item.id); }}>
                                             {item.isProtected ? (
@@ -261,44 +379,8 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                                 <span className="ml-1 text-[9px] text-blue-600 font-bold" title="Manual Override">*</span>
                                             )}
                                         </td>
-                                        <td className="table-body-cell text-right">
-                                            <div className="flex justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {isLowStock && (item.type === 'Stationery' || item.type === 'Material') && (
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); handleSmartReplenish(item); }} 
-                                                        className="p-1.5 text-emerald-600 hover:text-emerald-700 bg-emerald-50 border border-emerald-100 rounded" 
-                                                        title="Smart Replenish"
-                                                    >
-                                                        <Truck size={14} />
-                                                    </button>
-                                                )}
-                                                <PreviewButton
-                                                    documentId={item.uuid || item.id}
-                                                    documentType="InventoryItem"
-                                                    payload={item}
-                                                    onPreviewReady={(model) => onPreview && onPreview(model)}
-                                                    title="Preview Document"
-                                                />
-                                                <button onClick={(e) => { e.stopPropagation(); onEdit(item); }} className="p-2 text-slate-400 hover:text-amber-600" title="Edit Item"><Edit2 size={16} /></button>
-                                                {!item.isProtected && (
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); onDelete(item.id); }} 
-                                                        className="p-2 text-slate-400 hover:text-red-600" 
-                                                        title="Delete Item"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                )}
-                                                {hasVariants && (
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); setExpandedIds(prev => prev.includes(item.id) ? prev.filter(id => id !== item.id) : [...prev, item.id]); }} 
-                                                        className={`p-2 transition-colors ${isExpanded ? 'text-blue-600 bg-blue-50 rounded-lg' : 'text-slate-400 hover:text-slate-600'}`}
-                                                        title={isExpanded ? "Collapse Variants" : "Show Variants"}
-                                                    >
-                                                        <ArrowDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                                                    </button>
-                                                )}
-                                            </div>
+                                        <td className="table-body-cell text-right finance-nums font-bold text-slate-600">
+                                            {(item.salesCount || 0).toLocaleString()}
                                         </td>
                                     </tr>
 
@@ -325,18 +407,8 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                              <td className={`table-body-cell text-right finance-nums font-bold ${(item.type === 'Raw Material' || item.type === 'Material') ? 'text-red-600' : 'text-green-600'}`}>
                                                 {currency}{((item.type === 'Raw Material' || item.type === 'Material') ? variant.cost : variant.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                              </td>
-                                            <td className="table-body-cell text-right">
-                                                <div className="flex justify-end gap-1.5 opacity-0 group-hover/variant:opacity-100 transition-opacity">
-                                                    <PreviewButton
-                                                        documentId={variant.uuid || variant.id}
-                                                        documentType="InventoryItemVariant"
-                                                        payload={{ ...item, ...variant, isVariant: true }}
-                                                        onPreviewReady={(model) => onPreview && onPreview(model)}
-                                                        title="Preview Document"
-                                                        iconSize={14}
-                                                    />
-                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(item); }} className="p-1 text-slate-400 hover:text-amber-600" title="Edit Variant"><Edit2 size={14} /></button>
-                                                </div>
+                                            <td className="table-body-cell text-right finance-nums text-slate-500 font-medium">
+                                                {(variant.salesCount || 0).toLocaleString()}
                                             </td>
                                         </tr>
                                     ))}

@@ -10,13 +10,14 @@ import {
     Globe, Clock, Key, Lock, Gauge, Binary, Plus, X, Percent,
     Cpu, Layers, Smartphone, Layout, Users, ShoppingBag, ShoppingCart, Palette, Monitor,
     Factory, Box, Cloud, Bell, Mail, MessageSquare, ShieldAlert, Webhook, Sun, Moon, Laptop, Info, Undo2,
-    TrendingUp, Package, PlusCircle, Trash
+    TrendingUp, Package, PlusCircle, Trash, Printer, Usb
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { CompanyConfig, NumberingRule, PricingRoundingMethod } from '../types';
 import { OfflineImage } from '../components/OfflineImage';
 import { localFileStorage } from '../services/localFileStorage';
 import { DEFAULT_PRICING_SETTINGS, ROUNDING_METHOD_OPTIONS, getRoundingAnalytics } from '../services/pricingRoundingService';import { PricingSettingsValidator, PricingSettingsValidationResult } from '../services/pricingSettingsValidation';
+import { hardwareService } from '../services/hardwareService';
 import { z } from 'zod';
 
 import { api } from '../services/api';
@@ -93,6 +94,9 @@ const Settings: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('General');
+    const [isConnectingPrinter, setIsConnectingPrinter] = useState(false);
+    const [printerConnected, setPrinterConnected] = useState(hardwareService.isConnected());
+    const [printerDeviceName, setPrinterDeviceName] = useState(hardwareService.getDeviceName());
     const [config, setConfig] = useState<CompanyConfig>({
         ...companyConfig,
         appearance: {
@@ -1498,6 +1502,75 @@ const Settings: React.FC = () => {
                                                 />
                                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
                                             </label>
+                                        </div>
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-2 rounded-lg ${printerConnected ? 'bg-emerald-100' : 'bg-slate-200'}`}>
+                                                    <Printer size={20} className={printerConnected ? 'text-emerald-600' : 'text-slate-500'} />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800 text-sm">Thermal Printer</p>
+                                                    <p className={`text-[11px] ${printerConnected ? 'text-emerald-600 font-medium' : 'text-slate-500'}`}>
+                                                        {printerConnected ? printerDeviceName : 'Not connected'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        setIsConnectingPrinter(true);
+                                                        try {
+                                                            const connected = await hardwareService.connect();
+                                                            setPrinterConnected(connected);
+                                                            setPrinterDeviceName(hardwareService.getDeviceName());
+                                                            if (connected) {
+                                                                notify('Printer connected successfully', 'success');
+                                                            } else {
+                                                                notify('No printer selected or connection cancelled', 'warning');
+                                                            }
+                                                        } catch (err: any) {
+                                                            notify(err.message || 'Failed to connect printer', 'error');
+                                                        } finally {
+                                                            setIsConnectingPrinter(false);
+                                                        }
+                                                    }}
+                                                    disabled={isConnectingPrinter}
+                                                    className="px-4 py-2 bg-slate-800 text-white text-sm font-semibold rounded-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2"
+                                                >
+                                                    <Usb size={14} />
+                                                    {isConnectingPrinter ? 'Connecting...' : printerConnected ? 'Reconnect' : 'Connect Printer'}
+                                                </button>
+                                                {printerConnected && (
+                                                    <button
+                                                        onClick={async () => {
+                                                            try {
+                                                                await hardwareService.printPosReceipt({
+                                                                    receiptNumber: 'TEST',
+                                                                    date: new Date().toISOString(),
+                                                                    cashierName: 'Test',
+                                                                    customerName: 'Test Customer',
+                                                                    items: [{ desc: 'Test Item', qty: 1, price: 100, total: 100 }],
+                                                                    subtotal: 100,
+                                                                    discount: 0,
+                                                                    tax: 0,
+                                                                    totalAmount: 100,
+                                                                    paymentMethod: 'Cash',
+                                                                    amountTendered: 100,
+                                                                    changeGiven: 0,
+                                                                    footerMessage: 'Test print from Prime ERP'
+                                                                }, companyConfig as any);
+                                                                notify('Test print sent', 'success');
+                                                            } catch (err: any) {
+                                                                notify('Test print failed', 'error');
+                                                            }
+                                                        }}
+                                                        className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 flex items-center gap-2"
+                                                    >
+                                                        <Printer size={14} />
+                                                        Test Print
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
                                         <div>
                                             <label className="settings-label">Receipt Footer Message</label>

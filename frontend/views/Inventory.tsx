@@ -14,6 +14,7 @@ import StockAdjustmentModal from './inventory/components/StockAdjustmentModal';
 import { useLocation } from 'react-router-dom';
 import { suggestRestock } from '../services/geminiService';
 import { repairVariantPricing } from '@/utils/pricing/recalculateVariants';
+import { generateNextId } from '../utils/helpers';
 
 const Inventory: React.FC = () => {
     const { fetchInventory, fetchProcurementData } = useInventory();
@@ -218,6 +219,47 @@ const Inventory: React.FC = () => {
         setIsAdjustmentModalOpen(false);
     };
 
+    const handleDuplicate = async (item: Item) => {
+        const duplicate: Item = {
+            ...item,
+            id: generateNextId('ITM', inventory, companyConfig),
+            name: `${item.name} (Copy)`,
+            sku: item.sku ? `${item.sku}-COPY` : undefined,
+            stock: 0,
+            reserved: 0,
+            variants: item.variants?.map((v: any) => ({
+                ...v,
+                id: generateNextId('VAR', inventory, companyConfig)
+            }))
+        };
+        try {
+            await addItem(duplicate);
+            notify("Item duplicated successfully", "success");
+        } catch (error: any) {
+            notify(`Duplicate failed: ${error?.message || 'Unknown error'}`, "error");
+        }
+    };
+
+    const handleChangeType = async (item: Item) => {
+        const currentType = item.type;
+        const typeCycle: Record<string, string[]> = {
+            'Product': ['Service'],
+            'Service': ['Product'],
+            'Material': ['Stationery'],
+            'Stationery': ['Material'],
+            'Raw Material': ['Stationery'],
+        };
+        const nextTypes = typeCycle[currentType] || ['Product'];
+        const newType = nextTypes[0];
+        const updatedItem = { ...item, type: newType as any };
+        try {
+            await updateItem(updatedItem);
+            notify(`Type changed to ${newType}`, "success");
+        } catch (error: any) {
+            notify(`Type change failed: ${error?.message || 'Unknown error'}`, "error");
+        }
+    };
+
 
 
     if (viewMode === 'Detail' && selectedItem) {
@@ -390,14 +432,16 @@ const Inventory: React.FC = () => {
                 ) : activeView === 'Warehouses' ? (
                     <WarehouseGrid warehouses={warehouses} inventory={inventory} />
                 ) : (
-                    <ItemTable
+<ItemTable
                         items={activeView === 'Stock' ? stockTrackedItems : inventory}
                         warehouses={warehouses}
                         onEdit={handleOpenEditModal}
                         onView={handleViewDetails}
-                        onDuplicate={() => { }}
+                        onDuplicate={handleDuplicate}
                         onDelete={handleDeleteItem}
                         onBatchDelete={handleBatchDelete}
+                        onAdjust={handleOpenAdjustmentModal}
+                        onChangeType={handleChangeType}
                         initialSearch={initialSearch}
                     />
                 )}

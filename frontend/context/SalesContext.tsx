@@ -1072,8 +1072,8 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const today = new Date();
         const todaySales = salesStore.sales.filter(sale =>
             isSameDay(parseISO(sale.date), today) &&
-            sale.cashierId === cashierId &&
-            sale.status === 'Paid'
+            (sale.status === 'Paid' || sale.status === 'Completed') &&
+            (cashierId === '' || sale.cashierId === cashierId || sale.cashierId === 'unknown' || !sale.cashierId)
         );
 
         const totals = todaySales.reduce((acc, sale) => {
