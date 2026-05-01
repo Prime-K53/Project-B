@@ -1151,13 +1151,16 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
       const previewData = buildValidatedPosReceipt(receiptSale);
 
-      // Proactively start PDF generation in background if possible, 
-      // but for now just ensure the state is set immediately.
-      setPreviewState({
-        isOpen: true,
-        type: 'POS_RECEIPT',
-        data: previewData
-      });
+      // Only show receipt preview if setting is enabled (default: true)
+      const shouldShowPreview = companyConfig.transactionSettings?.showReceiptPreview !== false;
+      
+      if (shouldShowPreview) {
+        setPreviewState({
+          isOpen: true,
+          type: 'POS_RECEIPT',
+          data: previewData
+        });
+      }
 
       if (companyConfig.transactionSettings?.autoPrintReceipt) {
         if (hardwareService.isConnected()) {
