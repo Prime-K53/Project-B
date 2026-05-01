@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useData, REFRESH_INTERVAL } from '../../context/DataContext';
 import { useModuleRefresh } from '../../hooks/useModuleRefresh';
 import {
@@ -29,7 +29,20 @@ const RevenueDashboard: React.FC = () => {
     examinationBatches = [],
     companyConfig,
     refreshAllData,
+    isLoading,
   } = useData();
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Force data refresh on mount to ensure latest data is loaded
+  useEffect(() => {
+    const loadData = async () => {
+      setIsRefreshing(true);
+      await refreshAllData?.();
+      setIsRefreshing(false);
+    };
+    loadData();
+  }, []);
 
   useModuleRefresh(refreshAllData, { interval: REFRESH_INTERVAL });
 
@@ -135,7 +148,7 @@ const RevenueDashboard: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-6 animate-fadeIn p-4 md:p-6 max-w-[1600px] mx-auto w-full">
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
