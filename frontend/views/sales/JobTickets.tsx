@@ -4,7 +4,7 @@ import {
   AlertTriangle, Calendar, User, Printer, FileText, Phone, Mail,
   ChevronRight, Package, Zap, ArrowRight, MoreVertical, Play, Bell,
   Upload, Download, Send, MessageSquare, File as FileIcon, Eye, Share2, Image as ImageIcon,
-  ChevronDown, Check
+  ChevronDown, Check, Ticket, Copy, SendHorizontal
 } from 'lucide-react';
 import { jobTicketService, JobTicketNotification } from '../../services/jobTicketService';
 import { localFileStorage } from '../../services/localFileStorage';
@@ -15,12 +15,12 @@ import { isStoredFileIdentifier } from '../../utils/documentPreview';
 import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
 
-const statusConfig: Record<JobTicketStatus, { label: string; color: string; icon: React.ReactNode }> = {
-  Received: { label: 'Received', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: <Package size={14} /> },
-  Processing: { label: 'Processing', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: <Printer size={14} /> },
-  Ready: { label: 'Ready', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: <CheckCircle size={14} /> },
-  Delivered: { label: 'Delivered', color: 'bg-slate-100 text-slate-700 border-slate-200', icon: <Truck size={14} /> },
-  Cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-700 border-red-200', icon: <X size={14} /> },
+const statusConfig: Record<JobTicketStatus, { label: string; color: string; icon: React.ReactNode; cardBg: string }> = {
+  Received: { label: 'Received', color: 'bg-blue-100 text-blue-700 border-blue-200', icon: <Package size={14} />, cardBg: 'bg-blue-50' },
+  Processing: { label: 'Processing', color: 'bg-amber-100 text-amber-700 border-amber-200', icon: <Printer size={14} />, cardBg: 'bg-amber-50' },
+  Ready: { label: 'Ready', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: <CheckCircle size={14} />, cardBg: 'bg-emerald-50' },
+  Delivered: { label: 'Delivered', color: 'bg-slate-100 text-slate-700 border-slate-200', icon: <Truck size={14} />, cardBg: 'bg-slate-50' },
+  Cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-700 border-red-200', icon: <X size={14} />, cardBg: 'bg-red-50' },
 };
 
 const priorityConfig: Record<JobTicketPriority, { label: string; color: string }> = {
@@ -260,26 +260,66 @@ export const JobTickets: React.FC = () => {
     }
   };
 
+  const handleSendCardToCustomer = async (ticket: JobTicket) => {
+    if (!ticket.customerPhone) {
+      notify('No customer phone number', 'error');
+      return;
+    }
+
+    const cardElement = document.getElementById(`ticket-card-${ticket.id}`);
+    if (!cardElement) {
+      notify('Card element not found', 'error');
+      return;
+    }
+
+    try {
+      const canvas = await html2canvas(cardElement, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          notify('Failed to generate image', 'error');
+          return;
+        }
+
+        const file = new File([blob], `job-ticket-${ticket.ticketNumber}.png`, { type: 'image/png' });
+        
+        const message = `Job Ticket #${ticket.ticketNumber}\nCustomer: ${ticket.customerName}\nAmount: ${currency}${ticket.total.toLocaleString()}\nStatus: ${ticket.status}`;
+        
+        const waUrl = `https://wa.me/${ticket.customerPhone.replace(/\D/g, '')}?text=${encodeURIComponent(message + '\n\nImage attached')}`;
+        window.open(waUrl, '_blank');
+        
+        notify('Opening WhatsApp...', 'success');
+      }, 'image/png');
+    } catch (error) {
+      console.error('Send to customer failed:', error);
+      notify('Failed to send card to customer', 'error');
+    }
+  };
+
   const companyName = companyConfig?.companyName || 'Prime ERP';
   
   return (
-    <div className="min-h-screen bg-slate-50 font-['Inter',_sans-serif] text-[13.5px] leading-relaxed text-slate-800">
-
+    <div className="h-full flex flex-col p-4 md:p-6 max-w-[1600px] mx-auto w-full font-normal overflow-y-auto custom-scrollbar">
       {/* Header Section */}
-      <div className="mb-8">
+      <div className="mb-6 px-4 py-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/20">
-              <Printer className="text-white" size={28} />
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20 shrink-0">
+              <Printer className="text-white" size={24} />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900 tracking-tight leading-[1.4]">Job Tickets</h1>
-              <p className="text-[13px] text-slate-500 font-medium">Manage print jobs and service orders</p>
+              <h1 className="text-[22px] font-semibold text-slate-900 tracking-tight leading-tight">Job Tickets</h1>
+              <p className="text-[13.5px] text-slate-500 font-medium leading-relaxed">Manage print jobs and service orders</p>
             </div>
           </div>
           <button
             onClick={() => setShowForm(true)}
-            className="px-[12px] py-[7px] bg-blue-600 text-white rounded-lg font-semibold flex items-center gap-2 hover:bg-blue-700 shadow-sm transition-all shadow-blue-600/10"
+            className="px-4 py-2 bg-blue-600 text-white rounded-xl font-semibold text-[13.5px] flex items-center gap-2 hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all active:scale-95"
           >
             <Plus size={18} />
             New Job Ticket
@@ -288,67 +328,66 @@ export const JobTickets: React.FC = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center gap-2 mb-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-slate-500"></div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total</p>
+            <p className="text-[12px] font-bold text-slate-400 uppercase tracking-wider">Total</p>
           </div>
-          <p className="text-3xl font-black text-slate-800">{stats.total}</p>
+          <p className="text-[22px] font-bold text-slate-800 tabular-nums leading-none">{stats.total}</p>
         </div>
-        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-blue-200/60 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-white p-3.5 rounded-2xl border border-blue-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Received</p>
+            <p className="text-[12px] font-bold text-blue-600 uppercase tracking-wider">Received</p>
           </div>
-          <p className="text-3xl font-black text-blue-700">{stats.received}</p>
+          <p className="text-[22px] font-bold text-blue-700 tabular-nums leading-none">{stats.received}</p>
         </div>
-        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-amber-200/60 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-white p-3.5 rounded-2xl border border-amber-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-            <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Processing</p>
+            <p className="text-[12px] font-bold text-amber-600 uppercase tracking-wider">Processing</p>
           </div>
-          <p className="text-3xl font-black text-amber-700">{stats.processing}</p>
+          <p className="text-[22px] font-bold text-amber-700 tabular-nums leading-none">{stats.processing}</p>
         </div>
-        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-emerald-200/60 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-white p-3.5 rounded-2xl border border-emerald-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-            <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Ready</p>
+            <p className="text-[12px] font-bold text-emerald-600 uppercase tracking-wider">Ready</p>
           </div>
-          <p className="text-3xl font-black text-emerald-700">{stats.ready}</p>
+          <p className="text-[22px] font-bold text-emerald-700 tabular-nums leading-none">{stats.ready}</p>
         </div>
-        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-red-200/60 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-white p-3.5 rounded-2xl border border-red-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-red-500"></div>
-            <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Overdue</p>
+            <p className="text-[12px] font-bold text-red-600 uppercase tracking-wider">Overdue</p>
           </div>
-          <p className="text-3xl font-black text-red-700">{stats.overdue}</p>
+          <p className="text-[22px] font-bold text-red-700 tabular-nums leading-none">{stats.overdue}</p>
         </div>
-        <div className="bg-white/80 backdrop-blur-sm p-5 rounded-2xl border border-slate-200/60 shadow-sm hover:shadow-md transition-all">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-white p-3.5 rounded-2xl border border-violet-100 shadow-sm">
+          <div className="flex items-center gap-2 mb-1.5">
             <div className="w-2 h-2 rounded-full bg-violet-500"></div>
-            <p className="text-xs font-bold text-violet-600 uppercase tracking-wider">Today</p>
+            <p className="text-[12px] font-bold text-violet-600 uppercase tracking-wider">Today</p>
           </div>
-          <p className="text-3xl font-black text-violet-700">{stats.today}</p>
+          <p className="text-[22px] font-bold text-violet-700 tabular-nums leading-none">{stats.today}</p>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-center mb-8">
-
+      <div className="flex flex-wrap gap-3 items-center mb-6">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
             type="text"
             placeholder="Search tickets..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-[13.5px] font-medium text-slate-700 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/5 outline-none transition-all"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as JobTicketStatus | 'All')}
-          className="px-3 py-2 border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+          className="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-[13.5px] font-medium text-slate-700 focus:border-blue-500 outline-none transition-all cursor-pointer"
         >
           <option value="All">All Status</option>
           {Object.entries(statusConfig).map(([key, { label }]) => (
@@ -358,7 +397,7 @@ export const JobTickets: React.FC = () => {
         <select
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value as JobTicketPriority | 'All')}
-          className="px-3 py-2 border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+          className="px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-[13.5px] font-medium text-slate-700 focus:border-blue-500 outline-none transition-all cursor-pointer"
         >
           <option value="All">All Priority</option>
           {Object.entries(priorityConfig).map(([key, { label }]) => (
@@ -370,12 +409,12 @@ export const JobTickets: React.FC = () => {
       {isLoading ? (
         <div className="text-center py-12 text-slate-400">Loading tickets...</div>
       ) : filteredTickets.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
-          <Package size={48} className="mx-auto mb-4 opacity-50" />
-          <p>No job tickets found</p>
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <Package size={48} className="mb-3 opacity-50" />
+          <p className="text-sm">No job tickets found</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredTickets.map((ticket) => {
             const timeRemaining = getTimeRemaining(ticket.dueDate);
             return (
@@ -386,6 +425,8 @@ export const JobTickets: React.FC = () => {
                 timeRemaining={timeRemaining}
                 onClick={() => setSelectedTicket(ticket)}
                 onExport={() => handleExportCard(ticket)}
+                onShare={() => handleShareCard(ticket)}
+                onSendToCustomer={() => handleSendCardToCustomer(ticket)}
               />
             );
           })}
@@ -424,158 +465,264 @@ interface JobTicketCardProps {
   timeRemaining: { text: string; className?: string } | null;
   onClick: () => void;
   onExport: () => void;
+  onShare?: () => void;
+  onSendToCustomer?: () => void;
 }
 
-const JobTicketCard: React.FC<JobTicketCardProps> = ({ ticket, currency, timeRemaining, onClick, onExport }) => {
-  const { companyConfig } = useData();
-  const companyName = (companyConfig?.companyName || 'PRIME PRINTING').toUpperCase();
+const JobTicketCard: React.FC<JobTicketCardProps> = ({ ticket, currency, timeRemaining, onClick, onExport, onShare, onSendToCustomer }) => {
+  const { companyConfig, notify } = useData();
   const [qrSrc, setQrSrc] = useState<string>('');
+  
+  const cardBgColor = statusConfig[ticket.status]?.cardBg || 'bg-gray-50';
+  const colorMap: Record<JobTicketStatus, string> = {
+    Received: 'blue',
+    Processing: 'amber',
+    Ready: 'emerald',
+    Delivered: 'slate',
+    Cancelled: 'red'
+  };
+  const color = colorMap[ticket.status] || 'slate';
+  
+  const getColorStyle = (shade: number) => {
+    const colors: Record<string, string> = {
+      'blue': '#3b82f6',
+      'amber': '#f59e0b',
+      'emerald': '#10b981',
+      'slate': '#64748b',
+      'red': '#ef4444'
+    };
+    return colors[color] || colors['slate'];
+  };
+  
+  const getBgStyle = (opacity = 0.1) => {
+    const colors: Record<string, string> = {
+      'blue': `rgba(59, 130, 246, ${opacity})`,
+      'amber': `rgba(245, 158, 11, ${opacity})`,
+      'emerald': `rgba(16, 185, 129, ${opacity})`,
+      'slate': `rgba(100, 116, 139, ${opacity})`,
+      'red': `rgba(239, 68, 68, ${opacity})`
+    };
+    return colors[color] || colors['slate'];
+  };
 
   useEffect(() => {
-    const qrData = `${companyConfig?.companyName || 'Prime'} | Ticket #${ticket.ticketNumber} | ${ticket.customerName} | Total: ${currency}${ticket.total}`;
+    const qrData = JSON.stringify({
+      id: ticket.id,
+      number: ticket.ticketNumber,
+      customer: ticket.customerName,
+      total: ticket.total
+    });
     QRCode.toDataURL(qrData, {
-      width: 140,
+      width: 200,
       margin: 1,
       color: {
-        dark: '#2d4538',
+        dark: '#1e293b', // High contrast but not pure black
         light: '#ffffff'
       }
     }).then(setQrSrc).catch(console.error);
-  }, [ticket, currency, companyConfig]);
+  }, [ticket, companyConfig]);
+
+  const handleCopyId = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(ticket.id);
+    notify('Ticket ID copied to clipboard', 'success');
+  };
+
+  const isActive = ['Received', 'Processing', 'Ready'].includes(ticket.status);
 
   return (
     <div
       id={`ticket-card-${ticket.id}`}
       onClick={onClick}
-      className="group relative bg-white rounded-[24px] overflow-hidden border border-slate-200/60 shadow-sm hover:shadow-2xl hover:-translate-y-1.5 transition-all duration-500 cursor-pointer h-[460px] flex flex-col"
+      style={{ fontFamily: "'Inter', 'Roboto', system-ui, sans-serif", fontFeatureSettings: '"tnum"', maxWidth: '100%' }}
+      className={`${cardBgColor} rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer overflow-hidden flex flex-col antialiased`}
     >
-      {/* Brand Swoosh Ornament */}
-      <div className="absolute top-0 right-0 w-48 h-48 -mr-16 -mt-16 bg-gradient-to-br from-blue-600/10 to-blue-500/0 rounded-full blur-3xl group-hover:from-blue-600/20 transition-all duration-700" />
-      <div className="absolute top-[-20%] right-[-10%] w-[160px] h-[160px] bg-blue-600/5 rounded-full border-[1.5px] border-blue-600/10 pointer-events-none" />
-      <div className="absolute top-[-25%] right-[-15%] w-[220px] h-[220px] bg-blue-600/3 rounded-full border-[1.5px] border-blue-600/5 pointer-events-none" />
-      
-      {/* Header with High-Fidelity Badge */}
-      <div className="relative px-6 pt-7 pb-4">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className={`w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.1)] ${
-                ticket.status === 'Received' ? 'bg-blue-500 animate-pulse' :
-                ticket.status === 'Processing' ? 'bg-amber-500 animate-pulse' :
-                ticket.status === 'Ready' ? 'bg-emerald-500' :
-                ticket.status === 'Delivered' ? 'bg-slate-400' :
-                'bg-red-500'
-              }`} />
-              <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.1em]">
-                {statusConfig[ticket.status].label}
-              </span>
-            </div>
-            <h3 className="text-[20px] font-black text-slate-800 leading-tight tracking-tight group-hover:text-blue-600 transition-colors">
-              #{ticket.ticketNumber}
-            </h3>
+      {/* ── Header — 12px vertical, 16px horizontal padding ── */}
+      <div className="px-3 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+            <Ticket size={16} style={{ color: getColorStyle(600) }} />
           </div>
-          <button 
-            onClick={(e) => { e.stopPropagation(); onExport(); }}
-            className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-white hover:shadow-lg transition-all"
+{/* Title: 22px, weight 700, tight tracking */}
+          <h2
+            style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.3px', lineHeight: 1.2, color: getColorStyle(700) }}
+            className="uppercase"
           >
-            <Share2 size={16} />
-          </button>
-        </div>
-
-        {/* Customer & Info Pill */}
-        <div className="flex items-center gap-4 bg-slate-50/50 p-4 rounded-2xl border border-slate-100/50">
-          <div className="w-11 h-11 bg-white rounded-xl shadow-sm border border-slate-200/40 flex items-center justify-center">
-            <User size={20} className="text-blue-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h4 className="text-[14px] font-bold text-slate-800 truncate mb-0.5">{ticket.customerName}</h4>
-            <p className="text-[12px] font-medium text-slate-500">+{ticket.customerPhone || 'Walk-in'}</p>
-          </div>
-        </div>
+            Job Ticket
+          </h2>
+      </div>
+      {/* Status badge: 12px, weight 500, compact padding */}
+      <div
+        style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }}
+        className={`flex items-center gap-1 px-2 py-1 rounded-full ${isActive ? 'bg-white' : 'bg-slate-50'}`}
+      >
+        <div className={`w-1 h-1 rounded-full shrink-0 ${isActive ? '' : 'bg-slate-400'}`} style={isActive ? { backgroundColor: getColorStyle(500) } : {}} />
+        {ticket.status}
+      </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 px-6 py-4 flex flex-col bg-white">
-        {/* Description */}
-        <div className="mb-6">
-          <p className="text-[13px] font-medium text-slate-600 leading-[1.6] line-clamp-2 italic opacity-80">
-            "{ticket.description}"
-          </p>
-        </div>
+      {/* ── Main Body ── */}
+      <div className="flex flex-1 text-slate-700 text-xs">
+        {/* Left Column */}
+        <div className="flex-1">
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="space-y-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Production Type</span>
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 bg-blue-50 rounded flex items-center justify-center">
-                <Printer size={12} className="text-blue-600" />
+          {/* Row 1: Ticket # | Quantity */}
+          <div className="grid grid-cols-2">
+            {/* Ticket # */}
+            <div className="px-3 py-2 flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+                <Ticket size={12} style={{ color: getColorStyle(600) }} />
               </div>
-              <span className="text-[13px] font-bold text-slate-700">{typeConfig[ticket.type].label}</span>
+              <div className="min-w-0">
+                {/* Label: 10px, weight 500, slate-400 */}
+                <p style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }} className="text-slate-400">Ticket #</p>
+                {/* Value: 11px, weight 600, slate-800, tabular */}
+                <p style={{ fontSize: '11px', fontWeight: 600, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }} className="text-slate-800 truncate">
+                  {ticket.ticketNumber}
+                </p>
+              </div>
+            </div>
+            {/* Quantity — left-aligned */}
+            <div className="px-3 py-2 flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+                <Package size={12} style={{ color: getColorStyle(600) }} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }} className="text-slate-400">Qty</p>
+                <p style={{ fontSize: '11px', fontWeight: 600, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }} className="text-slate-800 truncate">
+                  {ticket.quantity.toLocaleString()}
+                </p>
+              </div>
             </div>
           </div>
-          <div className="space-y-1">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Volume</span>
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 bg-amber-50 rounded flex items-center justify-center">
-                <Package size={12} className="text-amber-600" />
-              </div>
-              <span className="text-[13px] font-bold text-slate-700">{ticket.quantity.toLocaleString()} Units</span>
-            </div>
-          </div>
-        </div>
 
-        {/* Due Date Indicator */}
-        <div className="flex items-center justify-between mt-auto pt-6 border-t border-slate-100/80">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center shadow-lg shadow-blue-600/20">
-              <Calendar size={14} />
+          {/* Row 2: Customer */}
+          <div className="px-3 py-2 flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+              <User size={12} style={{ color: getColorStyle(600) }} />
             </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Due Completion</p>
-              <p className="text-[13px] font-bold text-slate-800 leading-none">
-                {ticket.dueDate ? new Date(ticket.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Flexible'}
+            <div className="min-w-0">
+              <p style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }} className="text-slate-400">Customer</p>
+              {/* Customer name: 12px, weight 600 — slightly larger for prominence */}
+              <p style={{ fontSize: '11px', fontWeight: 600, lineHeight: 1.4 }} className="text-slate-800 truncate">
+                {ticket.customerName}
               </p>
             </div>
           </div>
-          {timeRemaining && (
-            <div className={`px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider ${timeRemaining.className} bg-slate-50 border border-slate-100`}>
-              {timeRemaining.text}
+
+          {/* Row 3: Amount | Due Date */}
+          <div className="grid grid-cols-2">
+            {/* Amount — left-aligned */}
+            <div className="px-3 py-2 flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: getColorStyle(600) }}>{currency}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }} className="text-slate-400">Amount</p>
+                <p style={{ fontSize: '11px', fontWeight: 600, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }} className="text-slate-800 truncate">
+                  {currency}{ticket.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
             </div>
-          )}
+            {/* Due Date */}
+            <div className="px-3 py-2 flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+                <Calendar size={12} style={{ color: getColorStyle(600) }} />
+              </div>
+              <div className="min-w-0">
+                <p style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }} className="text-slate-400">Due</p>
+                <p style={{ fontSize: '11px', fontWeight: 600, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }} className="text-slate-800 truncate">
+                  {ticket.dueDate
+                    ? new Date(ticket.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                    : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 4: Description */}
+          <div className="px-3 py-2 flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: getBgStyle(0.1) }}>
+              <FileText size={12} style={{ color: getColorStyle(600) }} />
+            </div>
+            <div className="min-w-0">
+              <p style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1.4 }} className="text-slate-400">Description</p>
+              {/* Description: 10px body weight, weight 400 */}
+              <p style={{ fontSize: '10px', fontWeight: 400, lineHeight: 1.5 }} className="text-slate-700 line-clamp-1">
+                {ticket.description || 'No description provided'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Right Column — QR Code ── */}
+        <div className="w-[140px] px-3 py-3 flex flex-col items-center justify-center gap-2" style={{ backgroundColor: getBgStyle(0.1) }}>
+          <div className="p-2 border-2 border-dashed rounded-xl bg-white">
+            {qrSrc ? (
+              <img src={qrSrc} alt="QR Code" className="w-[80px] h-[80px] mix-blend-multiply" />
+            ) : (
+              <div className="w-[80px] h-[80px] animate-pulse rounded-lg" style={{ backgroundColor: getBgStyle(0.1) }} />
+            )}
+          </div>
+          <div className="text-center">
+            <p style={{ fontSize: '10px', fontWeight: 400, lineHeight: 1.4 }} className="text-slate-400">Scan to view</p>
+            <p style={{ fontSize: '11px', fontWeight: 600, lineHeight: 1.4 }} className="text-slate-700">QR</p>
+          </div>
         </div>
       </div>
 
-      {/* Decorative Footer QR Area */}
-      <div className="h-[100px] relative overflow-hidden flex items-center bg-[#fdfdfd] border-t border-slate-50">
-        {/* Dynamic QR Code Ornament */}
-        <div className="absolute right-[-10px] bottom-[-10px] w-28 h-28 bg-white shadow-[-8px_0_20px_rgba(0,0,0,0.03)] border-t border-l border-slate-100 rounded-tl-[32px] flex items-center justify-center group-hover:scale-105 transition-transform duration-500">
-          {qrSrc ? (
-            <img src={qrSrc} alt="Tracking QR" className="w-[75%] h-[75%] opacity-80" />
-          ) : (
-            <div className="w-16 h-16 bg-slate-50 animate-pulse rounded-lg" />
-          )}
-        </div>
-        
-        <div className="px-6 flex flex-col">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Tracking Info</span>
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-          </div>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-[18px] font-black text-slate-900 group-hover:text-blue-600 transition-colors uppercase tabular-nums">
-              {currency}{ticket.total.toLocaleString()}
-            </span>
-            <div className="w-4 h-4 bg-blue-600 rounded-sm flex items-center justify-center transform rotate-45 group-hover:rotate-0 transition-transform duration-500">
-              <Package size={11} className="text-white transform -rotate-45 group-hover:rotate-0 transition-transform duration-500" />
-            </div>
-          </div>
-          <span className="mt-3 text-[#2d4538] font-bold text-[10px] tracking-wider relative bottom-[-2px]">
-            SCAN FOR TRACKING
+      {/* ── Footer — 10px vertical, 16px horizontal ── */}
+      <div className="px-2 py-1 flex items-center justify-between" style={{ backgroundColor: getBgStyle(0.1) }}>
+        <div className="flex items-center gap-1">
+          <Clock size={10} className="text-slate-400 shrink-0" />
+          {/* Footer text: 10px, weight 400, tabular */}
+          <span
+            style={{ fontSize: '9px', fontWeight: 400, lineHeight: 1.4, fontVariantNumeric: 'tabular-nums' }}
+            className="text-slate-400"
+          >
+            {new Date(ticket.dateReceived).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
           </span>
         </div>
+        <div className="flex items-center gap-1">
+          <span style={{ fontSize: '9px', fontWeight: 400, lineHeight: 1.4 }} className="text-slate-400">
+            ID:{' '}
+            <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: '8px', fontWeight: 500 }} className="text-slate-500">
+              {ticket.id}
+            </span>
+          </span>
+          <button
+            onClick={handleCopyId}
+            style={{ padding: '2px' }}
+            className="border border-transparent rounded transition-all active:scale-95"
+            title="Copy Ticket ID"
+          >
+            <Copy size={10} />
+          </button>
+        </div>
+        <div className="flex items-center gap-1">
+          {onShare && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onShare(); }}
+              style={{ padding: '2px' }}
+              className="border border-transparent rounded transition-all active:scale-95"
+              title="Share Card"
+            >
+              <Share2 size={10} />
+            </button>
+          )}
+          {onSendToCustomer && ticket.customerPhone && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onSendToCustomer(); }}
+            style={{ padding: '2px' }}
+            className="border border-transparent rounded transition-all active:scale-95"
+            title="Send to Customer via WhatsApp"
+          >
+            <SendHorizontal size={10} />
+          </button>
+        )}
       </div>
     </div>
+  </div>
   );
 };
 
@@ -933,7 +1080,7 @@ const JobTicketForm: React.FC<JobTicketFormProps> = ({ ticket, customers, onSave
           </div>
 
           <div className="flex gap-3 pt-4 border-t border-slate-200">
-            <button type="button" onClick={onClose} className="flex-1 px-5 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 px-5 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all">Cancel</button>
             <button type="submit" className="flex-1 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-600/25 transition-all transform hover:scale-[1.02]">{ticket ? 'Update Ticket' : 'Create Ticket'}</button>
           </div>
         </form>

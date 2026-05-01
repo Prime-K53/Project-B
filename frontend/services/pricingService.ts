@@ -420,8 +420,10 @@ export const pricingService = {
         }
 
         if (unitCostPerPage <= 0) {
-            const fallbackPerPageCost = Number(item.cost) || 0;
-            unitCostPerPage = roundToCurrency(fallbackPerPageCost);
+            const fallbackCost = Number(item.cost_price ?? item.cost) || 0;
+            const itemPages = Math.max(1, Math.floor(Number(item.pages) || 1));
+            // For services without a BOM, treat stored cost as total cost per copy, not per page.
+            unitCostPerPage = roundToCurrency(fallbackCost / itemPages);
         }
 
         if (resolvedTotalCost <= 0) {

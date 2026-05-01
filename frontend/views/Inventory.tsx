@@ -11,7 +11,7 @@ import ProductDetails from './inventory/components/ProductDetails';
 import ItemModal from './inventory/components/ItemModal';
 import SmartAdjustModal from './inventory/components/SmartAdjustModal';
 import StockAdjustmentModal from './inventory/components/StockAdjustmentModal';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { suggestRestock } from '../services/geminiService';
 import { repairVariantPricing } from '@/utils/pricing/recalculateVariants';
 import { generateNextId } from '../utils/helpers';
@@ -19,6 +19,7 @@ import { generateNextId } from '../utils/helpers';
 const Inventory: React.FC = () => {
     const { fetchInventory, fetchProcurementData } = useInventory();
     const { refreshAllData } = useData();
+    const navigate = useNavigate();
 
     // 5-minute poll + focus refresh
     useModuleRefresh(async () => {
@@ -180,6 +181,10 @@ const Inventory: React.FC = () => {
         setIsModalOpen(true);
     };
 
+    const handleLoadToSPE = (item: Item) => {
+        navigate('/smart-operations/pricing', { state: { loadProductId: item.id } });
+    };
+
     const handleCloseModal = () => {
         setIsModalOpen(false);
         setEditingItem(null);
@@ -251,7 +256,12 @@ const Inventory: React.FC = () => {
         };
         const nextTypes = typeCycle[currentType] || ['Product'];
         const newType = nextTypes[0];
+        
+        // Preserve all existing fields, including pricingConfig, smartPricing, cost, and price.
+        // The pricing engine (masterInventoryPricingService) will handle the specific 
+        // logic for the new type during normalization or subsequent edits.
         const updatedItem = { ...item, type: newType as any };
+        
         try {
             await updateItem(updatedItem);
             notify(`Type changed to ${newType}`, "success");
@@ -432,7 +442,7 @@ const Inventory: React.FC = () => {
                 ) : activeView === 'Warehouses' ? (
                     <WarehouseGrid warehouses={warehouses} inventory={inventory} />
                 ) : (
-<ItemTable
+                    <ItemTable
                         items={activeView === 'Stock' ? stockTrackedItems : inventory}
                         warehouses={warehouses}
                         onEdit={handleOpenEditModal}
@@ -442,6 +452,7 @@ const Inventory: React.FC = () => {
                         onBatchDelete={handleBatchDelete}
                         onAdjust={handleOpenAdjustmentModal}
                         onChangeType={handleChangeType}
+                        onLoadToSPE={handleLoadToSPE}
                         initialSearch={initialSearch}
                     />
                 )}

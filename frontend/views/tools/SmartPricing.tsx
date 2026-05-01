@@ -3,7 +3,7 @@ import { Calculator, ChevronDown, ChevronUp, X, Info, Copy, RefreshCw, Save, Pri
 import { useData } from '../../context/DataContext';
 import { useSales } from '../../context/SalesContext';
 import { applyProductPriceRounding } from '../../services/pricingRoundingService';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { dbService } from '../../services/db';
 import { getGlobalDefaultMargin } from '../../services/pricingService';
 import { Item, MarketAdjustment, BOMTemplate, FinishingOption } from '../../types';
@@ -44,6 +44,7 @@ const SmartPricing: React.FC = () => {
     }, []);
     const { addJobOrder, jobOrders } = useSales();
     const navigate = useNavigate();
+    const location = useLocation();
     const currency = companyConfig?.currencySymbol || 'K';
     
     const [pages, setPages] = useState(1);
@@ -119,6 +120,14 @@ const SmartPricing: React.FC = () => {
         };
         loadData();
     }, []);
+
+    useEffect(() => {
+        const loadProductId = (location.state as any)?.loadProductId;
+        if (loadProductId && inventory.length > 0) {
+            loadInventoryProduct(loadProductId);
+            window.history.replaceState({}, document.title);
+        }
+    }, [inventory, location.state]);
 
     const paperItems = useMemo(() => inventory.filter(i => {
         const cat = (i.category || '').toLowerCase();

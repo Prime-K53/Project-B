@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Edit2, Search, Eye, ArrowUp, ArrowDown, ArrowRight, Ruler, AlertCircle, Copy, Trash2, CheckSquare, Square, Warehouse as WarehouseIcon, MapPin, Package, Truck, ShieldCheck, MoreVertical, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import ReactDOM from 'react-dom';
+import { Edit2, Search, Eye, ArrowUp, ArrowDown, ArrowRight, Ruler, AlertCircle, Copy, Trash2, CheckSquare, Square, Warehouse as WarehouseIcon, MapPin, Package, Truck, ShieldCheck, MoreVertical, ChevronRight, SlidersHorizontal, DollarSign } from 'lucide-react';
 import { Item, Warehouse } from '../../../types';
 import { usePagination } from '../../../hooks/usePagination';
 import Pagination from '../../../components/Pagination';
@@ -12,6 +13,7 @@ import { formatParentProductPrice, formatMaterialItemCost } from '../../../utils
 interface ItemTableProps {
     items: Item[];
     warehouses: Warehouse[];
+    suppliers?: any[];
     onEdit: (item: Item) => void;
     onView: (item: Item) => void;
     onPreview?: (item: Item) => void;
@@ -20,6 +22,7 @@ interface ItemTableProps {
     onBatchDelete: (ids: string[]) => void;
     onAdjust?: (item: Item) => void;
     onChangeType?: (item: Item) => void;
+    onLoadToSPE?: (item: Item) => void;
     initialSearch?: string;
 }
 
@@ -47,25 +50,27 @@ const useContextMenu = () => {
         if (openMenuId === id) {
             setOpenMenuId(null);
         } else {
-            console.log('Menu trigger at:', e.clientX, e.clientY, 'pageY:', e.pageY);
-            
-            // Get mouse position - use page coordinates for absolute positioning
-            let x = e.pageX + 12;
-            let y = e.pageY + 12;
-            
+            // Detect CSS zoom on the document root (common in scaled ERP layouts).
+            // window.devicePixelRatio alone isn't enough — CSS zoom shifts clientX/Y.
+            const root = document.documentElement;
+            const rootRect = root.getBoundingClientRect();
+            // zoom = rendered width / actual offsetWidth
+            const zoom = rootRect.width / root.offsetWidth || 1;
+
+            const x = e.clientX / zoom;
+            const y = e.clientY / zoom;
+
             const menuWidth = 256;
-            const menuHeight = 420;
-            
-            // Adjust if menu would go off right edge
-            if (x + menuWidth > window.innerWidth) {
-                x = window.innerWidth - menuWidth - 12;
-            }
-            // Adjust if menu would go off bottom edge
-            if (y + menuHeight > window.innerHeight) {
-                y = window.innerHeight - menuHeight - 12;
-            }
-            
-            setMenuPos({ x, y });
+            const menuHeight = 320;
+            const vw = window.innerWidth / zoom;
+            const vh = window.innerHeight / zoom;
+
+            let finalX = x + 4;
+            let finalY = y + 4;
+            if (finalX + menuWidth > vw) finalX = x - menuWidth - 4;
+            if (finalY + menuHeight > vh) finalY = y - menuHeight - 4;
+
+            setMenuPos({ x: finalX, y: finalY });
             setOpenMenuId(id);
             setActiveSubmenu(null);
         }
@@ -132,9 +137,10 @@ export const ItemTable: React.FC<ItemTableProps> = ({
     onBatchDelete,
     onAdjust,
     onChangeType,
+    onLoadToSPE,
     initialSearch = ''
 }) => {
-    const { companyConfig, triggerReplenishment, notify } = useData();
+    const { companyConfig, triggerReplenishment, notify, suppliers } = useData();
     const navigate = useNavigate();
     const currency = companyConfig.currencySymbol;
 
@@ -148,6 +154,12 @@ export const ItemTable: React.FC<ItemTableProps> = ({
     useHighlight();
     const { openMenuId, menuPos, activeSubmenu, setActiveSubmenu, menuRef, handleRowClick, setOpenMenuId } = useContextMenu();
 
+const showStockColumn = filterType === 'Material' || filterType === 'Stationery';
+    const showServiceColumns = filterType === 'Service';
+    const showMaterialColumns = filterType === 'Material';
+    const showProductColumns = filterType === 'Product';
+    const showStationeryColumns = filterType === 'Stationery';
+
     const currentItem = (items || []).find((i) => i.id === openMenuId);
 
     useEffect(() => { if (initialSearch) setSearchTerm(initialSearch); }, [initialSearch]);
@@ -160,25 +172,25 @@ export const ItemTable: React.FC<ItemTableProps> = ({
         const menuWidth = 256;
 
         const isMaterial = item.type === 'Material' || item.type === 'Raw Material' || item.type === 'Stationery';
+        const isProductOrService = item.type === 'Product' || item.type === 'Service';
         const currentType = item.type;
         
         const spaceOnRight = window.innerWidth - (x + menuWidth);
         const submenuDirectionClass = spaceOnRight < 160 ? "right-full" : "left-full";
 
-        return (
+        return ReactDOM.createPortal(
             <div
                 ref={menuRef}
-                className="fixed w-64 bg-white/98 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 z-[9999] animate-in fade-in zoom-in-95 duration-100 flex flex-col py-1 text-left"
-                style={{ 
-                    top: y, 
-                    left: x,
-                    position: 'fixed'
-                }}
+                className="w-64 bg-white rounded-xl shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-100 flex flex-col py-1 text-left"
+                style={{ position: 'fixed', top: y, left: x, zIndex: 99999 }}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="px-4 py-2 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-tight bg-slate-50/50 rounded-t-xl">ITEM ACTIONS</div>
                 <button onClick={() => { setOpenMenuId(null); onView(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Eye size={14} /> View Details</button>
                 <button onClick={() => { setOpenMenuId(null); onEdit(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-amber-50 flex items-center gap-3 transition-colors"><Edit2 size={14} /> Edit Item</button>
+                {isProductOrService && onLoadToSPE && (
+                    <button onClick={() => { setOpenMenuId(null); onLoadToSPE(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-violet-700 hover:bg-violet-50 flex items-center gap-3 transition-colors"><DollarSign size={14} /> Load to SPE</button>
+                )}
                 {isMaterial && onAdjust && (
                     <button onClick={() => { setOpenMenuId(null); onAdjust(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 flex items-center gap-3 transition-colors"><SlidersHorizontal size={14} /> Adjust Stock</button>
                 )}
@@ -187,7 +199,7 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                         <span className="flex items-center gap-3"><ArrowRight size={14} /> Change Type</span>
                         <ChevronRight size={12} />
                     </button>
-                    <div className={`absolute ${submenuDirectionClass} top-0 hidden group-hover:block w-40 bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-slate-200 py-1 text-left z-[80]`}>
+                    <div className={`absolute ${submenuDirectionClass} top-0 hidden group-hover:block w-40 bg-white rounded-xl shadow-xl border border-slate-200 py-1 text-left z-[80]`}>
                         <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-tight bg-slate-50/50">CHANGE TYPE</div>
                         {['Product', 'Service', 'Material', 'Stationery'].map(t => (
                             <button key={t} onClick={() => { setOpenMenuId(null); onChangeType && onChangeType(item); }} className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 flex items-center gap-2 transition-colors ${currentType === t ? 'text-blue-600 bg-blue-50' : 'text-slate-700'}`}>
@@ -197,17 +209,18 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                         ))}
                     </div>
                 </div>
-                
+
                 <div className="my-1 border-t border-slate-200"></div>
                 <button onClick={() => { setOpenMenuId(null); onDuplicate(item); }} className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Copy size={14} /> Duplicate Item</button>
-                
+
                 {!item.isProtected && (
                     <>
                         <div className="my-1 border-t border-slate-200"></div>
                         <button onClick={() => { setOpenMenuId(null); onDelete(item.id); }} className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors"><Trash2 size={14} /> Delete</button>
                     </>
                 )}
-            </div>
+            </div>,
+            document.body
         );
     };
 
@@ -244,7 +257,7 @@ export const ItemTable: React.FC<ItemTableProps> = ({
 
     const filteredItems = items.filter(item => {
         const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.sku.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesType = item.type === filterType || (filterType === 'Material' && item.type === 'Raw Material');
+        const matchesType = item.type === filterType || (showMaterialColumns && (item.type === 'Material' || item.type === 'Raw Material')) || (showStationeryColumns && item.type === 'Stationery');
         return matchesSearch && matchesType;
     }).sort((a, b) => {
         let valA = a[sortField as keyof Item];
@@ -266,6 +279,8 @@ export const ItemTable: React.FC<ItemTableProps> = ({
 
     return (
         <div className="flex flex-col bg-white/70 backdrop-blur-xl rounded-2xl shadow-sm border border-white/60">
+            {/* Context menu rendered outside table DOM to avoid tbody nesting issues */}
+            {openMenuId && menuPos && currentItem && renderMenu(currentItem)}
             <div className="p-3 border-b border-slate-200/60 flex gap-3 flex-wrap items-center bg-slate-50/30">
                 <div className="relative flex-1 md:w-[400px] min-w-[250px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -302,18 +317,59 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                     {selectedIds.length > 0 && selectedIds.length === currentItems.length ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}
                                 </button>
                             </th>
-                            <th className="table-header px-4 py-2 w-1/3 cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Name {renderSortIcon('name')}</th>
-                            <th className="table-header px-4 py-2 w-[15%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
-                            <th className="table-header px-4 py-2 w-[10%] cursor-pointer hover:text-blue-600 text-center" onClick={() => handleSort('stock')}>Stock {renderSortIcon('stock')}</th>
-                            <th className="table-header px-4 py-2 w-[15%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Price {renderSortIcon('price')}</th>
-                            <th className="table-header px-4 py-2 w-[10%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('salesCount' as any)}>Sales {renderSortIcon('salesCount' as any)}</th>
+                            {showServiceColumns ? (
+                                <>
+                                    <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
+                                    <th className="table-header px-4 py-2 w-[24%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Service Name {renderSortIcon('name')}</th>
+                                    <th className="table-header px-4 py-2 w-[16%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Base Price {renderSortIcon('price')}</th>
+                                    <th className="table-header px-4 py-2 w-[12%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('salesCount' as any)}>Units {renderSortIcon('salesCount' as any)}</th>
+                                    <th className="table-header px-4 py-2 w-[12%]">Status</th>
+                                </>
+                            ) : showMaterialColumns ? (
+                                <>
+                                    <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
+                                    <th className="table-header px-4 py-2 w-[22%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Material Name {renderSortIcon('name')}</th>
+                                    <th className="table-header px-4 py-2 w-[16%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('category')}>Category {renderSortIcon('category')}</th>
+                                    <th className="table-header px-4 py-2 w-[10%] text-center">Unit</th>
+                                    <th className="table-header px-4 py-2 w-[12%] cursor-pointer hover:text-blue-600 text-center" onClick={() => handleSort('stock')}>Stock {renderSortIcon('stock')}</th>
+                                    <th className="table-header px-4 py-2 w-[14%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('cost')}>Cost Price {renderSortIcon('cost')}</th>
+                                    <th className="table-header px-4 py-2 w-[12%]">Status</th>
+                                </>
+                            ) : showProductColumns ? (
+                                <>
+                                    <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
+                                    <th className="table-header px-4 py-2 w-[24%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Product Name {renderSortIcon('name')}</th>
+                                    <th className="table-header px-4 py-2 w-[16%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('category')}>Category {renderSortIcon('category')}</th>
+                                    <th className="table-header px-4 py-2 w-[14%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Selling Price {renderSortIcon('price')}</th>
+                                    <th className="table-header px-4 py-2 w-[10%] text-center">Unit</th>
+                                    <th className="table-header px-4 py-2 w-[12%]">Status</th>
+                                </>
+                            ) : showStationeryColumns ? (
+                                <>
+                                    <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
+                                    <th className="table-header px-4 py-2 w-[22%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Item Name {renderSortIcon('name')}</th>
+                                    <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('category')}>Category {renderSortIcon('category')}</th>
+                                    <th className="table-header px-4 py-2 w-[8%] text-center">Unit</th>
+                                    <th className="table-header px-4 py-2 w-[10%] cursor-pointer hover:text-blue-600 text-center" onClick={() => handleSort('stock')}>Stock {renderSortIcon('stock')}</th>
+                                    <th className="table-header px-4 py-2 w-[12%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('cost')}>Cost Price {renderSortIcon('cost')}</th>
+                                    <th className="table-header px-4 py-2 w-[12%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Selling Price {renderSortIcon('price')}</th>
+                                    <th className="table-header px-4 py-2 w-[8%]">Status</th>
+                                </>
+                            ) : (
+                                <>
+                                    <th className="table-header px-4 py-2 w-1/3 cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Name {renderSortIcon('name')}</th>
+                                    <th className="table-header px-4 py-2 w-[15%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
+                                    {showStockColumn && <th className="table-header px-4 py-2 w-[10%] cursor-pointer hover:text-blue-600 text-center" onClick={() => handleSort('stock')}>Stock {renderSortIcon('stock')}</th>}
+                                    <th className="table-header px-4 py-2 w-[15%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Price {renderSortIcon('price')}</th>
+                                    <th className="table-header px-4 py-2 w-[10%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('salesCount' as any)}>Units {renderSortIcon('salesCount' as any)}</th>
+                                </>
+                            )}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100/50">
-                        {openMenuId && menuPos && currentItem && renderMenu(currentItem)}
                         {currentItems.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-4 py-20 text-center">
+                                <td colSpan={showMaterialColumns || showProductColumns || showServiceColumns || showStationeryColumns ? 8 : (showStockColumn ? 6 : 5)} className="px-4 py-20 text-center">
                                     <div className="flex flex-col items-center justify-center text-slate-400 gap-3">
                                         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100 shadow-inner">
                                             <Package size={32} strokeWidth={1.5} />
@@ -333,15 +389,177 @@ export const ItemTable: React.FC<ItemTableProps> = ({
 
                             return (
                                 <React.Fragment key={`${item.id}-${item.sku}`}>
-                                    <tr  
-                                        id={`item-${item.id}`}
+                                    {showServiceColumns ? (
+                                        <tr  
+                                            id={`item-${item.id}`}
+                                            className={`transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/40' : 'hover:bg-amber-50/30'} ${item.isProtected ? 'opacity-95' : ''}`}
+                                            onClick={(e) => handleRowClick(e, item.id)}
+                                            onContextMenu={(e) => handleRowClick(e, item.id)}
+                                        >
+                                            <td className="table-body-cell text-center" onClick={(e) => { e.stopPropagation(); handleToggleSelect(item.id); }}>
+                                                {item.isProtected ? (
+                                                    <ShieldCheck size={16} className="text-slate-400 mx-auto" />
+                                                ) : (
+                                                    isSelected ? <CheckSquare size={16} className="text-blue-600 mx-auto" /> : <Square size={16} className="text-slate-300 mx-auto hover:text-slate-500" />
+                                                )}
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 font-mono truncate">{(item as any).serviceSku || item.sku}</td>
+                                            <td className="table-body-cell font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">
+                                                <div className="flex items-center gap-2">
+                                                    {item.isProtected && <ShieldCheck size={12} className="text-blue-500 shrink-0" />}
+                                                    <div className="truncate">{item.name}</div>
+                                                </div>
+                                            </td>
+                                            <td className={`table-body-cell text-right finance-nums font-bold text-green-600`}>
+                                                {formatParentProductPrice(item, currency)}
+                                            </td>
+                                            <td className="table-body-cell text-right finance-nums font-bold text-slate-600">
+                                                {(item.salesCount || 0).toLocaleString()}
+                                            </td>
+                                            <td className="table-body-cell">
+                                                <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold ${
+                                                    item.status === 'Active' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                                    item.status === 'Inactive' ? 'bg-red-100 text-red-700 border border-red-200' :
+                                                    'bg-amber-100 text-amber-700 border border-amber-200'
+                                                }`}>
+                                                    {item.status || 'Active'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ) : showMaterialColumns ? (
+                                        <tr
+                                            id={`item-${item.id}`}
+                                            className={`transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/40' : 'hover:bg-amber-50/30'} ${item.isProtected ? 'opacity-95' : ''}`}
+                                            onClick={(e) => handleRowClick(e, item.id)}
+                                            onContextMenu={(e) => handleRowClick(e, item.id)}
+                                        >
+                                            <td className="table-body-cell text-center" onClick={(e) => { e.stopPropagation(); handleToggleSelect(item.id); }}>
+                                                {item.isProtected ? (
+                                                    <ShieldCheck size={16} className="text-slate-400 mx-auto" />
+                                                ) : (
+                                                    isSelected ? <CheckSquare size={16} className="text-blue-600 mx-auto" /> : <Square size={16} className="text-slate-300 mx-auto hover:text-slate-500" />
+                                                )}
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 font-mono truncate">{item.sku}</td>
+                                            <td className="table-body-cell font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">
+                                                <div className="flex items-center gap-2">
+                                                    {item.isProtected && <ShieldCheck size={12} className="text-blue-500 shrink-0" />}
+                                                    <div className="truncate">{item.name}</div>
+                                                </div>
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 truncate">{item.category || '-'}</td>
+                                            <td className="table-body-cell text-center text-slate-600">
+                                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded border border-slate-200 uppercase">{item.unit}</span>
+                                            </td>
+                                            <td className="table-body-cell text-center finance-nums font-bold text-slate-600">
+                                                {item.stock.toLocaleString()}
+                                                {isLowStock && <AlertCircle size={12} className="inline ml-1 text-red-500" />}
+                                            </td>
+                                            <td className="table-body-cell text-right finance-nums font-bold text-red-600">
+                                                {formatMaterialItemCost(item, currency)}
+                                            </td>
+                                            <td className="table-body-cell">
+                                                <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold ${
+                                                    item.status === 'Active' ? 'bg-green-100 text-green-700 border border-green-200' :
+                                                    item.status === 'Inactive' ? 'bg-red-100 text-red-700 border border-red-200' :
+                                                    'bg-amber-100 text-amber-700 border border-amber-200'
+                                                }`}>
+                                                    {item.status || 'Active'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ) : showProductColumns ? (
+                                        <tr
+                                            id={`item-${item.id}`}
+                                            className={`transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/40' : 'hover:bg-amber-50/30'} ${item.isProtected ? 'opacity-95' : ''}`}
+                                            onClick={(e) => handleRowClick(e, item.id)}
+                                            onContextMenu={(e) => handleRowClick(e, item.id)}
+                                        >
+                                            <td className="table-body-cell text-center" onClick={(e) => { e.stopPropagation(); handleToggleSelect(item.id); }}>
+                                                {item.isProtected ? (
+                                                    <ShieldCheck size={16} className="text-slate-400 mx-auto" />
+                                                ) : (
+                                                    isSelected ? <CheckSquare size={16} className="text-blue-600 mx-auto" /> : <Square size={16} className="text-slate-300 mx-auto hover:text-slate-500" />
+                                                )}
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 font-mono truncate">{item.sku}</td>
+                                            <td className="table-body-cell font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">
+                                                <div className="flex items-center gap-2">
+                                                    {item.isProtected && <ShieldCheck size={12} className="text-blue-500 shrink-0" />}
+                                                    <div className="truncate">{item.name}</div>
+                                                </div>
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 truncate">{item.category || '-'}</td>
+                                            <td className={`table-body-cell text-right finance-nums font-bold text-green-600`}>
+                                                {formatParentProductPrice(item, currency)}
+                                            </td>
+                                            <td className="table-body-cell text-center text-slate-600">
+                                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded border border-slate-200 uppercase">{item.unit}</span>
+                                            </td>
+                                            <td className="table-body-cell">
+                                                <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold ${
+                                                    item.status === "Active" ? "bg-green-100 text-green-700 border border-green-200" :
+                                                    item.status === "Inactive" ? "bg-red-100 text-red-700 border border-red-200" :
+                                                    "bg-amber-100 text-amber-700 border border-amber-200"
+                                                }`}>
+                                                    {item.status || "Active"}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ) : showStationeryColumns ? (
+                                        <tr
+                                            id={`item-${item.id}`}
+                                            className={`transition-colors cursor-pointer group ${isSelected ? "bg-blue-50/40" : "hover:bg-amber-50/30"} ${item.isProtected ? "opacity-95" : ""}`}
+                                            onClick={(e) => handleRowClick(e, item.id)}
+                                            onContextMenu={(e) => handleRowClick(e, item.id)}
+                                        >
+                                            <td className="table-body-cell text-center" onClick={(e) => { e.stopPropagation(); handleToggleSelect(item.id); }}>
+                                                {item.isProtected ? (
+                                                    <ShieldCheck size={16} className="text-slate-400 mx-auto" />
+                                                ) : (
+                                                    isSelected ? <CheckSquare size={16} className="text-blue-600 mx-auto" /> : <Square size={16} className="text-slate-300 mx-auto hover:text-slate-500" />
+                                                )}
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 font-mono truncate">{item.sku}</td>
+                                            <td className="table-body-cell font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">
+                                                <div className="flex items-center gap-2">
+                                                    {item.isProtected && <ShieldCheck size={12} className="text-blue-500 shrink-0" />}
+                                                    <div className="truncate">{item.name}</div>
+                                                </div>
+                                            </td>
+                                            <td className="table-body-cell text-slate-500 truncate">{item.category || "-"}</td>
+                                            <td className="table-body-cell text-center text-slate-600">
+                                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded border border-slate-200 uppercase">{item.unit}</span>
+                                            </td>
+                                            <td className="table-body-cell text-center finance-nums font-bold text-slate-600">
+                                                {item.stock.toLocaleString()}
+                                                {isLowStock && <AlertCircle size={12} className="inline ml-1 text-red-500" />}
+                                            </td>
+                                            <td className="table-body-cell text-right finance-nums font-bold text-red-600">
+                                                {formatMaterialItemCost(item, currency)}
+                                            </td>
+                                            <td className="table-body-cell text-right finance-nums font-bold text-green-600">
+                                                {formatParentProductPrice(item, currency)}
+                                            </td>
+                                            <td className="table-body-cell">
+                                                <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-semibold ${
+                                                    item.status === "Active" ? "bg-green-100 text-green-700 border border-green-200" :
+                                                    item.status === "Inactive" ? "bg-red-100 text-red-700 border border-red-200" :
+                                                    "bg-amber-100 text-amber-700 border border-amber-200"
+                                                }`}>
+                                                    {item.status || "Active"}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ) : ( 
+                                        <tr
                                         className={`transition-colors cursor-pointer group ${isSelected ? 'bg-blue-50/40' : 'hover:bg-amber-50/30'} ${isExpanded ? 'bg-amber-50/20' : ''} ${item.isProtected ? 'opacity-95' : ''}`}
                                         onClick={(e) => handleRowClick(e, item.id)}
                                         onContextMenu={(e) => handleRowClick(e, item.id)}
                                     >
                                         <td className="table-body-cell text-center" onClick={(e) => { e.stopPropagation(); handleToggleSelect(item.id); }}>
                                             {item.isProtected ? (
-                                                <ShieldCheck size={16} className="text-slate-400 mx-auto" title="System Protected Item" />
+                                                <ShieldCheck size={16} className="text-slate-400 mx-auto" />
                                             ) : (
                                                 isSelected ? <CheckSquare size={16} className="text-blue-600 mx-auto" /> : <Square size={16} className="text-slate-300 mx-auto hover:text-slate-500" />
                                             )}
@@ -365,26 +583,31 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                             </div>
                                         </td>
                                         <td className="table-body-cell text-slate-500 font-mono truncate">{item.sku}</td>
+                                        {showStockColumn && (
                                         <td className="table-body-cell text-center finance-nums font-bold text-slate-600">
-                                            {(item.type === 'Service' || item.type === 'Product') ? <span className="text-slate-300">-</span> : (
-                                                <>
-                                                    {item.stock.toLocaleString()} <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.unit}</span>
-                                                    {isLowStock && <AlertCircle size={12} className="inline ml-1 text-red-500" />}
-                                                </>
-                                            )}
+                                            <>
+                                                {item.stock.toLocaleString()} <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.unit}</span>
+                                                {isLowStock && <AlertCircle size={12} className="inline ml-1 text-red-500" />}
+                                            </>
                                         </td>
+                                        )}
                                         <td className={`table-body-cell text-right finance-nums font-bold ${(item.type === 'Raw Material' || item.type === 'Material') ? 'text-red-600' : 'text-green-600'}`}>
                                             {(item.type === 'Raw Material' || item.type === 'Material') ? formatMaterialItemCost(item, currency) : formatParentProductPrice(item, currency)}
                                             {(item.pricingConfig as any)?.manualOverride && (
                                                 <span className="ml-1 text-[9px] text-blue-600 font-bold" title="Manual Override">*</span>
                                             )}
                                         </td>
+                                        {/* Units Remaining / Sales column */}
                                         <td className="table-body-cell text-right finance-nums font-bold text-slate-600">
-                                            {(item.salesCount || 0).toLocaleString()}
+                                            {(item.type === 'Raw Material' || item.type === 'Material') 
+                                                ? Math.max(0, (item.stock || 0) - (item.reserved || 0)).toLocaleString()
+                                                : (item.salesCount || 0).toLocaleString()
+                                            }
                                         </td>
                                     </tr>
+                                )}
 
-                                    {isExpanded && hasVariants && item.variants?.map((variant: any) => (
+                                {isExpanded && hasVariants && !showServiceColumns && item.variants?.map((variant: any) => (
                                         <tr key={variant.id} id={`variant-${variant.id}`} className="bg-slate-50/50 hover:bg-blue-50/30 transition-colors border-l-4 border-blue-400 group/variant">
                                             <td className="table-body-cell"></td>
                                             <td className="table-body-cell pl-12">
@@ -399,22 +622,26 @@ export const ItemTable: React.FC<ItemTableProps> = ({
                                                 </div>
                                             </td>
                                             <td className="table-body-cell font-mono text-slate-400">{variant.sku}</td>
+                                            {showStockColumn && (
                                             <td className="table-body-cell text-center finance-nums font-bold text-slate-600">
-                                                {(item.type === 'Service' || item.type === 'Product')
-                                                    ? <span className="text-slate-300">-</span>
-                                                    : <>{variant.stock.toLocaleString()} <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.unit}</span></>}
+                                                <>{variant.stock.toLocaleString()} <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.unit}</span></>
                                             </td>
+                                            )}
                                              <td className={`table-body-cell text-right finance-nums font-bold ${(item.type === 'Raw Material' || item.type === 'Material') ? 'text-red-600' : 'text-green-600'}`}>
                                                 {currency}{((item.type === 'Raw Material' || item.type === 'Material') ? variant.cost : variant.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                              </td>
                                             <td className="table-body-cell text-right finance-nums text-slate-500 font-medium">
-                                                {(variant.salesCount || 0).toLocaleString()}
+                                                {(item.type === 'Raw Material' || item.type === 'Material')
+                                                    ? Math.max(0, ((variant as any).stock || 0) - ((variant as any).reserved || 0)).toLocaleString()
+                                                    : (variant.salesCount || 0).toLocaleString()
+                                            }
                                             </td>
                                         </tr>
                                     ))}
                                 </React.Fragment>
                             )
-                        })}
+                        })
+                    }
                     </tbody>
                 </table>
             </div>

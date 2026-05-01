@@ -420,7 +420,7 @@ export interface JobTicketSettings {
 
 export type AuditLogEntry = any; // TIER 2: Added as any due to missing definitions
 export type ExamInvoiceClassSummary = any; // TIER 2: Added as any due to missing definitions
-export type ItemType = 'Raw Material' | 'Service' | 'Product' | 'Stationery';
+export type ItemType = 'Raw Material' | 'Service' | 'Product' | 'Stationery' | 'Material';
 
 export interface Item {
   id: string;
@@ -468,6 +468,12 @@ export interface Item {
   profitPerPiece?: number;
   markup_percent?: number;
   manual_override?: boolean;
+  // Service-specific fields
+  serviceSku?: string;
+  priceType?: string;
+  size?: string;
+  color?: string;
+  status?: 'Active' | 'Inactive' | 'Pending';
   [key: string]: any;
 }
 export type User = any; // TIER 2: Added as any due to missing definitions
