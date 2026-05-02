@@ -1,12 +1,15 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-
-const dbPath = process.env.NODE_ENV === 'test'
-  ? ':memory:'
-  : (process.env.DB_PATH || path.resolve(__dirname, 'storage', 'examination.db'));
 const fs = require('fs');
+
+// Ensure storage directory exists
+const storageDir = path.resolve(__dirname, 'storage');
+if (!fs.existsSync(storageDir)) {
+  fs.mkdirSync(storageDir, { recursive: true });
+}
+
 const getWorkspaceDbPath = () => {
-  const configPath = path.resolve(__dirname, 'storage', 'workspace.json');
+  const configPath = path.resolve(storageDir, 'workspace.json');
   if (fs.existsSync(configPath)) {
     try {
       const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -15,12 +18,15 @@ const getWorkspaceDbPath = () => {
   }
   return null;
 };
+
 const workspaceDbPath = getWorkspaceDbPath();
+
+// Consolidate dbPath declaration - Production & Render Ready
 const dbPath = process.env.NODE_ENV === 'test'
   ? ':memory:'
-  : (process.env.DB_PATH || workspaceDbPath || path.resolve(__dirname, 'storage', 'examination.db'));
-const db = new sqlite3.Database(dbPath);
+  : (process.env.DB_PATH || workspaceDbPath || (process.env.RENDER ? '/tmp/examination.db' : path.resolve(storageDir, 'examination.db')));
 
+const db = new sqlite3.Database(dbPath);
 
 // Enable WAL mode so that concurrent reads are not blocked by ongoing writes.
 // This fixes the SQLITE_BUSY hang on GET /batches when a write transaction
