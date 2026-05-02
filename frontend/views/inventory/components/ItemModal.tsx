@@ -1386,6 +1386,12 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                 }
                 : undefined;
 
+            // SmartPricing products: price is fully computed and stored in the snapshot.
+            // Any non-price edit (name, SKU, category, etc.) must NOT re-run applyRoundingToPrice
+            // because it can misinterpret the snapshot price as a new uncalculated value and
+            // re-apply all market adjustment multipliers, producing prices in the millions.
+            const isSmartPricingProduct = !!(formData as any).smartPricing?.roundedPrice;
+
             const roundedPricing = normalizedPricingConfig?.manualOverride
                 ? {
                     calculatedPrice: Number(formData.price) || 0,
@@ -1399,6 +1405,14 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                         sellingPrice: effectiveStationeryPricing.sellingPrice,
                         roundingDifference: effectiveStationeryPricing.roundingDifference,
                         roundingMethod: effectiveStationeryPricing.roundingMethod
+                    }
+                : isSmartPricingProduct
+                    ? {
+                        // Use the snapshot values directly — price is already final
+                        calculatedPrice: Number((formData as any).smartPricing?.originalPrice ?? (formData as any).smartPricing?.roundedPrice) || 0,
+                        sellingPrice: Number((formData as any).smartPricing?.roundedPrice) || 0,
+                        roundingDifference: Number((formData as any).smartPricing?.roundingDifference ?? 0) || 0,
+                        roundingMethod: (formData as any).smartPricing?.roundingMethod as string | undefined
                     }
                 : applyRoundingToPrice(resolveRoundingBasePrice(), item || undefined);
 
@@ -1893,7 +1907,8 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                         { id: 'variants', label: 'Variants', icon: Layers }
                     ] as { id: 'basic' | 'pricing' | 'inventory' | 'variants'; label: string; icon: any }[])
                         .filter(tab => tab.id !== 'inventory' || hasStockFunctionality)
-                        .filter(tab => tab.id !== 'pricing' || formData.type === 'Product' || formData.type === 'Service' || formData.type === 'Stationery')
+                        .filter(tab => tab.id !== 'pricing' || formData.type === 'Product' || formData.type === 'Service' || formData.type === 'Stationery' || formData.type === 'Material')
+                        .filter(tab => tab.id !== 'variants' || formData.type !== 'Material')
                         .map(tab => (
                         <button
                             key={tab.id}
@@ -2147,7 +2162,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
 {/* Pricing Tab - Premium Design */}
                               {activeTab === 'pricing' && (
                                   <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
-                                      {(formData.type === 'Product' || formData.type === 'Material' || formData.type === 'Service') && (
+                                      {(formData.type === 'Product' || formData.type === 'Service') && (
                                           <>
                                               {/* Premium Header Card */}
                                               <div className={styles.premiumCard + " bg-gradient-to-br from-blue-50 via-white to-indigo-50 border-blue-100/50"}>
@@ -2446,6 +2461,118 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                   )}
                                               </div>
                                           </>
+                                      )}
+
+                                      {formData.type === 'Material' && (
+                                          <div className="space-y-6">
+                                              <div className={styles.premiumCard + " bg-gradient-to-br from-emerald-50 via-white to-teal-50 border-emerald-100/50"}>
+                                                  <div className="flex items-center gap-4 mb-6">
+                                                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/25">
+                                                          <DollarSign className="w-6 h-6 text-white" />
+                                                      </div>
+                                                      <div>
+                                                          <h3 className="text-lg font-bold text-slate-900">Material Pricing</h3>
+                                                          <p className="text-xs text-slate-500">Manual cost and unit configuration</p>
+                                                      </div>
+                                                  </div>
+
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                      <div>
+                                                          <label className={styles.label}>Cost Price ({currency})</label>
+                                                          <div className="relative">
+                                                              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium">{currency}</div>
+                                                              <input
+                                                                  type="number"
+                                                                  step="0.01"
+                                                                  value={formData.cost || 0}
+                                                                  onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value), cost_price: Number(e.target.value) })}
+                                                                  className={styles.input + " pl-10"}
+                                                                  placeholder="0.00"
+                                                              />
+                                                          </div>
+                                                          <p className="mt-2 text-[10px] text-slate-500 italic">Enter the base purchase cost for this material.</p>
+                                                      </div>
+                                                  </div>
+                                              </div>
+
+                                              <div className={styles.premiumCard}>
+                                                  <div className="flex items-center gap-2 mb-6">
+                                                      <div className="w-1.5 h-4 bg-emerald-500 rounded-full"></div>
+                                                      <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Unit Conversion</h3>
+                                                  </div>
+                                                  
+                                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                      <div>
+                                                          <label className={styles.label}>Purchase Unit</label>
+                                                          <select
+                                                              value={formData.purchaseUnit || ''}
+                                                              onChange={(e) => setFormData({ ...formData, purchaseUnit: e.target.value })}
+                                                              className={styles.select}
+                                                          >
+                                                              <option value="">Select Unit</option>
+                                                              {['Box', 'Pack', 'Roll', 'Ream', 'Kilogram', 'Liter', 'Pallet', 'Case', 'Set'].map(u => (
+                                                                  <option key={u} value={u}>{u}</option>
+                                                              ))}
+                                                          </select>
+                                                          <p className="mt-1.5 text-[10px] text-slate-400">Unit used when buying from suppliers</p>
+                                                      </div>
+
+                                                      <div>
+                                                          <label className={styles.label}>Usage Unit</label>
+                                                          <select
+                                                              value={formData.usageUnit || ''}
+                                                              onChange={(e) => setFormData({ ...formData, usageUnit: e.target.value })}
+                                                              className={styles.select}
+                                                          >
+                                                              <option value="">Select Unit</option>
+                                                              {['Sheet', 'Piece', 'Gram', 'Milliliter', 'Meter', 'Unit', 'Copy'].map(u => (
+                                                                  <option key={u} value={u}>{u}</option>
+                                                              ))}
+                                                          </select>
+                                                          <p className="mt-1.5 text-[10px] text-slate-400">Unit used for consumption/production</p>
+                                                      </div>
+
+                                                      <div>
+                                                          <label className={styles.label}>Conversion Rate</label>
+                                                          <div className="relative">
+                                                              <input
+                                                                  type="number"
+                                                                  min="1"
+                                                                  value={formData.conversionRate || 1}
+                                                                  onChange={(e) => setFormData({ ...formData, conversionRate: Number(e.target.value) })}
+                                                                  className={styles.input}
+                                                                  placeholder="e.g. 500"
+                                                              />
+                                                              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+                                                                  {formData.usageUnit || 'Units'} / {formData.purchaseUnit || 'Bulk'}
+                                                              </div>
+                                                          </div>
+                                                          <p className="mt-1.5 text-[10px] text-slate-400">How many usage units in one purchase unit</p>
+                                                      </div>
+                                                  </div>
+
+                                                  <div className="mt-8 p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                                                      <div className="flex items-center gap-3">
+                                                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-100">
+                                                              <Scale className="w-5 h-5 text-emerald-600" />
+                                                          </div>
+                                                          <div>
+                                                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Effective Cost Per {formData.usageUnit || 'Unit'}</div>
+                                                              <div className="text-sm font-bold text-slate-800">
+                                                                  {currency}{((formData.cost || 0) / (formData.conversionRate || 1)).toFixed(4)}
+                                                              </div>
+                                                          </div>
+                                                      </div>
+                                                      <ArrowRight className="w-4 h-4 text-slate-300" />
+                                                      <div className="text-right">
+                                                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Purchase Config</div>
+                                                          <div className="text-sm font-medium text-slate-600">
+                                                              1 {formData.purchaseUnit || 'Bulk'} = {formData.conversionRate || 1} {formData.usageUnit || 'Units'}
+                                                          </div>
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                          </div>
                                       )}
 
 

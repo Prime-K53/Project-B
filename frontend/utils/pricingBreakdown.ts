@@ -105,6 +105,14 @@ export const resolveItemAdjustmentSnapshots = (item: any): any[] => {
 
   const explicitSmartTotal = roundMoney(item?.smartPricingSnapshot?.marketAdjustmentTotal ?? 0);
 
+  // SmartPricing variant whose price is fully computed: if it has a smartPricingSnapshot
+  // but no marketAdjustments in it, return empty so the caller does NOT fall back to
+  // re-applying global market adjustments on an already-final price.
+  const isSmartPricingItem = !!(item?.smartPricingSnapshot || item?.pricingSource === "smart");
+  if (isSmartPricingItem && directSnapshots.length === 0 && smartSnapshots.length === 0) {
+    return [];
+  }
+
   if (
     smartSnapshots.length > 0
     && (directSnapshots.length === 0 || (directTotal === 0 && (smartTotal > 0 || explicitSmartTotal > 0)))

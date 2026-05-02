@@ -290,6 +290,23 @@ const repriceVariant = (
         nextCost = roundToCurrency(resolveStoredCost(variant));
         nextCalculatedPrice = roundToCurrency(resolveStoredCalculatedPrice(variant));
         nextSnapshots = variant.adjustmentSnapshots || [];
+    } else if (
+        (variant as any).smartPricingSnapshot?.roundedPrice ||
+        // Also protect variants whose parent is a SmartPricing product and already have a stored price.
+        // These variants were priced by the engine (via handleAddVariant in ItemModal) and stored
+        // with price/selling_price/calculated_price set. Re-running the BOM pipeline would corrupt them.
+        (parentItem.smartPricing?.roundedPrice && resolveStoredSellingPrice(variant) > 0)
+    ) {
+        // SmartPricing variant: price is fully computed by the engine and stored.
+        // This guard MUST come before hasDynamicSource && hasBomSource — every SmartPricing variant
+        // has a BOM source, but re-running calculateVariantPrice re-applies all market adjustments
+        // and produces prices in the millions. Preserve the stored values exactly.
+        nextCost = roundToCurrency(resolveStoredCost(variant));
+        nextCalculatedPrice = roundToCurrency(
+            Number((variant as any).smartPricingSnapshot?.originalPrice ?? (variant as any).smartPricingSnapshot?.roundedPrice)
+            || resolveStoredCalculatedPrice(variant)
+        );
+        nextSnapshots = variant.adjustmentSnapshots || [];
     } else if (hasDynamicSource && hasBomSource) {
         const dynamicResult = pricingService.calculateVariantPrice(
             parentItem,
@@ -445,6 +462,14 @@ const repriceItem = (
             nextPricingConfig.marketAdjustment = sumSnapshotAmounts(nextSnapshots);
             nextPricingConfig.marketAdjustmentId = applicableAdjustments[0]?.id;
         }
+    } else if (item.smartPricing?.roundedPrice) {
+        // SmartPricing product: price was fully computed and stored by the engine (snapshot is authoritative).
+        // This guard MUST come before the BOM branch — every SmartPricing product has a BOM attached,
+        // but re-running calculateItemPrice re-applies all market adjustments and produces prices in the millions.
+        // Any edit (name, SKU, category, description, etc.) must preserve the snapshot price exactly.
+        nextCost = roundToCurrency(resolveStoredCost(item));
+        nextCalculatedPrice = roundToCurrency(Number(item.smartPricing.originalPrice ?? item.smartPricing.roundedPrice) || resolveStoredCalculatedPrice(item));
+        nextSnapshots = item.adjustmentSnapshots || [];
     } else if (item.smartPricing?.bomTemplateId || item.smartPricing?.hiddenBOMId) {
         const bomTemplateId = item.smartPricing?.bomTemplateId || item.smartPricing?.hiddenBOMId;
         const virtualItem: Item = {

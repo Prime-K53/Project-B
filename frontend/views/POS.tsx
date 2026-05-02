@@ -1036,8 +1036,12 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
       const processesedItemsWithSnapshots = processedItems.map((item: any) => {
         let snapshots = resolveItemAdjustmentSnapshots(item);
 
-        // Fallback calculation for held orders or legacy items
-        if ((!snapshots || snapshots.length === 0) && item.type !== 'Service') {
+        // SmartPricing variants have their price fully computed and stored by the engine.
+        // Do NOT re-apply market adjustments — their adjustments are already baked in.
+        const isSmartPricingVariant = !!(item as any).parentId && !!(item as any).smartPricingSnapshot;
+
+        // Fallback calculation for held orders or legacy items (skip for SmartPricing variants)
+        if ((!snapshots || snapshots.length === 0) && item.type !== 'Service' && !isSmartPricingVariant) {
           const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
           const itemCost = item.cost || 0;
           snapshots = activeAdjs.map((adj: any) => {

@@ -296,8 +296,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     const [customerSearch, setCustomerSearch] = useState('');
     const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
     const [itemSearch, setItemSearch] = useState('');
+    const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
 
     const customerDropdownRef = useRef<HTMLDivElement>(null);
+    const itemDropdownRef = useRef<HTMLDivElement>(null);
 
     const getCustomerOutstanding = (name: string) => {
         return (invoices as Invoice[])
@@ -312,8 +314,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
     }, [customerNames, customerSearch]);
 
     const filteredInventory = useMemo(() => {
-        return inventory.filter((i: Item) =>
-            i.type !== 'Material' &&
+        const base = inventory.filter((i: Item) => i.type !== 'Material');
+        if (!itemSearch) return base;
+        return base.filter((i: Item) =>
             (i.name.toLowerCase().includes(itemSearch.toLowerCase()) || i.sku.toLowerCase().includes(itemSearch.toLowerCase()))
         );
     }, [inventory, itemSearch]);
@@ -797,31 +800,41 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
             // Aggregate adjustments (Use stored snapshots OR calculate dynamically if missing)
             let currentSnapshots = resolveItemAdjustmentSnapshots(item);
 
+            // SmartPricing variants have their price fully computed and stored by the engine.
+            // Do NOT re-apply market adjustments — their adjustments are already baked in.
+            const isSmartPricingVariant = !!(item as any).parentId && !!(item as any).smartPricingSnapshot;
+
             if (!currentSnapshots || currentSnapshots.length === 0) {
-                // Calculation fallback for legacy items or missing snapshots
-                // Filter active adjustments
-                const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
+                if (isSmartPricingVariant) {
+                    // Price is final — skip the dynamic fallback entirely to avoid double-applying
+                    // logistics, market adjustments, and other modifiers.
+                    currentSnapshots = [];
+                } else {
+                    // Calculation fallback for legacy items or missing snapshots
+                    // Filter active adjustments
+                    const activeAdjs = marketAdjustments.filter((ma: any) => ma.active ?? ma.isActive);
 
-                currentSnapshots = activeAdjs.map((adj: any) => {
-                    let calcAmount = 0;
-                    // Determine amount based on type
-                    const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
+                    currentSnapshots = activeAdjs.map((adj: any) => {
+                        let calcAmount = 0;
+                        // Determine amount based on type
+                        const isPercentage = adj.type === 'PERCENTAGE' || adj.type === 'PERCENT' || adj.type === 'percentage';
 
-                    if (isPercentage) {
-                        calcAmount = itemCost * (adj.value / 100);
-                    } else {
-                        calcAmount = adj.value;
-                    }
+                        if (isPercentage) {
+                            calcAmount = itemCost * (adj.value / 100);
+                        } else {
+                            calcAmount = adj.value;
+                        }
 
-                    return {
-                        name: adj.name,
-                        type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
-                        value: adj.value,
-                        percentage: isPercentage ? adj.value : undefined,
-                        // Ensure calcAmount is a number
-                        calculatedAmount: Number((calcAmount || 0).toFixed(2))
-                    };
-                });
+                        return {
+                            name: adj.name,
+                            type: adj.type || (isPercentage ? 'PERCENTAGE' : 'FIXED'),
+                            value: adj.value,
+                            percentage: isPercentage ? adj.value : undefined,
+                            // Ensure calcAmount is a number
+                            calculatedAmount: Number((calcAmount || 0).toFixed(2))
+                        };
+                    });
+                }
             }
 
             // Calculate totals for summary
@@ -938,6 +951,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ type, initialData, onSave,
         const handleClickOutside = (event: MouseEvent) => {
             if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target as Node)) {
                 setIsCustomerDropdownOpen(false);
+            }
+            if (itemDropdownRef.current && !itemDropdownRef.current.contains(event.target as Node)) {
+                setIsItemDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -2478,61 +2494,88 @@ const handleVariantSelect = async (variant: ProductVariant) => {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-5">
-                                    <div className="flex gap-6">
-                                        <button
-                                            onClick={() => handleQuickService('Printing')}
-                                            className="text-blue-600 hover:underline flex items-center gap-1.5 text-sm font-semibold"
-                                        >
-                                            <FileText size={16} /> Type and Printing
-                                        </button>
-                                        <button
-                                            onClick={() => handleQuickService('Photocopy')}
-                                            className="text-blue-600 hover:underline flex items-center gap-1.5 text-sm font-semibold"
-                                        >
-                                            <Copy size={16} /> Photocopy
-                                        </button>
+                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+                                    {/* Row 1: Add Items to Voucher Header */}
+                                    <div className="p-4 bg-slate-50 border-b border-slate-200">
+                                        <h3 className="text-[13px] font-semibold text-slate-800">Add Items to Voucher</h3>
                                     </div>
+                                    
+                                    {/* Row 2: Search Box + Quick Service Buttons */}
+                                    <div className="p-4 flex items-center gap-4" ref={itemDropdownRef}>
+                                        <div className="relative w-80">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={12} />
+                                            <input
+                                                type="text"
+                                                className="w-full pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-[11px] bg-white outline-none focus:ring-4 focus:ring-blue-500/5 transition-all shadow-sm"
+                                                placeholder="Search items..."
+                                                value={itemSearch}
+                                                onFocus={() => setIsItemDropdownOpen(true)}
+                                                onChange={(e) => {
+                                                    setItemSearch(e.target.value);
+                                                    setIsItemDropdownOpen(true);
+                                                }}
+                                            />
+                                            <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
 
-                                    <div className="flex justify-between items-center">
-                                        <h3 className="text-[12px] font-normal text-slate-500 uppercase tracking-wider">Add Items to Voucher</h3>
-                                        <div className="flex items-center gap-3">
-                                            <div className="relative w-56">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={12} />
-                                                <input
-                                                    type="text"
-                                                    className="w-full pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-[11px] bg-white outline-none focus:ring-4 focus:ring-blue-500/5 transition-all shadow-sm"
-                                                    placeholder="Search..."
-                                                    value={itemSearch}
-                                                    onChange={(e) => setItemSearch(e.target.value)}
-                                                />
-                                            </div>
+                                            {isItemDropdownOpen && (
+                                                <div className="absolute z-[60] mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-premium max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-100">
+                                                    {filteredInventory.length === 0 ? (
+                                                        <div className="p-4 flex flex-col items-center gap-3">
+                                                            <p className="text-xs text-slate-400 italic font-normal">No matching items.</p>
+                                                        </div>
+                                                    ) : (
+                                                        filteredInventory.map(item => {
+                                                            const hasVariants = item.variants && item.variants.length > 0;
+                                                            const prices = hasVariants ? item.variants.map((v: any) => Number(v.price || v.selling_price || 0)) : [];
+                                                            const minPrice = hasVariants ? Math.min(...prices) : 0;
+                                                            const maxPrice = hasVariants ? Math.max(...prices) : 0;
+                                                            const isPriceRange = hasVariants && minPrice !== maxPrice;
+
+                                                            return (
+                                                                <button
+                                                                    key={item.id}
+                                                                    onClick={() => {
+                                                                        handleAddItem(item);
+                                                                        setIsItemDropdownOpen(false);
+                                                                        setItemSearch('');
+                                                                    }}
+                                                                    className="w-full px-4 py-3 text-left hover:bg-blue-50 flex flex-col gap-1 transition-colors border-b border-slate-50 last:border-0"
+                                                                >
+                                                                    <div className="flex justify-between items-start">
+                                                                        <span className="text-xs font-semibold text-slate-800 truncate pr-4">{item.name}</span>
+                                                                        <span className="text-xs font-bold text-slate-900 shrink-0">
+                                                                            {isPriceRange 
+                                                                                ? `${currency}${minPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })} - ${currency}${maxPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                                                                                : `${currency}${Number((hasVariants ? minPrice : (item.price || item.selling_price)) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                                                                            }
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center">
+                                                                        <span className="text-[10px] text-slate-400 font-mono tracking-tight">{item.sku || 'NO-SKU'}</span>
+                                                                        <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{item.type}</span>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-
-                                    {/* max-h adjusted to show exactly 2 rows of ~65px cards + 12px gap */}
-                                    <div className="grid grid-cols-3 gap-2.5 max-h-[155px] overflow-y-auto custom-scrollbar pr-1 pb-1 w-full">
-                                        {filteredInventory.length === 0 ? (
-                                            <div className="col-span-full py-6 flex flex-col items-center gap-3">
-                                                <p className="text-center text-slate-300 italic text-xs">No matching items.</p>
-                                            </div>
-                                        ) : (
-                                            filteredInventory.map(item => (
-                                                <button
-                                                    key={item.id}
-                                                    onClick={() => handleAddItem(item)}
-                                                    className="bg-white p-2.5 border border-slate-100 rounded-xl hover:border-blue-400 hover:shadow-sm transition-all text-left group flex flex-col justify-center min-h-[65px] relative overflow-hidden"
-                                                >
-                                                    <div className="flex justify-between items-center gap-1">
-                                                        <p className="text-[11px] font-normal text-slate-700 group-hover:text-blue-600 transition-colors line-clamp-2 flex-1">{item.name}</p>
-                                                        <span className="text-[11px] font-normal text-blue-600 font-mono shrink-0">
-                                                            {item.isVariantParent ? 'View' : `${currency}${resolveStoredSellingPrice(item as any).toLocaleString()}`}
-                                                        </span>
-                                                    </div>
-                                                    {item.isVariantParent && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-400"></div>}
-                                                </button>
-                                            ))
-                                        )}
+                                        
+                                        <div className="flex items-center gap-3 shrink-0 ml-auto">
+                                            <button
+                                                onClick={() => handleQuickService('Printing')}
+                                                className="text-blue-600 hover:underline flex items-center gap-1.5 text-sm font-semibold"
+                                            >
+                                                <FileText size={16} /> Type and Printing
+                                            </button>
+                                            <button
+                                                onClick={() => handleQuickService('Photocopy')}
+                                                className="text-blue-600 hover:underline flex items-center gap-1.5 text-sm font-semibold"
+                                            >
+                                                <Copy size={16} /> Photocopy
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}

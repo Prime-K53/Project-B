@@ -459,7 +459,13 @@ export const api = {
     updateItem: (item: Item) => handle(async () => {
       checkAuth(['Admin', 'Accountant', 'Clerk'], 'Inventory.Update');
       await dbService.put('inventory', item);
-      await recalculateProductPrice(item.id);
+      // SmartPricing products have their price fully computed and stored by the engine.
+      // Calling recalculateProductPrice re-runs the BOM+market-adjustment pipeline and
+      // corrupts the price into the millions. Skip it — the saved item IS the final state.
+      const isSmartPricingProduct = !!(item as any).smartPricing?.roundedPrice;
+      if (!isSmartPricingProduct) {
+        await recalculateProductPrice(item.id);
+      }
       return;
     }, 'Inventory.Update'),
     deleteItem: (id: string) => handle(async () => {

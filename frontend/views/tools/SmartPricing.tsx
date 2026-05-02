@@ -361,7 +361,7 @@ const SmartPricing: React.FC = () => {
                 sku: existingProduct?.sku || `SKU-${Date.now()}`,
                 type: itemType,
                 category: existingProduct?.category || (itemType === 'Service' ? 'Services' : 'Printed Products'),
-                unit: existingProduct?.unit || 'copy',
+                unit: existingProduct?.unit || 'Booklet',
                 cost: baseCost,
                 cost_price: baseCost,
                 price: displayTotal,
