@@ -3420,20 +3420,11 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                     ) : (
                                                         <thead>
                                                             <tr className="border-b border-slate-100">
-                                                                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Variant</th>
+                                                                <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Variant Name</th>
                                                                 <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider w-20">Pages</th>
-                                                                {formData.smartPricing && (
-                                                                    <>
-                                                                        <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-blue-400 uppercase tracking-wider">Paper</th>
-                                                                        <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-purple-400 uppercase tracking-wider">Toner</th>
-                                                                        <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-green-400 uppercase tracking-wider">Finishing</th>
-                                                                        <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Adjustments</th>
-                                                                        <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-orange-400 uppercase tracking-wider">Margin</th>
-                                                                    </>
-                                                                )}
-                                                                {!formData.smartPricing && (
-                                                                    <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Cost</th>
-                                                                )}
+                                                                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-emerald-400 uppercase tracking-wider">Total Adjustments</th>
+                                                                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-orange-400 uppercase tracking-wider">Profit Margin</th>
+                                                                <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-purple-400 uppercase tracking-wider">Round Up</th>
                                                                 <th className="text-right px-3 py-2.5 text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">Selling Price</th>
                                                                 <th className="w-20 px-3 py-2.5"></th>
                                                             </tr>
@@ -3601,83 +3592,73 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                                     <tbody className="divide-y divide-slate-50">
                                                         {formData.variants.map((variant, idx) => {
                                                             const snap = (variant as any).smartPricingSnapshot;
+                                                            const totalAdjustments = snap?.marketAdjustmentTotal ?? (variant as any).adjustmentTotal ?? 0;
+                                                            const profitMargin = snap?.profitMarginAmount ?? 0;
+                                                            const roundUp = snap?.roundingDifference ?? (variant as any).rounding_difference ?? 0;
+                                                            const wasRounded = snap?.wasRounded ?? (roundUp !== 0);
                                                             return (
                                                                 <React.Fragment key={variant.id || idx}>
                                                                     <tr className="hover:bg-slate-50 transition-colors">
-                                                                        {/* Name + SKU */}
+                                                                        {/* Variant Name */}
                                                                         <td className="px-4 py-3">
                                                                             <div className="font-medium text-slate-800">{variant.name}</div>
+                                                                            <div className="text-[10px] font-mono text-slate-400 mt-0.5">{variant.sku}</div>
                                                                         </td>
 
-                                                                        {/* Pages â€” editable, triggers reprice */}
-                                                                        {formData.type !== 'Stationery' && (
-                                                                            <td className="px-3 py-3 text-center">
-                                                                                <input
-                                                                                    type="number"
-                                                                                    min="1"
-                                                                                    value={variant.pages || 1}
-                                                                                    onChange={(e) => handleVariantPagesChange(variant.id, Math.max(1, Number(e.target.value) || 1))}
-                                                                                    className="w-16 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-center focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none"
-                                                                                />
-                                                                            </td>
-                                                                        )}
+                                                                        {/* Pages – editable, triggers live reprice */}
+                                                                        <td className="px-3 py-3 text-center">
+                                                                            <input
+                                                                                type="number"
+                                                                                min="1"
+                                                                                value={variant.pages || 1}
+                                                                                onChange={(e) => handleVariantPagesChange(variant.id, Math.max(1, Number(e.target.value) || 1))}
+                                                                                className="w-16 px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-center focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none"
+                                                                            />
+                                                                        </td>
 
-                                                                        {/* Smart pricing breakdown columns */}
-                                                                        {formData.smartPricing && (
-                                                                            <>
-                                                                                <td className="px-3 py-3 text-right text-xs text-slate-600">
-                                                                                    {currency}{(snap?.paperCost ?? 0).toFixed(2)}
-                                                                                </td>
-                                                                                <td className="px-3 py-3 text-right text-xs text-slate-600">
-                                                                                    {currency}{(snap?.tonerCost ?? 0).toFixed(2)}
-                                                                                </td>
-                                                                                <td className="px-3 py-3 text-right text-xs text-slate-600">
-                                                                                    {currency}{(snap?.finishingCost ?? 0).toFixed(2)}
-                                                                                </td>
-                                                                                <td className="px-3 py-3 text-right text-xs text-emerald-600">
-                                                                                    +{currency}{(snap?.marketAdjustmentTotal ?? 0).toFixed(2)}
-                                                                                </td>
-                                                                                <td className="px-3 py-3 text-right text-xs text-orange-600">
-                                                                                    +{currency}{(snap?.profitMarginAmount ?? 0).toFixed(2)}
-                                                                                </td>
-                                                                            </>
-                                                                        )}
-
-                                                                        {/* Cost (non-smart products only) */}
-                                                                        {!formData.smartPricing && (
-                                                                            <td className="px-3 py-3 text-right text-xs font-medium text-emerald-700">
-                                                                                {currency}{(variant.cost ?? 0).toFixed(2)}
-                                                                            </td>
-                                                                        )}
-
-                                                                        {/* Selling price */}
+                                                                        {/* Total Adjustments */}
                                                                         <td className="px-3 py-3 text-right">
-                                                                            <div className="font-bold text-indigo-700 text-sm">{currency}{resolveVariantBasePrice(variant).toFixed(2)}</div>
-                                                                            {snap?.wasRounded && (
-                                                                                <div className="text-[10px] text-purple-400">rounded +{currency}{(snap.roundingDifference ?? 0).toFixed(2)}</div>
+                                                                            <div className="text-xs font-medium text-emerald-700">
+                                                                                +{currency}{Number(totalAdjustments).toFixed(2)}
+                                                                            </div>
+                                                                        </td>
+
+                                                                        {/* Profit Margin */}
+                                                                        <td className="px-3 py-3 text-right">
+                                                                            <div className="text-xs font-medium text-orange-600">
+                                                                                +{currency}{Number(profitMargin).toFixed(2)}
+                                                                            </div>
+                                                                        </td>
+
+                                                                        {/* Round Up */}
+                                                                        <td className="px-3 py-3 text-right">
+                                                                            {wasRounded ? (
+                                                                                <div className="text-xs font-medium text-purple-600">
+                                                                                    +{currency}{Number(roundUp).toFixed(2)}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="text-xs text-slate-300">—</div>
                                                                             )}
                                                                         </td>
 
-                                                                        {/* Stock */}
-
+                                                                        {/* Selling Price */}
+                                                                        <td className="px-3 py-3 text-right">
+                                                                            <div className="font-bold text-indigo-700 text-sm">
+                                                                                {currency}{resolveVariantBasePrice(variant).toFixed(2)}
+                                                                            </div>
+                                                                        </td>
 
                                                                         {/* Actions */}
                                                                         <td className="px-3 py-3 text-center">
-                                                                            <div className="flex items-center justify-center gap-1">
-
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleRemoveVariant(variant.id)}
-                                                                                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                                                >
-                                                                                    <Trash2 className="w-4 h-4" />
-                                                                                </button>
-                                                                            </div>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleRemoveVariant(variant.id)}
+                                                                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                                                            >
+                                                                                <Trash2 className="w-4 h-4" />
+                                                                            </button>
                                                                         </td>
                                                                     </tr>
-
-                                                                    {/* Volume pricing expander â€” full-width row */}
-
                                                                 </React.Fragment>
                                                             );
                                                         })}
