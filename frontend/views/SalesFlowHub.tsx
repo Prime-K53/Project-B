@@ -36,8 +36,8 @@ const SalesFlowHub: React.FC = () => {
       color: 'bg-indigo-50 text-indigo-500'
     },
     {
-      label: 'Payments',
-      description: 'Record customer payments and process supplier bill payments in a unified view.',
+      label: 'Payment Management',
+      description: 'Record and track payments received from your customers.',
       path: '/sales-flow/payments',
       icon: <PaymentIcon />,
       color: 'bg-emerald-50 text-emerald-500'

@@ -15,7 +15,7 @@ const ProcurementHub: React.FC = () => {
     {
       label: 'Supplier Payments',
       description: 'Process payments for bills, manage credit notes, and view payment history.',
-      path: '/sales-flow/payments',
+      path: '/procurement/payments',
       icon: <Wallet />,
       color: 'bg-emerald-50 text-emerald-500'
     },

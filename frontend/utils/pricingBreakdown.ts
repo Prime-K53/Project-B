@@ -155,7 +155,7 @@ export const buildPricingBreakdownSnapshot = (
     };
   }
 
-  const smartSnapshot = item.smartPricingSnapshot;
+  const smartSnapshot = item.smartPricingSnapshot || item.smartPricing;
   const adjustmentSnapshots = resolveItemAdjustmentSnapshots(item);
   const sellingPrice = roundMoney(
     item.price
@@ -190,6 +190,7 @@ export const buildPricingBreakdownSnapshot = (
   const explicitMargin = Number(
     smartSnapshot?.profitMarginAmount
     ?? item.profitMarginAmount
+    ?? item.marginAmount
     ?? getProfitMarginAmountFromSnapshots(adjustmentSnapshots)
   );
   const profitMarginAmount = Number.isFinite(explicitMargin)

@@ -1070,11 +1070,32 @@ export const SalesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const generateZReport = (cashierId: string): ZReport => {
         const today = new Date();
-        const todaySales = salesStore.sales.filter(sale =>
-            isSameDay(parseISO(sale.date), today) &&
-            (sale.status === 'Paid' || sale.status === 'Completed') &&
-            (cashierId === '' || sale.cashierId === cashierId || sale.cashierId === 'unknown' || !sale.cashierId)
-        );
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        
+        const allSales = salesStore.sales;
+        
+        const todaySales = allSales.filter(sale => {
+            const saleDate = sale.date ? new Date(sale.date) : null;
+            if (!saleDate || !Number.isFinite(saleDate.getTime())) {
+                console.log('[Z-Report] Sale missing/invalid date:', sale.id, sale.date);
+                return false;
+            }
+            
+            const isToday = saleDate >= todayStart && saleDate <= todayEnd;
+            const status = String(sale.status || '').toLowerCase();
+            const isPaid = status === 'paid' || status === 'completed';
+            const matchesCashier = cashierId === '' || sale.cashierId === cashierId || sale.cashierId === 'unknown' || !sale.cashierId;
+            
+            return isToday && isPaid && matchesCashier;
+        });
+
+        console.log('[Z-Report] Filtering sales:', {
+            totalSalesInStore: allSales.length,
+            todaySalesCount: todaySales.length,
+            cashierId,
+            today: today.toISOString()
+        });
 
         const totals = todaySales.reduce((acc, sale) => {
             acc.total += sale.totalAmount;

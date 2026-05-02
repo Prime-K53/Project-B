@@ -323,22 +323,6 @@ export interface NotificationAuditLog {
   created_at: string;
 }
 
-// Sales Order Types
-export interface SalesOrderItem {
-  id: string;
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  unit_price: number;
-  discount?: number;
-  tax?: number;
-  line_total?: number;
-}
-
-export interface SalesOrder extends SalesOrderBase {
-  created_by?: string;
-  created_at?: string;
-}
 
 // ============================================
 // PRINT JOB TICKET TYPES - For Printing Services
@@ -614,28 +598,131 @@ export interface ProductVariant {
   priceLockKey?: string;
   [key: string]: any;
 }
-export type PricingSettings = any; // TIER 2: Added as any due to missing definitions
-export type PricingThresholdRule = any; // TIER 2: Added as any due to missing definitions
-export type RoundingAnalytics = any; // TIER 2: Added as any due to missing definitions
-export type ConsumptionSnapshot = any; // TIER 2: Added as any due to missing definitions
-export type TransactionAdjustmentSnapshot = any; // TIER 2: Added as any due to missing definitions
-export type DynamicServiceDetails = any; // TIER 2: Added as any due to missing definitions
-export type ReceiptPaymentStatus = any; // TIER 2: Added as any due to missing definitions
-export type RoundingDashboardData = any; // TIER 2: Added as any due to missing definitions
-export type RoundingInsight = any; // TIER 2: Added as any due to missing definitions
-export type RoundingMethodPerformanceRow = any; // TIER 2: Added as any due to missing definitions
-export type RoundingPeriodReportRow = any; // TIER 2: Added as any due to missing definitions
-export type RoundingPriceHistoryEntry = any; // TIER 2: Added as any due to missing definitions
-export type RoundingProductPerformanceRow = any; // TIER 2: Added as any due to missing definitions
-export type RoundingProfitProjection = any; // TIER 2: Added as any due to missing definitions
-export type RoundingProfitSummary = any; // TIER 2: Added as any due to missing definitions
-export type RoundingRealizedProfitResult = any; // TIER 2: Added as any due to missing definitions
-export type RoundingRealizedProfitRow = any; // TIER 2: Added as any due to missing definitions
-export type RoundingTopProductRow = any; // TIER 2: Added as any due to missing definitions
-export type SalesExchangeItem = any; // TIER 2: Added as any due to missing definitions
-export type SalesExchangeApproval = any; // TIER 2: Added as any due to missing definitions
-export type ProofOfDeliveryRecord = any; // TIER 2: Added as any due to missing definitions
-export type AccountType = any; // TIER 2: Added as any due to missing definitions
+export interface PricingThresholdRule {
+  minPrice: number;
+  maxPrice?: number;
+  step: number;
+  method?: PricingRoundingMethod;
+}
+
+export interface RoundingAnalytics {
+  totalExtraProfit: number;
+  roundedTransactions: number;
+  lastUpdatedAt?: string;
+  byMethod: Record<string, number>;
+}
+
+export interface PricingSettings {
+  enableRounding: boolean;
+  defaultMethod: PricingRoundingMethod;
+  customStep: number;
+  applyToPOS: boolean;
+  applyToInvoices: boolean;
+  applyToQuotations: boolean;
+  allowManualOverride: boolean;
+  showOriginalPrice: boolean;
+  profitProtectionMode: boolean;
+  enableSmartThresholds: boolean;
+  thresholdRules: PricingThresholdRule[];
+  analytics: RoundingAnalytics;
+}
+
+export interface ConsumptionSnapshot {
+  itemId: string;
+  quantity: number;
+  cost: number;
+  totalCost: number;
+  name?: string;
+}
+
+export interface TransactionAdjustmentSnapshot {
+  id: string;
+  name: string;
+  amount: number;
+  type: string;
+}
+
+export interface DynamicServiceDetails {
+  materials: ConsumptionSnapshot[];
+  adjustments: TransactionAdjustmentSnapshot[];
+}
+
+export type ReceiptPaymentStatus = 'Paid' | 'Partial' | 'Unpaid' | 'Voided' | 'Overpaid';
+
+export interface FinancialIntegrityIssue {
+  id: string;
+  severity: 'high' | 'medium' | 'low';
+  type: string;
+  entityType: string;
+  entityId?: string;
+  message: string;
+  recommendedAction: string;
+  relatedIds?: string[];
+}
+
+export interface FinancialIntegrityAuditResult {
+  healthy: boolean;
+  issues: FinancialIntegrityIssue[];
+  summary: {
+    totalIssues: number;
+    highSeverity: number;
+    mediumSeverity: number;
+    lowSeverity: number;
+    checkedAt: string;
+  };
+}
+
+export interface VerifiedMonthlyMetrics {
+  revenue: number;
+  expenses: number;
+  netProfit: number;
+}
+
+export interface VerifiedDashboardMetrics {
+  currentMonth: VerifiedMonthlyMetrics;
+  previousMonth: VerifiedMonthlyMetrics;
+  todayCollection: number;
+  receivables: number;
+  payables: number;
+  cashPosition: number;
+  cashForecast: number;
+}
+
+export interface Discrepancy {
+  type: string;
+  entityId: string;
+  entityName: string;
+  expectedValue: number;
+  actualValue: number;
+  difference: number;
+  suggestedAction: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface ReconciliationResult {
+  success: boolean;
+  discrepancies: Discrepancy[];
+  summary: {
+    totalChecked: number;
+    totalDiscrepancies: number;
+  };
+}
+
+export type RoundingDashboardData = any; 
+export type RoundingInsight = any;
+export type RoundingMethodPerformanceRow = any;
+export type RoundingPeriodReportRow = any;
+export type RoundingPriceHistoryEntry = any;
+export type RoundingProductPerformanceRow = any;
+export type RoundingProfitProjection = any;
+export type RoundingProfitSummary = any;
+export type RoundingRealizedProfitResult = any;
+export type RoundingRealizedProfitRow = any;
+export type RoundingTopProductRow = any;
+export type SalesExchangeItem = any;
+export type SalesExchangeApproval = any;
+export type ProofOfDeliveryRecord = any;
+export type AccountType = any;
 export interface PricingConfig {
   paperId?: string;
   tonerId?: string;

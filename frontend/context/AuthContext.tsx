@@ -403,6 +403,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (status === 'connected') setLastSyncTime(new Date().toISOString());
         });
 
+        // Initialize workspace directory if company name exists
+        if (parsedConfig?.companyName) {
+            try {
+                await (window as any).api?.system?.initializeWorkspace(parsedConfig.companyName);
+            } catch (wsErr) {
+                console.warn("[Auth] Workspace initialization skipped:", wsErr);
+            }
+        }
+
         // Initialization complete
       } catch (err) {
         console.error("[Auth] Critical system initialization failure:", err);
@@ -700,6 +709,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('nexus_initialized', 'true');
     setRequiresSetup(false);
     setIsInitialized(true);
+
+    // Initialize local workspace on Desktop
+    try {
+      const { api } = await import('../services/api');
+      await api.system.initializeWorkspace(normalizedConfig.companyName);
+      console.log('Local workspace initialized successfully.');
+    } catch (err) {
+      console.warn('Failed to initialize local workspace:', err);
+    }
+
     if (isPasswordProtectionEnabled(normalizedConfig)) {
       setUser(null);
       sessionStorage.removeItem('nexus_user');

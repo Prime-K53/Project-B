@@ -29,7 +29,7 @@ import { calculateSellingPrice, calculateServicePrice } from '../utils/pricing/p
 import { aggregateMarketAdjustmentSnapshots, attachPricingBreakdown, getMarketAdjustmentSnapshots, getSnapshotCalculatedAmount, resolveItemAdjustmentSnapshots, summarizePricingBreakdown } from '../utils/pricingBreakdown';
 
 const POS: React.FC = () => {
-  const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, addAlert, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [] } = useData();
+  const { inventory, user, sales, invoices, customers, parkOrder, heldOrders, retrieveOrder, notify, addAlert, companyConfig, generateZReport, accounts, addBOM, fetchSalesData, updateReservedStock, marketAdjustments = [], updateCompanyConfig } = useData();
   const { postZReportToLedger, fetchFinanceData } = useFinance();
   const currency = companyConfig.currencySymbol;
 
@@ -44,6 +44,8 @@ const POS: React.FC = () => {
   const [showHeldOrdersModal, setShowHeldOrdersModal] = useState(false);
   const [showZReport, setShowZReport] = useState(false);
   const [selectedServiceForCalculator, setSelectedServiceForCalculator] = useState<Item | null>(null);
+  const [autoPreviewReceipt, setAutoPreviewReceipt] = useState(companyConfig?.transactionSettings?.showReceiptPreview !== false);
+  const [quickReceiptSale, setQuickReceiptSale] = useState<Sale | null>(null);
     
     const handleConfigureService = (service: Item) => {
         console.log('handleConfigureService called with:', service.name, service.type, service.category);
@@ -1098,6 +1100,8 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
          profitMarginTotal: pricingSummary.profitMarginTotal,
          roundingTotal: pricingSummary.roundingTotal,
          roundingDifference: pricingSummary.roundingTotal,
+         materialTotal: pricingSummary.materialTotal,
+         material_total_cost: pricingSummary.materialTotal,
         };
 
       try {
@@ -1151,13 +1155,16 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
 
       const previewData = buildValidatedPosReceipt(receiptSale);
 
-      // Proactively start PDF generation in background if possible, 
-      // but for now just ensure the state is set immediately.
-      setPreviewState({
-        isOpen: true,
-        type: 'POS_RECEIPT',
-        data: previewData
-      });
+      // Only show receipt preview if user has the toggle on
+      if (autoPreviewReceipt) {
+        setPreviewState({
+          isOpen: true,
+          type: 'POS_RECEIPT',
+          data: previewData
+        });
+      } else {
+        setQuickReceiptSale(receiptSale as any);
+      }
 
       if (companyConfig.transactionSettings?.autoPrintReceipt) {
         if (hardwareService.isConnected()) {
@@ -1276,10 +1283,28 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
               </span>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setShowHeldOrdersModal(true)} className="px-4 py-1.5 rounded-xl border border-slate-200 text-sm font-semibold hover:bg-slate-100 flex items-center gap-2">
-                <ClockIcon size={14} /> Held ({heldOrders.length})
-              </button>
-              <button onClick={() => { setZReportData(generateZReport(user?.id || '')); setShowZReport(true); }} className="px-4 py-1.5 rounded-xl border border-slate-200 text-sm font-semibold hover:bg-slate-100 flex items-center gap-2">
+              <label className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 text-sm font-semibold hover:bg-slate-100 cursor-pointer transition-colors">
+                <div className={`w-8 h-4 rounded-full flex items-center p-0.5 transition-colors ${autoPreviewReceipt ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                  <div className={`bg-white w-3 h-3 rounded-full shadow-sm transform transition-transform ${autoPreviewReceipt ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                </div>
+                <span className="text-slate-700">Preview</span>
+                <input 
+                  type="checkbox" 
+                  className="hidden" 
+                  checked={autoPreviewReceipt} 
+                  onChange={(e) => {
+                    setAutoPreviewReceipt(e.target.checked);
+                    updateCompanyConfig({
+                      ...companyConfig,
+                      transactionSettings: {
+                        ...companyConfig.transactionSettings,
+                        showReceiptPreview: e.target.checked
+                      }
+                    } as any);
+                  }} 
+                />
+              </label>
+              <button onClick={async () => { await fetchSalesData?.(); setZReportData(generateZReport(user?.id || '')); setShowZReport(true); }} className="px-4 py-1.5 rounded-xl border border-slate-200 text-sm font-semibold hover:bg-slate-100 flex items-center gap-2">
                 <TrendingUp size={14} /> Register
               </button>
             </div>
@@ -1291,7 +1316,7 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
           onConfigureService={handleConfigureService}
           onRecall={() => setShowHeldOrdersModal(true)}
           heldCount={heldOrders.length}
-          onZReport={() => { setZReportData(generateZReport(user?.id || '')); setShowZReport(true); }}
+          onZReport={async () => { await fetchSalesData?.(); setZReportData(generateZReport(user?.id || '')); setShowZReport(true); }}
         />
       </div>
 
@@ -1348,6 +1373,46 @@ const handleQuickPrintConfirm = (quantity: number, pagesPerCopy: number, total: 
               >
                 {isClosingDrawer ? <RefreshCw size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
                 {isClosingDrawer ? 'Posting to Ledger...' : 'Close Register & Post'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quickReceiptSale && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-[2px]">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden flex flex-col border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2 uppercase tracking-wider"><CheckCircle size={16} className="text-emerald-600" /> Sale Successful</h2>
+              <button onClick={() => setQuickReceiptSale(null)} className="text-slate-400 hover:text-red-600"><X size={20} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-8 text-sm bg-white">
+              <div className="text-center border-b border-slate-100 pb-6 mb-6">
+                <h1 className="font-bold text-lg text-slate-800 uppercase tracking-tight">{companyConfig.companyName}</h1>
+                <p className="text-slate-500 text-xs mt-1 font-medium">Receipt #{quickReceiptSale.id}</p>
+              </div>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center"><span className="text-slate-500">Customer</span><span className="font-bold text-slate-800">{quickReceiptSale.customerName || 'Walk-in'}</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500">Total Amount</span><span className="font-bold text-slate-800">{currency}{formatNumber(quickReceiptSale.totalAmount)}</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500">Paid Amount</span><span className="font-bold text-slate-800">{currency}{formatNumber(quickReceiptSale.cash_tendered || quickReceiptSale.totalAmount)}</span></div>
+                <div className="flex justify-between items-center"><span className="text-slate-500">Change Due</span><span className="font-bold text-emerald-600">{currency}{formatNumber(quickReceiptSale.change_due || 0)}</span></div>
+              </div>
+            </div>
+            <div className="p-6 bg-slate-50 border-t border-slate-200 flex gap-3">
+              <button
+                onClick={() => {
+                  setQuickReceiptSale(null);
+                  setPreviewState({ isOpen: true, type: 'POS_RECEIPT', data: buildValidatedPosReceipt(quickReceiptSale) });
+                }}
+                className="flex-1 py-3 bg-blue-600 text-white rounded-full font-bold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-sm"
+              >
+                <FileText size={16} /> Full Receipt
+              </button>
+              <button
+                onClick={() => setQuickReceiptSale(null)}
+                className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 rounded-full font-bold text-sm hover:bg-slate-50 transition-all shadow-sm"
+              >
+                Done
               </button>
             </div>
           </div>

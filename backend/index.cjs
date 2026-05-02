@@ -592,6 +592,10 @@ async function startServer() {
     next();
   }, settingsRoutes);
 
+  // --- System & Workspace Endpoints ---
+  const systemRoutes = require('./routes/system.cjs');
+  app.use('/api/system', systemRoutes);
+
   // Production fallback endpoint: return a basic set of work centers/resources
   // SUSPECTED DEAD: No frontend or test caller found as of April 21, 2026.
   // Confirm before removing.

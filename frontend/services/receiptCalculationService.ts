@@ -47,11 +47,11 @@ const resolvePaymentStatus = (
   walletDeposit: number
 ): ReceiptPaymentStatus => {
   if (invoiceTotalAtPosting <= EPSILON) {
-    return walletDeposit > EPSILON ? 'OVERPAID' : 'PAID';
+    return walletDeposit > EPSILON ? 'Overpaid' : 'Paid';
   }
-  if (walletDeposit > EPSILON) return 'OVERPAID';
-  if (amountApplied >= invoiceTotalAtPosting - EPSILON) return 'PAID';
-  return 'PARTIALLY PAID';
+  if (walletDeposit > EPSILON) return 'Overpaid';
+  if (amountApplied >= invoiceTotalAtPosting - EPSILON) return 'Paid';
+  return 'Partial';
 };
 
 const inferPaymentPurpose = (
@@ -78,11 +78,11 @@ const buildNarrative = (
     return `Receipt acknowledgment for wallet top-up of ${fmt(snapshot.amountTendered)} received from ${customerName} on ${date}.`;
   }
 
-  if (snapshot.paymentStatus === 'PARTIALLY PAID') {
+  if (snapshot.paymentStatus === 'Partial') {
     return `This receipt confirms payment of ${fmt(snapshot.amountTendered)} from ${customerName} on ${date} toward invoice(s) ${invoiceList}. Outstanding balance is ${fmt(snapshot.balanceDueAfterPayment)}.`;
   }
 
-  if (snapshot.paymentStatus === 'OVERPAID' && snapshot.walletDeposit > 0) {
+  if (snapshot.paymentStatus === 'Overpaid' && snapshot.walletDeposit > 0) {
     return `Payment of ${fmt(snapshot.amountTendered)} from ${customerName} on ${date} was received for invoice(s) ${invoiceList}. Excess amount ${fmt(snapshot.walletDeposit)} has been credited to wallet.`;
   }
 
@@ -157,7 +157,7 @@ export const buildCustomerReceiptDoc = ({
 }: BuildCustomerReceiptDocInput) => {
   const snap = snapshot || payment.receiptSnapshot || calculateCustomerPaymentSnapshot({
     amountTendered: payment.amount,
-    appliedInvoices: (payment.allocations || []).map(allocation => ({
+    appliedInvoices: (payment.allocations || []).map((allocation: any) => ({
       invoiceId: allocation.invoiceId,
       allocationAmount: allocation.amount
     })),
@@ -208,7 +208,7 @@ export const buildPosReceiptDoc = ({
 }: BuildPosReceiptDocInput) => {
   const totalPaid = round2(
     (sale.payments && sale.payments.length > 0)
-      ? sale.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+      ? sale.payments.reduce((sum: number, payment: any) => sum + Number(payment.amount || 0), 0)
       : Number(sale.cash_tendered || sale.totalAmount || 0)
   );
   const totalAmount = round2(Number(sale.totalAmount || 0));
@@ -234,7 +234,7 @@ export const buildPosReceiptDoc = ({
     paymentMethod: sale.paymentMethod || 'Cash',
     amountTendered: totalPaid,
     changeGiven,
-    payments: (sale.payments || []).map(payment => ({
+    payments: (sale.payments || []).map((payment: any) => ({
       method: payment.method,
       amount: round2(Number(payment.amount || 0)),
       accountId: payment.accountId
@@ -261,7 +261,7 @@ export const buildSupplierPaymentDoc = (
     supplierName,
     amountPaid: round2(payment.amount),
     paymentMethod: payment.paymentMethod,
-    appliedInvoices: (payment.allocations || []).map(allocation => allocation.purchaseId),
+    appliedInvoices: (payment.allocations || []).map((allocation: any) => allocation.purchaseId),
     narrative: payment.notes
   };
 };

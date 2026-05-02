@@ -8,7 +8,7 @@ import {
   type RevenueAdjustmentLedgerRow,
   type RevenueSourceSummary,
 } from './revenueAnalysisService';
-import { format, isWithinInterval, startOfMonth, startOfWeek, startOfYear, subDays } from 'date-fns';
+import { format, isWithinInterval, startOfMonth, startOfWeek, startOfYear, subDays, endOfDay } from 'date-fns';
 
 export type RevenueDateRange = 'week' | 'month' | 'quarter' | 'year' | 'all';
 
@@ -79,17 +79,18 @@ export const matchesRevenueDateRange = (
   const date = normalizeDate(dateValue);
   if (!date) return false;
 
+  const intervalEnd = endOfDay(referenceDate);
   switch (dateRange) {
     case 'week':
-      return isWithinInterval(date, { start: startOfWeek(referenceDate, { weekStartsOn: 1 }), end: referenceDate });
+      return isWithinInterval(date, { start: startOfWeek(referenceDate, { weekStartsOn: 1 }), end: intervalEnd });
     case 'month':
-      return isWithinInterval(date, { start: startOfMonth(referenceDate), end: referenceDate });
+      return isWithinInterval(date, { start: startOfMonth(referenceDate), end: intervalEnd });
     case 'quarter': {
       const quarterStart = new Date(referenceDate.getFullYear(), Math.floor(referenceDate.getMonth() / 3) * 3, 1);
-      return isWithinInterval(date, { start: quarterStart, end: referenceDate });
+      return isWithinInterval(date, { start: quarterStart, end: intervalEnd });
     }
     case 'year':
-      return isWithinInterval(date, { start: startOfYear(referenceDate), end: referenceDate });
+      return isWithinInterval(date, { start: startOfYear(referenceDate), end: intervalEnd });
     default:
       return true;
   }

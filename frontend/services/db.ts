@@ -348,7 +348,7 @@ const inferBackfillPurpose = (payment: CustomerPayment): CustomerReceiptSnapshot
 };
 
 const buildBackfilledReceiptSnapshot = (payment: CustomerPayment): CustomerReceiptSnapshot => {
-    const rawAllocations = (payment.allocations || []).map(allocation => ({
+    const rawAllocations = (payment.allocations || []).map((allocation: any) => ({
         invoiceId: allocation.invoiceId,
         allocationAmount: round2(allocation.amount),
         outstandingAmount: round2(allocation.amount)
@@ -365,17 +365,17 @@ const buildBackfilledReceiptSnapshot = (payment: CustomerPayment): CustomerRecei
     );
     const amountTendered = round2(payment.amount || 0);
     let remainingTendered = amountTendered;
-    const allocations = rawAllocations.map(allocation => {
+    const allocations = rawAllocations.map((allocation: any) => {
         const clampedAmount = round2(Math.max(0, Math.min(allocation.allocationAmount, remainingTendered)));
         remainingTendered = round2(Math.max(0, remainingTendered - clampedAmount));
         return {
             ...allocation,
             allocationAmount: clampedAmount
         };
-    }).filter(allocation => allocation.allocationAmount > 0);
+    }).filter((allocation: any) => allocation.allocationAmount > 0);
     const fallbackAmountApplied = round2(
         payment.amountApplied ??
-        allocations.reduce((sum, allocation) => sum + allocation.allocationAmount, 0)
+        allocations.reduce((sum: number, allocation: any) => sum + allocation.allocationAmount, 0)
     );
     const fallbackAmountRetained = round2(
         payment.amountRetained ??
@@ -407,7 +407,7 @@ const buildBackfilledReceiptSnapshot = (payment: CustomerPayment): CustomerRecei
             amountRetained: fallbackRetained,
             invoiceTotalAtPosting: fallbackInvoiceTotal,
             balanceDueAfterPayment: fallbackBalance,
-            appliedInvoices: allocations.map(allocation => allocation.invoiceId),
+            appliedInvoices: allocations.map((allocation: any) => allocation.invoiceId),
             paymentStatus: legacyWallet > 0 ? 'OVERPAID' : (fallbackBalance > 0 ? 'PARTIALLY PAID' : 'PAID'),
             backfilled: true,
             confidence: 'estimated',
@@ -447,7 +447,7 @@ const buildBackfilledReceiptSnapshot = (payment: CustomerPayment): CustomerRecei
         invoiceTotalAtPosting,
         balanceDueAfterPayment,
         paymentStatus,
-        appliedInvoices: allocations.map(allocation => allocation.invoiceId),
+        appliedInvoices: allocations.map((allocation: any) => allocation.invoiceId),
         backfilled: true,
         confidence: payment.invoiceTotal !== undefined || payment.amountApplied !== undefined ? 'exact' : 'estimated',
         narrative: payment.receiptSnapshot?.narrative,

@@ -519,7 +519,16 @@ const Payments: React.FC = () => {
     useHighlight();
     const navigate = useNavigate();
 
-    const [activeTab, setActiveTab] = useState<'Received' | 'Made'>('Received');
+    const isProcurement = location.pathname.startsWith('/procurement');
+    const [activeTab, setActiveTab] = useState<'Received' | 'Made'>(isProcurement ? 'Made' : 'Received');
+
+    useEffect(() => {
+        if (isProcurement) {
+            setActiveTab('Made');
+        } else {
+            setActiveTab('Received');
+        }
+    }, [isProcurement]);
 
     const customerNames = useMemo(() => {
         const names = new Set<string>();
@@ -1093,8 +1102,13 @@ const Payments: React.FC = () => {
 
             <div className="mb-4 flex flex-col md:flex-row justify-between md:items-center gap-4 shrink-0">
                 <div>
-                    <h1 className="text-[22px] font-semibold text-slate-900 flex items-center gap-2 tracking-tight"><PaymentIcon className="text-blue-600" size={20} /> Payment Management</h1>
-                    <p className="text-xs font-normal text-slate-500 mt-0.5">Process customer payments and supplier bill payments.</p>
+                    <h1 className="text-[22px] font-semibold text-slate-900 flex items-center gap-2 tracking-tight">
+                        <PaymentIcon className="text-blue-600" size={20} /> 
+                        {isProcurement ? 'Supplier Payments' : 'Customer Payments'}
+                    </h1>
+                    <p className="text-xs font-normal text-slate-500 mt-0.5">
+                        {isProcurement ? 'Record and manage payments made to your suppliers.' : 'Process and track payments received from your customers.'}
+                    </p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -1115,22 +1129,7 @@ const Payments: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex border-b border-slate-200 mb-6 shrink-0">
-                <button
-                    onClick={() => setActiveTab('Received')}
-                    className={`px-6 py-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'Received' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'
-                        }`}
-                >
-                    Received Payments (Customers)
-                </button>
-                <button
-                    onClick={() => setActiveTab('Made')}
-                    className={`px-6 py-3 text-sm font-bold transition-all border-b-2 ${activeTab === 'Made' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'
-                        }`}
-                >
-                    Payments Made (Suppliers)
-                </button>
-            </div>
+            {/* Tab switcher removed for separated flows */}
 
             {activeTab === 'Received' ? (
                 <>
@@ -1400,8 +1399,8 @@ const Payments: React.FC = () => {
                                                     <td className="table-body-cell"><span className="font-mono text-[10px] font-bold text-slate-600 tracking-tight">
                                                         <DocLink
                                                             docNumber={payment.id}
-                                                            targetPage="/sales-flow/payments"
-                                                            rowId={`pmt-${payment.id}`}
+                                                            targetPage={isProcurement ? "/procurement/payments" : "/sales-flow/payments"}
+                                                            rowId={(isProcurement ? "spmt-" : "pmt-") + payment.id}
                                                             currentPage={location.pathname}
                                                         />
                                                     </span></td>
@@ -1503,7 +1502,7 @@ const Payments: React.FC = () => {
                                                 <td className="table-body-cell font-mono text-[10px] font-bold text-slate-600">
                                                     <DocLink
                                                         docNumber={payment.id}
-                                                        targetPage="/sales-flow/payments"
+                                                        targetPage={isProcurement ? "/procurement/payments" : "/sales-flow/payments"}
                                                         rowId={`spmt-${payment.id}`}
                                                         currentPage={location.pathname}
                                                     />

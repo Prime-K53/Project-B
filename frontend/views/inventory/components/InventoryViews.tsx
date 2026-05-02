@@ -10,6 +10,52 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useHighlight } from '../../../hooks/useHighlight';
 import { formatParentProductPrice, formatMaterialItemCost } from '../../../utils/pricing';
 
+const getServiceMaterials = (item: Item, allItems: Item[]): string => {
+    const smartPricing = item.smartPricing || (item as any).smartPricingSnapshot;
+    if (!smartPricing) return '-';
+    
+    const materials: string[] = [];
+    
+    // Resolve Paper
+    if (smartPricing.paperItemId) {
+        const paper = allItems.find(i => i.id === smartPricing.paperItemId);
+        if (paper) {
+            materials.push(paper.name.replace(/\s*\d+gsm.*/i, '')); // Clean up paper name
+        } else if (Number(smartPricing.paperCost) > 0) {
+            materials.push('Paper');
+        }
+    } else if (Number(smartPricing.paperCost) > 0) {
+        materials.push('Paper');
+    }
+    
+    // Resolve Toner
+    if (smartPricing.tonerItemId) {
+        const toner = allItems.find(i => i.id === smartPricing.tonerItemId);
+        if (toner) {
+            materials.push(toner.name.replace(/\s*Universal\s*/i, ''));
+        } else if (Number(smartPricing.tonerCost) > 0) {
+            materials.push('Toner');
+        }
+    } else if (Number(smartPricing.tonerCost) > 0) {
+        materials.push('Toner');
+    }
+    
+    // Resolve Finishing Options
+    const finishingEnabled = smartPricing.finishingEnabled || [];
+    if (Array.isArray(finishingEnabled) && finishingEnabled.length > 0) {
+        finishingEnabled.forEach((id: string) => {
+            const name = id
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^./, str => str.toUpperCase());
+            materials.push(name);
+        });
+    } else if (Number(smartPricing.finishingCost) > 0) {
+        materials.push('Finishing');
+    }
+    
+    return materials.length > 0 ? materials.join(', ') : '-';
+};
+
 interface ItemTableProps {
     items: Item[];
     warehouses: Warehouse[];
@@ -321,6 +367,7 @@ const showStockColumn = filterType === 'Material' || filterType === 'Stationery'
                                 <>
                                     <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('sku')}>SKU {renderSortIcon('sku')}</th>
                                     <th className="table-header px-4 py-2 w-[24%] cursor-pointer hover:text-blue-600" onClick={() => handleSort('name')}>Service Name {renderSortIcon('name')}</th>
+                                    <th className="table-header px-4 py-2 w-[14%] cursor-pointer hover:text-blue-600">Materials Used</th>
                                     <th className="table-header px-4 py-2 w-[16%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('price')}>Base Price {renderSortIcon('price')}</th>
                                     <th className="table-header px-4 py-2 w-[12%] text-right cursor-pointer hover:text-blue-600" onClick={() => handleSort('salesCount' as any)}>Units {renderSortIcon('salesCount' as any)}</th>
                                     <th className="table-header px-4 py-2 w-[12%]">Status</th>
@@ -410,6 +457,7 @@ const showStockColumn = filterType === 'Material' || filterType === 'Stationery'
                                                     <div className="truncate">{item.name}</div>
                                                 </div>
                                             </td>
+                                            <td className="table-body-cell text-slate-600 truncate">{getServiceMaterials(item, items)}</td>
                                             <td className={`table-body-cell text-right finance-nums font-bold text-green-600`}>
                                                 {formatParentProductPrice(item, currency)}
                                             </td>

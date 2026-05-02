@@ -241,7 +241,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           hideSubMenu: true,
           subItems: [
             { label: 'Point of Sale', path: '/sales-flow/pos', icon: <Coins size={14} /> },
-            { label: 'Payments', path: '/sales-flow/payments', icon: <Banknote size={14} /> },
+            { label: 'Payment Management', path: '/sales-flow/payments', icon: <Banknote size={14} /> },
             { label: 'Quotations', path: '/sales-flow/quotations', icon: <FileText size={14} /> },
             { label: 'Orders', path: '/sales-flow/orders', icon: <CheckSquare size={14} /> },
             { label: 'Billing / Invoices', path: '/sales-flow/invoices', icon: <FileSpreadsheet size={14} /> },
@@ -271,7 +271,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, isCollapsed, toggle, toggleCo
           hideSubMenu: true,
           subItems: [
             { label: 'Vendor Bills', path: '/procurement/bills', icon: <FileText size={14} /> },
-            { label: 'Supplier Payments', path: '/sales-flow/payments', icon: <Wallet size={14} /> },
+            { label: 'Supplier Payments', path: '/procurement/payments', icon: <Wallet size={14} /> },
             { label: 'Subcontracting', path: '/procurement/subcontracting', icon: <Share2 size={14} /> },
             { label: 'Expense Log', path: '/procurement/expenses', icon: <TrendingUp size={14} /> },
           ]

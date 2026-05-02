@@ -117,6 +117,7 @@ const Settings: React.FC = () => {
             defaultPaymentTermsDays: 30,
             quotationExpiryDays: 7,
             autoPrintReceipt: false,
+            showReceiptPreview: true,
             quickItemEntry: false,
             defaultPOSWarehouse: '',
             posDefaultCustomer: '',
@@ -1499,6 +1500,21 @@ const Settings: React.FC = () => {
                                                     className="sr-only peer"
                                                     checked={config.transactionSettings?.autoPrintReceipt}
                                                     onChange={e => setConfig({ ...config, transactionSettings: { ...config.transactionSettings, autoPrintReceipt: e.target.checked } as any })}
+                                                />
+                                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
+                                            </label>
+                                        </div>
+                                        <div className="flex justify-between items-center group/item">
+                                            <div>
+                                                <p className="font-bold text-slate-800 text-sm">Show Receipt Preview</p>
+                                                <p className="text-[11px] text-slate-500 mt-0.5">Display receipt preview after checkout.</p>
+                                            </div>
+                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={config.transactionSettings?.showReceiptPreview !== false}
+                                                    onChange={e => setConfig({ ...config, transactionSettings: { ...config.transactionSettings, showReceiptPreview: e.target.checked } as any })}
                                                 />
                                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#2CA01C]"></div>
                                             </label>

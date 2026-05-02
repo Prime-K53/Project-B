@@ -168,6 +168,16 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+
+    // Background: Save to local workspace if available
+    (async () => {
+      try {
+        const { api } = await import('../services/api');
+        await api.system.saveToWorkspace('Exports', filename, content);
+      } catch (err) {
+        // Silent fail if workspace not configured
+      }
+    })();
   };
 
   // Format cell value

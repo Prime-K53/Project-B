@@ -4,7 +4,23 @@ const path = require('path');
 const dbPath = process.env.NODE_ENV === 'test'
   ? ':memory:'
   : (process.env.DB_PATH || path.resolve(__dirname, 'storage', 'examination.db'));
+const fs = require('fs');
+const getWorkspaceDbPath = () => {
+  const configPath = path.resolve(__dirname, 'storage', 'workspace.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config.workspacePath) return path.join(config.workspacePath, 'examination.db');
+    } catch (e) {}
+  }
+  return null;
+};
+const workspaceDbPath = getWorkspaceDbPath();
+const dbPath = process.env.NODE_ENV === 'test'
+  ? ':memory:'
+  : (process.env.DB_PATH || workspaceDbPath || path.resolve(__dirname, 'storage', 'examination.db'));
 const db = new sqlite3.Database(dbPath);
+
 
 // Enable WAL mode so that concurrent reads are not blocked by ongoing writes.
 // This fixes the SQLITE_BUSY hang on GET /batches when a write transaction

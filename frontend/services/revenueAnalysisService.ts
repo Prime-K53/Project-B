@@ -155,6 +155,7 @@ export const isExaminationInvoice = (invoice: any) => {
   const reference = String(invoice?.reference || '').trim().toUpperCase();
   const batchId = String(
     invoice?.batchId
+    || invoice?.linkedBatchId
     || invoice?.originBatchId
     || invoice?.origin_batch_id
     || ''
@@ -247,7 +248,7 @@ const createNormalizedLine = ({
     (breakdown?.baseMaterialCost ?? toNumber(normalizedItem?.cost_price ?? normalizedItem?.cost, 0)) * quantity
   );
   const adjustmentTotal = roundMoney(
-    (breakdown?.adjustmentTotal ?? toNumber(normalizedItem?.adjustmentTotal, 0)) * quantity
+    (breakdown?.adjustmentTotal ?? toNumber(normalizedItem?.adjustmentTotal ?? normalizedItem?.adjustment_total, 0)) * quantity
   );
   const roundingTotal = roundMoney(
     (breakdown?.roundingDifference ?? toNumber(normalizedItem?.roundingDifference ?? normalizedItem?.rounding_difference, 0)) * quantity
@@ -259,7 +260,7 @@ const createNormalizedLine = ({
   const profitMargin = roundMoney(
     Number.isFinite(explicitMargin)
       ? explicitMargin * quantity
-      : revenue - materialCost - adjustmentTotal - roundingTotal
+      : (revenue - materialCost - adjustmentTotal - (Number.isFinite(roundingTotal) ? roundingTotal : 0))
   );
   const reconciliationDelta = roundMoney(
     revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal
@@ -561,11 +562,13 @@ export const buildRevenueAnalysisDataset = ({
   orders?: any[];
   batches?: any[];
 }): RevenueAnalysisDataset => {
-  const batchMap = new Map<string, any>(
-    (Array.isArray(batches) ? batches : [])
-      .filter(Boolean)
-      .map((batch: any) => [String(batch?.id || batch?.batch_number || ''), batch])
-  );
+  const batchMap = new Map<string, any>();
+  (Array.isArray(batches) ? batches : []).forEach((batch: any) => {
+    if (!batch) return;
+    if (batch.id) batchMap.set(String(batch.id), batch);
+    const bNum = batch.batch_number || batch.batchNumber;
+    if (bNum) batchMap.set(String(bNum), batch);
+  });
 
   const orderKeysCoveredByInvoices = new Set<string>();
   const recognizedSales = (Array.isArray(sales) ? sales : []).filter(isRecognizedSale);
@@ -576,6 +579,8 @@ export const buildRevenueAnalysisDataset = ({
   );
 
   (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
+    const status = String(invoice?.status || '').toLowerCase();
+    if (status === 'cancelled' || status === 'draft') return;
     if (isExaminationInvoice(invoice) || isPosMirrorInvoice(invoice, recognizedSaleIds)) return;
     extractOrderReferenceKeys(invoice).forEach((key) => orderKeysCoveredByInvoices.add(key));
   });
@@ -587,9 +592,13 @@ export const buildRevenueAnalysisDataset = ({
     });
 
   (Array.isArray(invoices) ? invoices : []).forEach((invoice: any) => {
+    const status = String(invoice?.status || '').toLowerCase();
+    if (status === 'cancelled' || status === 'draft') return;
+
     if (isExaminationInvoice(invoice)) {
       const batchId = String(
         invoice?.batchId
+        || invoice?.linkedBatchId
         || invoice?.originBatchId
         || invoice?.origin_batch_id
         || ''

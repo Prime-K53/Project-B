@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 // PRICING RULE: Do NOT implement pricing logic here. All pricing MUST go through pricingEngine.ts
 import { X, Save, Plus, Trash2, AlertCircle, Package, DollarSign, Hash, MapPin, Truck, Tag, FileText, Box, Layers, ArrowRight, Wand2, Grid, Scale, RefreshCw, Eye, EyeOff, Info, Check, Edit3, TrendingUp } from 'lucide-react';
 import { Item, Warehouse, ProductVariant, PricingConfig, FinishingOption, AdjustmentSnapshot, BOMTemplate, PricingRoundingMethod } from '../../../types';
@@ -304,8 +304,8 @@ const ItemModal: React.FC<ItemModalProps> = ({
     // Contextual unit options per type
     const getUnitOptions = () => {
         switch (formData.type) {
-            case 'Product': return ['pcs', 'units', 'sets', 'packs'];
-            case 'Service': return ['hours', 'pages', 'sessions', 'fixed'];
+            case 'Product': 
+            case 'Service': return ['pcs', 'units', 'sets', 'packs', 'hours', 'sessions', 'fixed'];
             case 'Raw Material': return ['kg', 'g', 'l', 'ml', 'm', 'cm', 'rolls', 'sheets', 'reams', 'boxes', 'packs'];
             case 'Stationery': return ['pcs', 'packs', 'boxes', 'reams'];
             default: return ['pcs'];
@@ -361,11 +361,7 @@ const ItemModal: React.FC<ItemModalProps> = ({
     const isInventoryReady = inventory && inventory.length > 0;
     const isMarketAdjustmentsReady = marketAdjustments && marketAdjustments.length > 0;
 
-    useEffect(() => {
-        if (isServiceType && activeTab !== 'basic' && activeTab !== 'pricing') {
-            setActiveTab('basic');
-        }
-    }, [isServiceType, activeTab]);
+
 
     useEffect(() => {
         if (!hasStockFunctionality && activeTab === 'inventory') {
@@ -2151,7 +2147,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
 {/* Pricing Tab - Premium Design */}
                               {activeTab === 'pricing' && (
                                   <div className="space-y-6 max-h-[65vh] overflow-y-auto pr-4 custom-scrollbar">
-                                      {(formData.type === 'Product' || formData.type === 'Material') && (
+                                      {(formData.type === 'Product' || formData.type === 'Material' || formData.type === 'Service') && (
                                           <>
                                               {/* Premium Header Card */}
                                               <div className={styles.premiumCard + " bg-gradient-to-br from-blue-50 via-white to-indigo-50 border-blue-100/50"}>
@@ -2452,128 +2448,7 @@ dbService.getAll<BOMTemplate>('bomTemplates')
                                           </>
                                       )}
 
-                                          {formData.type === 'Service' && (
-                                              <>
-                                                  {/* Service Pricing Header */}
-                                                  <div className={styles.premiumCard + " bg-gradient-to-br from-violet-50 via-white to-purple-50 border-violet-100/50"}>
-                                                      <div className="flex items-center justify-between mb-6">
-                                                          <div className="flex items-center gap-4">
-                                                              <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/25">
-                                                                  <DollarSign className="w-6 h-6 text-white" />
-                                                              </div>
-                                                              <div>
-                                                                  <h3 className="text-lg font-bold text-slate-900">Service Pricing Engine</h3>
-                                                                  <p className="text-xs text-slate-500">Time & scope based pricing</p>
-                                                              </div>
-                                                          </div>
-                                                          <div className="text-right">
-                                                              <div className="text-2xl font-bold text-purple-600">{currency}{(formData.price || formData.cost || 0).toFixed(2)}</div>
-                                                              <div className="text-[10px] text-slate-500 uppercase tracking-wide">Selling Price</div>
-                                                          </div>
-                                                      </div>
-                                                  </div>
 
-                                                  <div className="flex justify-end">
-                                                      <button
-                                                          type="button"
-                                                          onClick={() => setShowManualOverrideCard(prev => !prev)}
-                                                          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${showManualOverrideCard ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
-                                                      >
-                                                          {showManualOverrideCard ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                                          {showManualOverrideCard ? 'Hide Manual Override Pricing' : 'Manual Override Pricing'}
-                                                      </button>
-                                                  </div>
-
-                                                  {showManualOverrideCard && (
-                                                      <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 shadow-sm">
-                                                          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                                                              <div className="space-y-1.5">
-                                                                  <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Manual Override Pricing</div>
-                                                                  <div className="text-xs text-slate-700">
-                                                                      Auto Price: <span className="font-semibold">{currency}{(formData.price || formData.cost || 0).toFixed(2)}</span>
-                                                                      <span className="mx-2 text-slate-400">|</span>
-                                                                      Final Price: <span className="font-semibold">{currency}{(formData.price || formData.cost || 0).toFixed(2)}</span>
-                                                                      <span className="mx-2 text-slate-400">|</span>
-                                                                      Difference: <span className="font-semibold text-slate-500">0.00</span>
-                                                                  </div>
-                                                                  <div className={`text-[10px] font-bold uppercase tracking-wider ${isItemManualOverride ? 'text-amber-700' : 'text-slate-500'}`}>
-                                                                      {isItemManualOverride ? 'Status: Manual Override Active' : 'Status: Auto Pricing'}
-                                                                  </div>
-                                                              </div>
-                                                              <div className="flex flex-col sm:flex-row gap-2">
-                                                                  <div className="relative">
-                                                                      <input
-                                                                          type="number"
-                                                                          value={formData.price || formData.cost || 0}
-                                                                          onChange={(e) => setFormData({ ...formData, price: Number(e.target.value), cost: Number(e.target.value) })}
-                                                                          className={styles.input}
-                                                                          step="0.01"
-                                                                          min="0"
-                                                                      />
-                                                                  </div>
-                                                              </div>
-                                                          </div>
-                                                      </div>
-                                                  )}
-
-                                                  {/* Pricing Model */}
-                                                  <div className={styles.premiumCard}>
-                                                      <h3 className={styles.premiumSectionTitle}>
-                                                          <span className="w-1.5 h-4 bg-violet-500 rounded-full"></span>
-                                                          Costing Model
-                                                      </h3>
-                                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                          <div>
-                                                              <label className={styles.label}>Pricing Model</label>
-                                                              <select 
-                                                                  className={styles.select}
-                                                                  value={formData.pricingModel || 'Fixed'}
-                                                                  onChange={(e) => setFormData({ ...formData, pricingModel: e.target.value as any })}
-                                                              >
-                                                                  <option value="Fixed">Fixed</option>
-                                                                  <option value="Hourly">Hourly</option>
-                                                                  <option value="Per Page">Per Page</option>
-                                                                  <option value="Per Session">Per Session</option>
-                                                              </select>
-                                                          </div>
-                                                          <div>
-                                                              <label className={styles.label}>Base Rate</label>
-                                                              <input
-                                                                  type="number"
-                                                                  value={formData.cost || 0}
-                                                                  onChange={(e) => setFormData({ ...formData, cost: Number(e.target.value) })}
-                                                                  className={styles.input}
-                                                                  step="0.01"
-                                                                  min="0"
-                                                              />
-                                                          </div>
-                                                          <div>
-                                                              <label className={styles.label}>Minimum Charge</label>
-                                                              <input
-                                                                  type="number"
-                                                                  value={formData.minOrderQty || 0}
-                                                                  onChange={(e) => setFormData({ ...formData, minOrderQty: Number(e.target.value) })}
-                                                                  className={styles.input}
-                                                                  step="0.01"
-                                                                  min="0"
-                                                              />
-                                                          </div>
-                                                          <div>
-                                                              <label className={styles.label}>Tax Class</label>
-                                                              <select 
-                                                                  className={styles.select}
-                                                                  value={formData.taxClass || 'Standard (15%)'}
-                                                                  onChange={(e) => setFormData({ ...formData, taxClass: e.target.value })}
-                                                              >
-                                                                  <option value="Standard (15%)">Standard (15%)</option>
-                                                                  <option value="Exempt">Exempt</option>
-                                                                  <option value="Zero-rated">Zero-rated</option>
-                                                              </select>
-                                                          </div>
-                                                      </div>
-                                                  </div>
-                                              </>
-                                          )}
 
                                           {formData.type === 'Stationery' && (
                                               <>

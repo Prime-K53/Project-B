@@ -512,6 +512,7 @@ const AppLayout: React.FC = () => {
                 <Route path="/examination/groups" element={<ProtectedRoute permission="production.view"><InvoiceGroupManager /></ProtectedRoute>} />
                 <Route path="/examination/recurring" element={<ProtectedRoute permission="production.view"><RecurringProfiles /></ProtectedRoute>} />
                 <Route path="/sales-flow/payments" element={<ProtectedRoute permission="sales.view"><Payments /></ProtectedRoute>} />
+                <Route path="/procurement/payments" element={<ProtectedRoute permission="procurement.view"><Payments /></ProtectedRoute>} />
                 <Route path="/sales" element={<Navigate to="/sales-flow" replace />} />
                 <Route path="/production" element={<Navigate to="/industrial" replace />} />
                 <Route path="/accounts" element={<Navigate to="/fiscal-reports" replace />} />

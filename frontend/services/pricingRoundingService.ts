@@ -198,13 +198,13 @@ const parseAnalytics = (raw: string | null): RoundingAnalytics => {
 };
 
 export const getPricingSettings = (companyConfig?: CompanyConfig | null): PricingSettings => {
-  const incoming = companyConfig?.pricingSettings || {};
+  const incoming = (companyConfig?.pricingSettings || {}) as Partial<PricingSettings>;
   const merged: PricingSettings = {
     ...DEFAULT_PRICING_SETTINGS,
     ...incoming,
     customStep: sanitizeStep(incoming.customStep, DEFAULT_PRICING_SETTINGS.customStep),
     thresholdRules: (incoming.thresholdRules && incoming.thresholdRules.length > 0)
-      ? incoming.thresholdRules.map((rule) => ({
+      ? (incoming.thresholdRules as PricingThresholdRule[]).map((rule) => ({
         ...rule,
         minPrice: Number(rule.minPrice || 0),
         maxPrice: isFiniteNumber(rule.maxPrice) ? Number(rule.maxPrice) : undefined,

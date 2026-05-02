@@ -1800,5 +1800,25 @@ export const api = {
         };
       }
     }, 'System.ActivateLicense'),
+
+    initializeWorkspace: (companyName: string) => handle(async () => {
+      const response = await apiClient.post('/system/workspace/initialize', { companyName });
+      return response.data;
+    }, 'System.InitializeWorkspace'),
+
+    getWorkspaceConfig: () => handle(async () => {
+      const response = await apiClient.get('/system/workspace/config');
+      return response.data;
+    }, 'System.GetWorkspaceConfig'),
+
+    saveToWorkspace: (folder: string, filename: string, data: any) => handle(async () => {
+      const response = await apiClient.post('/system/workspace/save-document', { folder, filename, data });
+      return response.data;
+    }, 'System.SaveToWorkspace'),
+
+    syncToWorkspace: (filename: string, data: any) => handle(async () => {
+      const response = await apiClient.post('/system/workspace/sync', { filename, data });
+      return response.data;
+    }, 'System.SyncToWorkspace')
   }
 };

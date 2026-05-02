@@ -21,11 +21,11 @@ const SmartPricing: React.FC = () => {
     const { companyConfig } = useData();
 
     // Global Default Margin for auto-pricing
-    const [globalMargin, setGlobalMargin] = React.useState<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number; apply_volume_margins?: boolean } | null>(null);
-    const [globalMarginWarning, setGlobalMarginWarning] = React.useState<string | null>(null);
+    const [globalMargin, setGlobalMargin] = useState<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number; apply_volume_margins?: boolean } | null>(null);
+    const [globalMarginWarning, setGlobalMarginWarning] = useState<string | null>(null);
 
     // Load Global Default Margin on mount
-    React.useEffect(() => {
+    useEffect(() => {
         const loadGlobalMargin = async () => {
             try {
                 const margin = await getGlobalDefaultMargin();
@@ -42,6 +42,7 @@ const SmartPricing: React.FC = () => {
         };
         loadGlobalMargin();
     }, []);
+
     const { addJobOrder, jobOrders } = useSales();
     const navigate = useNavigate();
     const location = useLocation();
@@ -59,6 +60,7 @@ const SmartPricing: React.FC = () => {
     const [selectedInventoryProductId, setSelectedInventoryProductId] = useState('');
     const [editingProductId, setEditingProductId] = useState<string | null>(null);
     const [editingBomId, setEditingBomId] = useState<string | null>(null);
+    const [itemType, setItemType] = useState<'Product' | 'Service'>('Product');
     const [isCreatingProduct, setIsCreatingProduct] = useState(false);
     const [editingCosts, setEditingCosts] = useState<{ [key: string]: number }>({});
     const [inventory, setInventory] = useState<Item[]>([]);
@@ -96,21 +98,21 @@ const SmartPricing: React.FC = () => {
                     }
                 }
 
-                const paperItems = inv.filter(i => {
+                const paperItemsList = inv.filter(i => {
                     const cat = (i.category || '').toLowerCase();
                     return cat.includes('paper') || cat.includes('bond') || cat.includes('sheet');
                 });
-                const tonerItems = inv.filter(i => {
+                const tonerItemsList = inv.filter(i => {
                     const cat = (i.category || '').toLowerCase();
                     return cat.includes('toner') || cat.includes('ink') || cat.includes('cartridge');
                 });
 
-                if (paperItems.length > 0) setSelectedPaperId(paperItems[0].id);
-                if (tonerItems.length > 0) {
-                    const universalToner = tonerItems.find(t => 
+                if (paperItemsList.length > 0) setSelectedPaperId(paperItemsList[0].id);
+                if (tonerItemsList.length > 0) {
+                    const universalToner = tonerItemsList.find(t => 
                         (t.name || '').toLowerCase().includes('universal')
                     );
-                    setSelectedTonerId(universalToner ? universalToner.id : tonerItems[0].id);
+                    setSelectedTonerId(universalToner ? universalToner.id : tonerItemsList[0].id);
                 }
             } catch (err) {
                 console.error('Failed to load pricing data:', err);
@@ -119,7 +121,7 @@ const SmartPricing: React.FC = () => {
             }
         };
         loadData();
-    }, []);
+    }, [companyConfig]);
 
     useEffect(() => {
         const loadProductId = (location.state as any)?.loadProductId;
@@ -141,9 +143,10 @@ const SmartPricing: React.FC = () => {
 
     const selectedPaper = useMemo(() => inventory.find(i => i.id === selectedPaperId), [inventory, selectedPaperId]);
     const selectedToner = useMemo(() => inventory.find(i => i.id === selectedTonerId), [inventory, selectedTonerId]);
+
     const editableInventoryProducts = useMemo(
         () => inventory.filter(item =>
-            item.type === 'Product' &&
+            (item.type === 'Product' || item.type === 'Service') &&
             (
                 item.smartPricing ||
                 item.pricingConfig?.paperId ||
@@ -155,32 +158,32 @@ const SmartPricing: React.FC = () => {
     );
 
     const calculateCosts = () => {
-        let paperCost = 0;
+        let paperCostVal = 0;
         if (selectedPaper) {
             const sheetsPerCopy = Math.ceil(pages / 2);
             const totalSheets = sheetsPerCopy * copies;
             const reamSize = Number(selectedPaper.conversionRate || selectedPaper.conversion_rate || 500);
             const paperUnitCost = Number(selectedPaper.cost_price || selectedPaper.cost_per_unit || selectedPaper.cost || 0);
             const costPerSheet = reamSize > 0 ? paperUnitCost / reamSize : 0;
-            paperCost = Number((totalSheets * costPerSheet).toFixed(2));
+            paperCostVal = Number((totalSheets * costPerSheet).toFixed(2));
         }
 
-        let tonerCost = 0;
+        let tonerCostVal = 0;
         if (selectedToner) {
             const capacity = 20000;
-            const totalPages = pages * copies;
+            const totalPagesVal = pages * copies;
             const tonerUnitCost = Number(selectedToner.cost_price || selectedToner.cost_per_unit || selectedToner.cost || 0);
             const costPerPage = tonerUnitCost / capacity;
-            tonerCost = Number((totalPages * costPerPage).toFixed(2));
+            tonerCostVal = Number((totalPagesVal * costPerPage).toFixed(2));
         }
 
-        const finishingCost = finishingOptions
+        const finishingCostVal = finishingOptions
             .filter(o => o.enabled)
             .reduce((sum, o) => {
                 return sum + (o.price * copies);
             }, 0);
 
-        const finishingInventoryCost = finishingOptions
+        const finishingInventoryCostVal = finishingOptions
             .filter(o => o.enabled && o.items && o.items.length > 0)
             .reduce((sum, o) => {
                 const optionInventoryCost = o.items.reduce((itemSum, itemConfig) => {
@@ -192,27 +195,35 @@ const SmartPricing: React.FC = () => {
                 return sum + optionInventoryCost;
             }, 0);
 
-        const baseCost = paperCost + tonerCost + finishingCost + finishingInventoryCost;
+        const baseCostVal = paperCostVal + tonerCostVal + finishingCostVal + finishingInventoryCostVal;
         
-        const marketAdjustmentTotal = marketAdjustmentEnabled 
+        const marketAdjustmentTotalVal = marketAdjustmentEnabled 
             ? marketAdjustments.reduce((sum, adj) => {
                 const type = (adj.type || '').toUpperCase();
                 if (type === 'PERCENTAGE' || type === 'PERCENT') {
-                    return sum + (baseCost * ((adj.value || 0) / 100));
+                    return sum + (baseCostVal * ((adj.value || 0) / 100));
                 }
                 return sum + ((adj.value || 0) * pages * copies);
             }, 0)
             : 0;
         
-        const priceAfterMarketAdjustments = baseCost + marketAdjustmentTotal;
+        const priceAfterMarketAdjustmentsVal = baseCostVal + marketAdjustmentTotalVal;
         
-        return { paperCost, tonerCost, finishingCost, finishingInventoryCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments };
+        return { 
+            paperCost: paperCostVal, 
+            tonerCost: tonerCostVal, 
+            finishingCost: finishingCostVal, 
+            finishingInventoryCost: finishingInventoryCostVal, 
+            baseCost: baseCostVal, 
+            marketAdjustmentTotal: marketAdjustmentTotalVal, 
+            priceAfterMarketAdjustments: priceAfterMarketAdjustmentsVal 
+        };
     };
 
     const { paperCost, tonerCost, finishingCost, finishingInventoryCost, baseCost, marketAdjustmentTotal, priceAfterMarketAdjustments } = calculateCosts();
 
     // Apply Global Default Margin to get final price
-    const profitMarginAmount = React.useMemo(() => {
+    const profitMarginAmount = useMemo(() => {
         if (!globalMargin) return 0;
 
         let marginValue = globalMargin.margin_value;
@@ -238,7 +249,7 @@ const SmartPricing: React.FC = () => {
 
     const finalPrice = priceAfterMarketAdjustments + profitMarginAmount;
 
-    const roundingResult = React.useMemo(() => {
+    const roundingResult = useMemo(() => {
         try {
             return applyProductPriceRounding({ calculatedPrice: finalPrice, companyConfig });
         } catch (err) {
@@ -292,13 +303,14 @@ const SmartPricing: React.FC = () => {
         setEditingBomId(null);
         setSelectedInventoryProductId('');
         setProductName('');
+        setItemType('Product');
         resetCalculator();
     };
 
     const loadInventoryProduct = (productId: string) => {
         const product = inventory.find(item => item.id === productId);
         if (!product) {
-            alert('Selected product was not found in inventory.');
+            alert('Selected item was not found in inventory.');
             return;
         }
 
@@ -326,11 +338,12 @@ const SmartPricing: React.FC = () => {
         setEditingBomId(String(smartPricing.bomTemplateId || `BOM-${Date.now()}`));
         setSelectedInventoryProductId(product.id);
         setProductName(product.name || '');
+        setItemType((product.type as 'Product' | 'Service') || 'Product');
     };
 
     const handleSaveProduct = async () => {
         if (!productName.trim()) {
-            alert('Please enter a product name');
+            alert('Please enter a name');
             return;
         }
 
@@ -346,8 +359,8 @@ const SmartPricing: React.FC = () => {
                 id: productId,
                 name: productName.trim(),
                 sku: existingProduct?.sku || `SKU-${Date.now()}`,
-                type: 'Product',
-                category: existingProduct?.category || 'Printed Products',
+                type: itemType,
+                category: existingProduct?.category || (itemType === 'Service' ? 'Services' : 'Printed Products'),
                 unit: existingProduct?.unit || 'copy',
                 cost: baseCost,
                 cost_price: baseCost,
@@ -452,11 +465,11 @@ const SmartPricing: React.FC = () => {
             setShowProductDialog(false);
 
             alert(editingProductId
-                ? `Product "${productName.trim()}" updated and saved back to inventory.`
-                : `Product "${productName.trim()}" created and saved to inventory with corresponding BOM recipe.`);
+                ? `${itemType} "${productName.trim()}" updated and saved back to inventory.`
+                : `${itemType} "${productName.trim()}" created and saved to inventory with corresponding BOM recipe.`);
         } catch (error) {
-            console.error('Failed to save product:', error);
-            alert(editingProductId ? 'Failed to update product' : 'Failed to create product');
+            console.error('Failed to save item:', error);
+            alert(editingProductId ? 'Failed to update item' : 'Failed to create item');
         } finally {
             setIsCreatingProduct(false);
         }
@@ -469,7 +482,6 @@ const SmartPricing: React.FC = () => {
     const formatRoundingLabel = (methodUsed: string): string => {
         if (!methodUsed) return 'rounded';
 
-        // Extract the method type and value from methodUsed
         if (methodUsed.startsWith('ALWAYS_UP_')) {
             const step = methodUsed.replace('ALWAYS_UP_', '');
             return `Rounding up (${step})`;
@@ -514,10 +526,10 @@ const SmartPricing: React.FC = () => {
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-slate-800">Smart Pricing Engine</h1>
-                            <p className="text-slate-500">Calculate print job pricing with BOM cost analysis</p>
+                            <p className="text-slate-500">Calculate job pricing with BOM cost analysis</p>
                             {editingProductId && (
                                 <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-700">
-                                    Editing Inventory Product: {productName || inventory.find(item => item.id === editingProductId)?.name || editingProductId}
+                                    Editing Inventory {itemType}: {productName || inventory.find(item => item.id === editingProductId)?.name || editingProductId}
                                 </div>
                             )}
                         </div>
@@ -544,28 +556,28 @@ const SmartPricing: React.FC = () => {
                 <div id="smart-pricing-inventory-loader" className="mb-6 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50 via-white to-indigo-50">
                         <div className="flex flex-col gap-1">
-                            <h2 className="text-lg font-bold text-slate-800">Load Product from Inventory</h2>
-                            <p className="text-sm text-slate-500">Pick an existing Smart Pricing product, edit it here, then save it back to inventory.</p>
+                            <h2 className="text-lg font-bold text-slate-800">Load from Inventory</h2>
+                            <p className="text-sm text-slate-500">Pick an existing Smart Pricing item, edit it here, then save it back to inventory.</p>
                         </div>
                     </div>
                     <div className="px-6 py-5 grid grid-cols-1 lg:grid-cols-[1fr_auto_auto] gap-3 items-end">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Inventory Product</label>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Load Existing {itemType}</label>
                             <select
                                 value={selectedInventoryProductId}
                                 onChange={(e) => setSelectedInventoryProductId(e.target.value)}
                                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
                             >
-                                <option value="">Select a Smart Pricing product...</option>
+                                <option value="">Select a Smart Pricing item...</option>
                                 {editableInventoryProducts.map(product => (
                                     <option key={product.id} value={product.id}>
-                                        {product.name} ({product.sku})
+                                        [{product.type}] {product.name} ({product.sku})
                                     </option>
                                 ))}
                             </select>
                             {editableInventoryProducts.length === 0 && (
                                 <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                                    No Smart Pricing products were found in inventory yet.
+                                    No Smart Pricing items were found in inventory yet.
                                 </div>
                             )}
                         </div>
@@ -574,13 +586,13 @@ const SmartPricing: React.FC = () => {
                             disabled={!selectedInventoryProductId}
                             className="px-5 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-50"
                         >
-                            Load Product
+                            Load Item
                         </button>
                         <button
                             onClick={clearLoadedProduct}
                             className="px-5 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50"
                         >
-                            New Product
+                            New Item
                         </button>
                     </div>
                 </div>
@@ -841,14 +853,13 @@ const SmartPricing: React.FC = () => {
                                         adjustmentValue = (adj.value || 0) * pages * copies;
                                     }
                                     if (adjustmentValue > 0) {
-                                        // Color differentiation based on adjustment category
-                                        let colorClass = 'text-emerald-600'; // default green
+                                        let colorClass = 'text-emerald-600';
                                         if (category.includes('logistics') || category.includes('transport')) {
-                                            colorClass = 'text-blue-600'; // blue for logistics
+                                            colorClass = 'text-blue-600';
                                         } else if (category.includes('waste') || category.includes('wastage')) {
-                                            colorClass = 'text-rose-600'; // red/rose for waste
+                                            colorClass = 'text-rose-600';
                                         } else if (category.includes('overhead') || category.includes('labor') || category.includes('energy')) {
-                                            colorClass = 'text-amber-600'; // amber for overhead
+                                            colorClass = 'text-amber-600';
                                         }
                                         return (
                                             <div key={idx} className={`flex justify-between ${colorClass}`}>
@@ -887,14 +898,14 @@ const SmartPricing: React.FC = () => {
                                         className="w-full flex items-center justify-center gap-2 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
                                     >
                                         <Package size={18} />
-                                        Load Product
+                                        Load Item
                                     </button>
                                     <button
                                         onClick={clearLoadedProduct}
                                         className="w-full flex items-center justify-center gap-2 py-3 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 transition-colors"
                                     >
                                         <RefreshCw size={18} />
-                                        New Product
+                                        New Item
                                     </button>
                                 </div>
                                 <button 
@@ -910,7 +921,7 @@ const SmartPricing: React.FC = () => {
                                     }}
                                     className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
                                 >
-                                    {editingProductId ? 'Save Product' : 'Create Product'}
+                                    {editingProductId ? `Save ${itemType}` : `Create ${itemType}`}
                                 </button>
                             </div>
                         </div>
@@ -979,22 +990,41 @@ const SmartPricing: React.FC = () => {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
                         <div className="flex items-center justify-between p-6 border-b border-slate-100">
-                            <h2 className="text-xl font-bold text-slate-800">{editingProductId ? 'Save Product to Inventory' : 'Create Product from Pricing'}</h2>
+                            <h2 className="text-xl font-bold text-slate-800">{editingProductId ? `Save ${itemType} to Inventory` : `Create ${itemType} from Pricing`}</h2>
                             <button onClick={() => setShowProductDialog(false)} className="p-2 hover:bg-slate-100 rounded-lg">
                                 <X size={20} />
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Product Name</label>
+                                <label className="block text-sm font-medium text-slate-700 mb-2">{itemType} Name</label>
                                 <input
                                     type="text"
                                     value={productName}
                                     onChange={(e) => setProductName(e.target.value)}
-                                    placeholder="e.g. Standard 80-page Book"
+                                    placeholder={`e.g. Standard 80-page ${itemType}`}
                                     className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
                                 />
                             </div>
+                            {!editingProductId && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-2">Item Type</label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setItemType('Product')}
+                                            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${itemType === 'Product' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                                        >
+                                            Product
+                                        </button>
+                                        <button
+                                            onClick={() => setItemType('Service')}
+                                            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${itemType === 'Service' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+                                        >
+                                            Service
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="p-4 bg-slate-50 rounded-xl space-y-2">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-slate-600">Pages:</span>
@@ -1039,7 +1069,7 @@ const SmartPricing: React.FC = () => {
                                 className="flex-1 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50"
                                 disabled={isCreatingProduct}
                             >
-                                {isCreatingProduct ? (editingProductId ? 'Saving...' : 'Creating...') : (editingProductId ? 'Save Product' : 'Create Product')}
+                                {isCreatingProduct ? (editingProductId ? 'Saving...' : 'Creating...') : (editingProductId ? `Save ${itemType}` : `Create ${itemType}`)}
                             </button>
                         </div>
                     </div>

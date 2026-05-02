@@ -7,32 +7,12 @@
 import { dbService } from './db';
 import { financialIntegrityService } from './financialIntegrityService';
 
-export interface ReconciliationResult {
-  success: boolean;
-  discrepancies: Discrepancy[];
-  summary: {
-    totalChecked: number;
-    totalDiscrepancies: number;
-  };
-}
-
-export interface Discrepancy {
-  type:
-    | 'customer_balance'
-    | 'supplier_balance'
-    | 'orphaned_entry'
-    | 'invoice_payment'
-    | 'bank_mirror'
-    | 'ledger_gap'
-    | 'examination_link';
-  entityId: string;
-  entityName: string;
-  expectedValue: number;
-  actualValue: number;
-  difference: number;
-  suggestedAction: string;
-  severity: 'high' | 'medium' | 'low';
-}
+import {
+  Discrepancy,
+  ReconciliationResult,
+  FinancialIntegrityIssue,
+  FinancialIntegrityAuditResult
+} from '../types';
 
 class ReconciliationService {
   async runFullReconciliation(): Promise<ReconciliationResult> {
