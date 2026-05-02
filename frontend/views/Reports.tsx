@@ -145,7 +145,7 @@ const Reports: React.FC = () => {
 
   const renderAuditor = () => <InternalAuditor />;
   const renderClientLedger = () => <ClientLedger />;
-  const renderBusinessIntel = () => <InternalAuditor />;
+  const renderBusinessIntel = () => <BusinessHealthReport />;
 
   const renderMarginPerformance = () => {
     const marginPercent = marginReport.totals.revenue > 0

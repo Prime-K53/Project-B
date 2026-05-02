@@ -131,7 +131,13 @@ const getTransactionNumber = (transaction: any) => {
 
 const isRecognizedSale = (sale: any) => {
   const status = String(sale?.status || '').toLowerCase();
-  return status === 'paid' || status === 'completed' || status === 'partial';
+  return (
+    status === 'paid' ||
+    status === 'completed' ||
+    status === 'partial' ||
+    status === 'partially paid' ||
+    status === 'overpaid'
+  );
 };
 
 const isPosMirrorInvoice = (invoice: any, recognizedSaleIds: Set<string>) => {
@@ -315,7 +321,74 @@ const normalizeGenericTransaction = (
 const buildExaminationLines = (invoice: any, batch: any): RevenueAnalysisLine[] => {
   const classes = Array.isArray(batch?.classes) ? batch.classes : [];
   if (classes.length === 0) {
-    return normalizeGenericTransaction(invoice, 'EXAMINATION', 'Examination Invoice');
+    // Fallback: invoice items were built by examinationInvoiceSyncService where
+    // cost=price when no breakdown exists. Use root-level materialTotal to
+    // reconstruct proper cost allocation across items.
+    const invoiceItems = Array.isArray(invoice?.items) ? invoice.items : [];
+    const rootMaterialTotal = toNumber(invoice?.materialTotal, 0);
+    const rootAdjustmentTotal = toNumber(invoice?.adjustmentTotal, 0);
+    const rootRevenue = invoiceItems.reduce((sum: number, it: any) => {
+      const qty = Math.max(1, toNumber(it?.quantity, 1));
+      const price = toNumber(it?.price ?? it?.unitPrice, 0);
+      return sum + price * qty;
+    }, 0);
+
+    return invoiceItems.map((item: any, index: number) => {
+      const qty = Math.max(1, toNumber(item?.quantity, 1));
+      const price = toNumber(item?.price ?? item?.unitPrice, 0);
+      const revenue = roundMoney(price * qty);
+      const share = rootRevenue > 0 ? revenue / rootRevenue : (1 / Math.max(1, invoiceItems.length));
+      // If the item has an explicit pricingBreakdown with non-zero baseMaterialCost, prefer it.
+      const breakdown = item?.pricingBreakdown;
+      const materialCost = roundMoney(
+        (breakdown?.baseMaterialCost !== undefined && breakdown.baseMaterialCost > 0)
+          ? breakdown.baseMaterialCost * qty
+          : rootMaterialTotal > 0
+            ? rootMaterialTotal * share
+            : 0
+      );
+      const adjustmentTotal = roundMoney(
+        (breakdown?.adjustmentTotal !== undefined && breakdown.adjustmentTotal > 0)
+          ? breakdown.adjustmentTotal * qty
+          : rootAdjustmentTotal > 0
+            ? rootAdjustmentTotal * share
+            : toNumber(item?.adjustmentTotal, 0) * qty
+      );
+      const roundingTotal = roundMoney(
+        (breakdown?.roundingDifference ?? toNumber(item?.roundingDifference ?? item?.rounding_difference, 0)) * qty
+      );
+      const explicitMargin = toNumber(breakdown?.profitMarginAmount, Number.NaN);
+      const profitMargin = roundMoney(
+        Number.isFinite(explicitMargin)
+          ? explicitMargin * qty
+          : revenue - materialCost - adjustmentTotal - roundingTotal
+      );
+
+      return {
+        lineId: `EXAMINATION:${invoice?.id || 'INV'}:${item?.id || item?.itemId || index}:${index}`,
+        source: 'EXAMINATION' as RevenueSource,
+        transactionId: String(invoice?.id || ''),
+        transactionNumber: getTransactionNumber(invoice),
+        transactionType: 'Examination Invoice',
+        date: toDateKey(invoice?.date || invoice?.createdAt),
+        status: String(invoice?.status || ''),
+        customerName: String(invoice?.customerName || invoice?.schoolName || 'School'),
+        subAccountName: String(invoice?.subAccountName || invoice?.sub_account_name || '').trim(),
+        itemId: String(item?.id || item?.itemId || `EXM-ITEM-${index + 1}`),
+        itemName: String(item?.name || item?.productName || item?.class_name || `Class ${index + 1}`),
+        quantity: qty,
+        revenue,
+        materialCost,
+        adjustmentTotal,
+        profitMargin,
+        roundingTotal,
+        grossGain: roundMoney(revenue - materialCost),
+        reconciliationDelta: roundMoney(revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal),
+        adjustmentLines: Array.isArray(item?.adjustmentSnapshots)
+          ? buildAdjustmentLines(item.adjustmentSnapshots, qty, adjustmentTotal)
+          : []
+      };
+    });
   }
 
   const totalRevenue = roundMoney(

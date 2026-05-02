@@ -58,13 +58,31 @@ const InternalAuditor: React.FC = () => {
 
     const auditData = useMemo(() => {
         const filteredSales = sales.filter((s: any) => filterByDateRange(s.date));
-        const filteredInvoices = invoices.filter((i: any) => filterByDateRange(i.date));
+        const filteredInvoices = invoices.filter((i: any) => {
+            const status = String(i?.status || '').toLowerCase();
+            if (status === 'cancelled' || status === 'draft') return false;
+            return filterByDateRange(i.date);
+        });
         const filteredPayments = customerPayments.filter((p: any) => filterByDateRange(p.date));
         const filteredExpenses = expenses.filter((e: any) => filterByDateRange(e.date));
 
-        // 1. Sales Reconciliation
-        // Total sales in system vs ledger postings to sales account
-        const totalSalesAmount = filteredSales.reduce((sum: number, s: any) => sum + (s.totalAmount || s.total || 0), 0);
+        // 1. Sales Reconciliation — includes POS sales + invoices (excluding POS-mirror)
+        const recognizedSaleIds = new Set<string>(
+            filteredSales.map((s: any) => String(s?.id || '').trim()).filter(Boolean)
+        );
+        const isPosMirrorInv = (inv: any) => {
+            const origin = String(inv?.originModule || inv?.origin_module || '').toLowerCase();
+            const convType = String(inv?.conversionDetails?.sourceType || '').toLowerCase();
+            const note = String(inv?.notes || '').toLowerCase();
+            return origin === 'pos' || convType === 'sale' ||
+                note.includes('pos sale') || note.includes('source: pos') ||
+                (!!String(inv?.reference || '') && recognizedSaleIds.has(String(inv?.reference || '')));
+        };
+        const posSalesTotal = filteredSales.reduce((sum: number, s: any) => sum + (s.totalAmount || s.total || 0), 0);
+        const invoiceSalesTotal = filteredInvoices
+            .filter((i: any) => !isPosMirrorInv(i))
+            .reduce((sum: number, i: any) => sum + (i.totalAmount || 0), 0);
+        const totalSalesAmount = posSalesTotal + invoiceSalesTotal;
         const salesAccountId = gl.defaultSalesAccount || '4000';
         const ledgerSalesAmount = ledger
             .filter((e: any) => filterByDateRange(e.date) && (e.creditAccountId === salesAccountId || e.creditAccountId === '4000'))

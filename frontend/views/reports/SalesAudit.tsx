@@ -26,7 +26,7 @@ interface SalesAuditData {
 }
 
 const SalesAudit: React.FC = () => {
-    const { sales = [], customerPayments = [], companyConfig, allUsers = [] } = useData();
+    const { sales = [], invoices = [], examinationBatches = [], customerPayments = [], companyConfig, allUsers = [] } = useData();
     const currency = companyConfig?.currencySymbol || '$';
     const [dateRange, setDateRange] = useState<DateRangeFilter>('today');
     const [expandedSection, setExpandedSection] = useState<string | null>('daily');
@@ -65,9 +65,40 @@ const SalesAudit: React.FC = () => {
         const filteredSales = (sales || []).filter(s => filterByDateRange(s.date));
         const filteredPayments = (customerPayments || []).filter(p => filterByDateRange(p.date));
 
-        // Total sales and transactions
-        const totalSales = filteredSales.reduce((sum, s) => sum + (s.totalAmount || s.total || 0), 0);
-        const totalTransactions = filteredSales.length;
+        // Include posted invoices (non-cancelled, non-draft)
+        const filteredInvoices = (invoices || []).filter((inv: any) => {
+            const status = String(inv?.status || '').toLowerCase();
+            if (status === 'cancelled' || status === 'draft') return false;
+            return filterByDateRange(inv.date);
+        });
+
+        // Separate POS-mirror, examination, and pure invoices
+        const recognizedSaleIds = new Set<string>(
+            filteredSales.map((s: any) => String(s?.id || '').trim()).filter(Boolean)
+        );
+        const isPosMirrorInv = (inv: any) => {
+            const origin = String(inv?.originModule || inv?.origin_module || '').toLowerCase();
+            const convType = String(inv?.conversionDetails?.sourceType || '').toLowerCase();
+            const note = String(inv?.notes || '').toLowerCase();
+            return origin === 'pos' || convType === 'sale' ||
+                note.includes('pos sale') || note.includes('source: pos') ||
+                (!!String(inv?.reference || '') && recognizedSaleIds.has(String(inv?.reference || '')));
+        };
+        const isExamInv = (inv: any) => {
+            const origin = String(inv?.originModule || inv?.origin_module || '').toLowerCase();
+            const batchId = String(inv?.batchId || inv?.linkedBatchId || inv?.originBatchId || inv?.origin_batch_id || '').trim();
+            const ref = String(inv?.reference || '').toUpperCase();
+            return origin === 'examination' || batchId.length > 0 || ref.startsWith('EXM-BATCH-');
+        };
+        const pureInvoices = filteredInvoices.filter((inv: any) => !isPosMirrorInv(inv) && !isExamInv(inv));
+        const examInvoices = filteredInvoices.filter((inv: any) => isExamInv(inv));
+
+        // ── Totals ───────────────────────────────────────────────────────
+        const posSalesTotal = filteredSales.reduce((sum, s) => sum + (s.totalAmount || s.total || 0), 0);
+        const invoiceRevenue = pureInvoices.reduce((sum: number, inv: any) => sum + (inv.totalAmount || 0), 0);
+        const examRevenue = examInvoices.reduce((sum: number, inv: any) => sum + (inv.totalAmount || 0), 0);
+        const totalSales = posSalesTotal + invoiceRevenue + examRevenue;
+        const totalTransactions = filteredSales.length + pureInvoices.length + examInvoices.length;
 
         // By payment method
         const byPaymentMethod: Record<string, { count: number; amount: number }> = {};
@@ -94,30 +125,38 @@ const SalesAudit: React.FC = () => {
             byPaymentMethod[method].count++;
             byPaymentMethod[method].amount += total;
         });
+        [...pureInvoices, ...examInvoices].forEach((inv: any) => {
+            const method = inv.paymentMethod || 'Invoice';
+            if (!byPaymentMethod[method]) byPaymentMethod[method] = { count: 0, amount: 0 };
+            byPaymentMethod[method].count++;
+            byPaymentMethod[method].amount += (inv.totalAmount || 0);
+        });
 
         // By status
         const byStatus: Record<string, { count: number; amount: number }> = {};
-        filteredSales.forEach(sale => {
-            const status = sale.status || 'Unknown';
-            if (!byStatus[status]) {
-                byStatus[status] = { count: 0, amount: 0 };
-            }
+        [...filteredSales, ...pureInvoices, ...examInvoices].forEach((rec: any) => {
+            const status = rec.status || 'Unknown';
+            if (!byStatus[status]) byStatus[status] = { count: 0, amount: 0 };
             byStatus[status].count++;
-            byStatus[status].amount += (sale.totalAmount || sale.total || 0);
+            byStatus[status].amount += (rec.totalAmount || rec.total || 0);
         });
 
-        // By cashier
+        // By cashier (POS) / creator (invoices)
         const byCashier: Record<string, { count: number; amount: number }> = {};
         filteredSales.forEach(sale => {
             const cashierId = sale.cashierId || 'Unknown';
-            if (!byCashier[cashierId]) {
-                byCashier[cashierId] = { count: 0, amount: 0 };
-            }
+            if (!byCashier[cashierId]) byCashier[cashierId] = { count: 0, amount: 0 };
             byCashier[cashierId].count++;
             byCashier[cashierId].amount += (sale.totalAmount || sale.total || 0);
         });
+        [...pureInvoices, ...examInvoices].forEach((inv: any) => {
+            const creator = inv.createdBy || 'System';
+            if (!byCashier[creator]) byCashier[creator] = { count: 0, amount: 0 };
+            byCashier[creator].count++;
+            byCashier[creator].amount += (inv.totalAmount || 0);
+        });
 
-        // Daily breakdown
+        // Daily breakdown — combine all sources
         const dailyMap = new Map<string, { sales: number; count: number; byMethod: Record<string, number> }>();
         filteredSales.forEach(sale => {
             const dateKey = sale.date.split('T')[0];
@@ -137,12 +176,23 @@ const SalesAudit: React.FC = () => {
             }
             dailyMap.set(dateKey, existing);
         });
+        [...pureInvoices, ...examInvoices].forEach((inv: any) => {
+            const dateKey = String(inv.date || '').split('T')[0];
+            if (!dateKey) return;
+            const existing = dailyMap.get(dateKey) || { sales: 0, count: 0, byMethod: {} };
+            const total = inv.totalAmount || 0;
+            existing.sales += total;
+            existing.count++;
+            const method = inv.paymentMethod || 'Invoice';
+            existing.byMethod[method] = (existing.byMethod[method] || 0) + total;
+            dailyMap.set(dateKey, existing);
+        });
 
         const dailyBreakdown = Array.from(dailyMap.entries())
             .map(([date, data]) => ({ date, ...data }))
             .sort((a, b) => b.date.localeCompare(a.date));
 
-        // Voided and refunded amounts
+        // Voided and refunded amounts (POS only — invoices are cancelled)
         const voidedAmount = filteredSales
             .filter(s => s.status === 'Cancelled' || s.status === 'Refunded')
             .reduce((sum, s) => sum + (s.totalAmount || s.total || 0), 0);
@@ -153,8 +203,13 @@ const SalesAudit: React.FC = () => {
         // Average transaction
         const averageTransaction = totalTransactions > 0 ? totalSales / totalTransactions : 0;
 
-        // Top transactions
-        const topTransactions = [...filteredSales]
+        // Top transactions — all sources combined
+        const allTransactions = [
+            ...filteredSales,
+            ...pureInvoices.map((inv: any) => ({ ...inv, total: inv.totalAmount || 0 })),
+            ...examInvoices.map((inv: any) => ({ ...inv, total: inv.totalAmount || 0 }))
+        ];
+        const topTransactions = [...allTransactions]
             .sort((a, b) => (b.totalAmount || b.total || 0) - (a.totalAmount || a.total || 0))
             .slice(0, 10);
 
@@ -176,7 +231,7 @@ const SalesAudit: React.FC = () => {
             topTransactions,
             recentPayments
         };
-    }, [sales, customerPayments, dateRange]);
+    }, [sales, invoices, examinationBatches, customerPayments, dateRange]);
 
     const getPaymentMethodIcon = (method: string) => {
         switch (method) {

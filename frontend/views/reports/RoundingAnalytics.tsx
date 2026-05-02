@@ -1,37 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ArrowUpRight, ArrowDownRight, Minus, Calendar, ChevronDown, RefreshCw, AlertCircle, Zap } from 'lucide-react';
-import { dbService } from '../../services/db';
+import { useData } from '../../context/DataContext';
+import { buildRevenueReportingSnapshot } from '../../services/revenueReportingService';
 
-// ── Types ──────────────────────────────────────────────────────────────────
-interface SaleItem {
-  productId?: string;
-  productName?: string;
-  name?: string;
-  quantity: number;
-  unitPrice: number;
-  pricingBreakdown?: {
-    roundingDifference: number;
-    wasRounded: boolean;
-    roundingMethod?: string;
-    sellingPrice: number;
-    baseMaterialCost: number;
-    profitMarginAmount: number;
-    adjustmentTotal: number;
-  };
-  rounding_difference?: number;
-  rounding_method?: string;
-}
-
-interface Sale {
-  id: string;
-  date: string;
-  totalAmount: number;
-  status: string;
-  items: SaleItem[];
-  roundingTotal?: number;
-  roundingDifference?: number;
-  customerName?: string;
-}
 
 type Period = 'today' | 'week' | 'month' | 'quarter' | 'year';
 
@@ -55,30 +26,42 @@ const fmt = (n: number, currency = 'K') =>
 
 // ── Component ──────────────────────────────────────────────────────────────
 const RoundingAnalytics: React.FC = () => {
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    sales = [],
+    invoices = [],
+    orders = [],
+    examinationBatches = [],
+    companyConfig,
+    isLoading,
+  } = useData();
+
+  const currency = companyConfig?.currencySymbol || 'K';
   const [period, setPeriod] = useState<Period>('week');
   const [showPeriodMenu, setShowPeriodMenu] = useState(false);
 
-  const currency = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('nexus_company_config') || '{}').currencySymbol || 'K'; }
-    catch { return 'K'; }
-  }, []);
+  // Build unified revenue snapshot for the selected period
+  const periodDateRange = useMemo((): 'week' | 'month' | 'quarter' | 'year' | 'all' => {
+    if (period === 'today') return 'week'; // 'today' not in RevenueDateRange; use custom filter below
+    return period;
+  }, [period]);
 
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    dbService.getAll<Sale>('sales')
-      .then(d => { if (mounted) setSales(d || []); })
-      .catch(() => { if (mounted) setSales([]); })
-      .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; };
-  }, []);
+  const revenueSnapshot = useMemo(() => buildRevenueReportingSnapshot({
+    sales,
+    invoices,
+    orders,
+    batches: examinationBatches,
+    dateRange: periodDateRange,
+    trendDays: 7,
+  }), [sales, invoices, orders, examinationBatches, periodDateRange]);
 
+  // For 'today' we need an extra client-side filter on the lines
   const filtered = useMemo(() => {
     const start = periodStart(period);
-    return sales.filter(s => new Date(s.date) >= start && (s.status === 'Paid' || s.status === 'Completed'));
-  }, [sales, period]);
+    if (period === 'today') {
+      return revenueSnapshot.lines.filter(line => new Date(line.date) >= start);
+    }
+    return revenueSnapshot.lines;
+  }, [revenueSnapshot.lines, period]);
 
   const stats = useMemo(() => {
     let totalRounding = 0, gainCount = 0, lossCount = 0, zeroCount = 0;
@@ -86,58 +69,55 @@ const RoundingAnalytics: React.FC = () => {
     const methodMap: Record<string, { method: string; total: number; count: number; gain: number; loss: number }> = {};
     const productMap: Record<string, { name: string; total: number; count: number; revenue: number }> = {};
     const dailyMap: Record<string, { gain: number; loss: number; net: number }> = {};
-    const recentRoundings: Array<{ saleId: string; date: string; product: string; amount: number; method: string }> = [];
+    const recentRoundings: Array<{ saleId: string; date: string; product: string; amount: number; method: string; source: string }> = [];
 
-    for (const sale of filtered) {
-      const day = sale.date.slice(0, 10);
+    for (const line of filtered) {
+      const day = String(line.date || '').slice(0, 10);
+      if (!day) continue;
       if (!dailyMap[day]) dailyMap[day] = { gain: 0, loss: 0, net: 0 };
 
-      // Sale-level rounding (legacy path)
-      const saleLevelRounding = sale.roundingTotal ?? sale.roundingDifference ?? 0;
+      const itemRounding = line.roundingTotal;
+      const qty = line.quantity || 1;
 
-      // Per-item rounding (SmartPricing path — preferred)
-      let saleItemRounding = 0;
-      for (const item of (sale.items || [])) {
-        const bd = item.pricingBreakdown;
-        const rd = bd?.roundingDifference ?? item.rounding_difference ?? 0;
-        const method = bd?.roundingMethod || item.rounding_method || 'Unknown';
-        const qty = item.quantity || 1;
-        const itemRounding = rd * qty;
+      totalItems += qty;
+      if (Math.abs(itemRounding) > 0.001) totalRoundedItems += qty;
 
-        saleItemRounding += itemRounding;
-        totalItems += qty;
-        if (bd?.wasRounded || Math.abs(rd) > 0.001) totalRoundedItems += qty;
+      if (itemRounding > 0.001) gainCount++;
+      else if (itemRounding < -0.001) lossCount++;
+      else zeroCount++;
 
-        if (itemRounding > 0.001) gainCount++;
-        else if (itemRounding < -0.001) lossCount++;
-        else zeroCount++;
+      totalRounding += itemRounding;
+      dailyMap[day].net += itemRounding;
+      if (itemRounding > 0) dailyMap[day].gain += itemRounding;
+      else if (itemRounding < 0) dailyMap[day].loss += Math.abs(itemRounding);
 
-        // Method tracking
-        if (!methodMap[method]) methodMap[method] = { method, total: 0, count: 0, gain: 0, loss: 0 };
-        methodMap[method].total += itemRounding;
-        methodMap[method].count += qty;
-        if (itemRounding > 0) methodMap[method].gain += itemRounding;
-        else methodMap[method].loss += Math.abs(itemRounding);
+      // Method tracking — derive from source since individual line doesn't store rounding method
+      const method = line.source === 'POS' ? 'POS SmartPricing' :
+                     line.source === 'EXAMINATION' ? 'Examination' : 'Invoice';
+      if (!methodMap[method]) methodMap[method] = { method, total: 0, count: 0, gain: 0, loss: 0 };
+      methodMap[method].total += itemRounding;
+      methodMap[method].count += qty;
+      if (itemRounding > 0) methodMap[method].gain += itemRounding;
+      else methodMap[method].loss += Math.abs(itemRounding);
 
-        // Product tracking
-        const pid = item.productId || item.productName || item.name || 'Unknown';
-        const pname = item.productName || item.name || pid;
-        if (!productMap[pid]) productMap[pid] = { name: pname, total: 0, count: 0, revenue: 0 };
-        productMap[pid].total += itemRounding;
-        productMap[pid].count += qty;
-        productMap[pid].revenue += (item.unitPrice || 0) * qty;
+      // Product tracking
+      const pid = line.itemId || line.itemName || 'Unknown';
+      const pname = line.itemName || pid;
+      if (!productMap[pid]) productMap[pid] = { name: pname, total: 0, count: 0, revenue: 0 };
+      productMap[pid].total += itemRounding;
+      productMap[pid].count += qty;
+      productMap[pid].revenue += line.revenue;
 
-        if (Math.abs(itemRounding) > 0.001) {
-          recentRoundings.push({ saleId: sale.id, date: sale.date, product: pname, amount: itemRounding, method });
-        }
+      if (Math.abs(itemRounding) > 0.001) {
+        recentRoundings.push({
+          saleId: line.transactionNumber,
+          date: line.date,
+          product: pname,
+          amount: itemRounding,
+          method,
+          source: line.source
+        });
       }
-
-      // Fall back to sale-level if no item-level rounding found
-      const effectiveRounding = Math.abs(saleItemRounding) > 0.001 ? saleItemRounding : saleLevelRounding;
-      totalRounding += effectiveRounding;
-      dailyMap[day].net += effectiveRounding;
-      if (effectiveRounding > 0) dailyMap[day].gain += effectiveRounding;
-      else if (effectiveRounding < 0) dailyMap[day].loss += Math.abs(effectiveRounding);
     }
 
     const methods = Object.values(methodMap).sort((a, b) => Math.abs(b.total) - Math.abs(a.total));
@@ -150,7 +130,7 @@ const RoundingAnalytics: React.FC = () => {
     return { totalRounding, gainCount, lossCount, zeroCount, roundingRate, methods, topProducts, dailyTrend, recent, totalItems };
   }, [filtered]);
 
-  if (loading) return (
+  if (isLoading) return (
     <div className="flex items-center justify-center h-64">
       <RefreshCw className="w-6 h-6 text-cyan-500 animate-spin" />
       <span className="ml-3 text-slate-500 text-sm">Loading rounding data…</span>
@@ -193,7 +173,7 @@ const RoundingAnalytics: React.FC = () => {
       {filtered.length === 0 && (
         <div className="flex items-center gap-3 px-5 py-4 bg-amber-50 border border-amber-200 rounded-2xl text-sm text-amber-700">
           <AlertCircle className="w-4 h-4 shrink-0" />
-          No completed sales for {PERIOD_LABELS[period].toLowerCase()}. Rounding data appears once SmartPricing products are sold.
+      No posted revenue records (POS, Invoices, Examination) for {PERIOD_LABELS[period].toLowerCase()}. Rounding data appears once transactions are recorded.
         </div>
       )}
 

@@ -904,8 +904,16 @@ const Orders: React.FC = () => {
                             dueDate: paymentPolicy.dueDate,
                             items: item.items.map((i: any) => ({
                                 ...i,
-                                description: i.productName,
-                                price: i.unitPrice
+                                description: i.productName || i.description,
+                                price: i.unitPrice,
+                                // Preserve all revenue-analysis fields from the original order item
+                                cost: i.cost ?? i.cost_price ?? 0,
+                                cost_price: i.cost_price ?? i.cost ?? 0,
+                                adjustmentSnapshots: i.adjustmentSnapshots || [],
+                                adjustmentTotal: i.adjustmentTotal ?? i.pricingBreakdown?.adjustmentTotal ?? 0,
+                                pricingBreakdown: i.pricingBreakdown,
+                                smartPricingSnapshot: i.smartPricingSnapshot,
+                                productionCostSnapshot: i.productionCostSnapshot,
                             })),
                             totalAmount: item.totalAmount,
                             paidAmount: item.paidAmount,
@@ -914,7 +922,20 @@ const Orders: React.FC = () => {
                             notes: `Converted from [Order] #[${item.orderNumber}] on [${new Date().toLocaleString()}] as accepted by [${user?.name || 'System'}]`,
                             createdBy: user?.name || 'System User',
                             type: 'standard' as any,
-                            paymentTerms: paymentPolicy.paymentTerms
+                            paymentTerms: paymentPolicy.paymentTerms,
+                            // Preserve root-level pricing aggregates so Revenue Analysis can use them
+                            conversionDetails: {
+                                sourceType: 'order',
+                                sourceNumber: item.orderNumber,
+                                date: new Date().toLocaleDateString(),
+                                acceptedBy: user?.name || 'System'
+                            },
+                            materialTotal: item.materialTotal ?? 0,
+                            adjustmentTotal: item.adjustmentTotal ?? 0,
+                            adjustmentSnapshots: item.adjustmentSnapshots || [],
+                            profitMarginTotal: item.profitMarginTotal ?? 0,
+                            roundingTotal: item.roundingTotal ?? item.roundingDifference ?? 0,
+                            roundingDifference: item.roundingDifference ?? item.roundingTotal ?? 0,
                         };
                         const invoiceId = await addInvoice(newInvoice);
                         await updateOrderStatus(item.id, 'Completed');
@@ -1049,9 +1070,23 @@ const Orders: React.FC = () => {
                                 notes: `Converted from [Order] #[${order.orderNumber}] on [${new Date().toLocaleString()}] as accepted by [${user?.name || 'System'}]`,
                                 items: order.items.map((i: any) => ({
                                     ...i,
-                                    description: i.productName,
-                                    price: i.unitPrice
-                                }))
+                                    description: i.productName || i.description,
+                                    price: i.unitPrice,
+                                    // Preserve all revenue-analysis fields
+                                    cost: i.cost ?? i.cost_price ?? 0,
+                                    cost_price: i.cost_price ?? i.cost ?? 0,
+                                    adjustmentSnapshots: i.adjustmentSnapshots || [],
+                                    adjustmentTotal: i.adjustmentTotal ?? i.pricingBreakdown?.adjustmentTotal ?? 0,
+                                    pricingBreakdown: i.pricingBreakdown,
+                                    smartPricingSnapshot: i.smartPricingSnapshot,
+                                    productionCostSnapshot: i.productionCostSnapshot,
+                                })),
+                                conversionDetails: {
+                                    sourceType: 'order',
+                                    sourceNumber: order.orderNumber,
+                                    date: new Date().toLocaleDateString(),
+                                    acceptedBy: user?.name || 'System'
+                                },
                             };
                             await addInvoice(invoiceData as any);
                         }
