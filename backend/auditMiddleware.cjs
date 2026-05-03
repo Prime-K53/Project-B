@@ -9,9 +9,7 @@
  */
 
 const { auditService } = require('./auditService.cjs');
-
-// Correlation ID storage for request lifecycle
-const CORRELATION_ID_CTX_KEY = 'correlationId';
+const { db } = require('./db.cjs');
 
 // Generate a new correlation ID
 const generateCorrelationId = () => {
@@ -29,7 +27,6 @@ const correlationIdMiddleware = (req, res, next) => {
 
 // Middleware to capture audit context for a user action
 const auditContextMiddleware = (req, res, next) => {
-  // Attach audit context to request for later use
   req.auditContext = {
     correlationId: req.correlationId,
     userId: req.user?.id || 'anonymous',
@@ -43,36 +40,15 @@ const auditContextMiddleware = (req, res, next) => {
   next();
 };
 
-// Helper to extract entity data from request (for delta capture)
-const extractEntityData = (req) => {
-  // Try to get entity from various sources
-  if (req.body && req.body.id) {
-    return {
-      id: req.body.id,
-      data: req.body
-    };
-  }
-  if (req.params && req.params.id) {
-    return {
-      id: req.params.id,
-      data: req.params
-    };
-  }
-  return null;
-};
-
 // Middleware to automatically log CRUD operations
 // Usage: app.use('/api/invoices', auditCrudMiddleware('invoice'));
 const auditCrudMiddleware = (entityType) => {
   return async (req, res, next) => {
-    // Capture original state before the operation (for updates/deletes)
     let oldValue = null;
     const entityId = req.params.id || (req.body && req.body.id);
 
     if (entityId && (req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE')) {
       try {
-        // Fetch current state from database before modification
-        const { db } = require('./db.cjs');
         const tableName = entityType === 'invoice' ? 'documents' :
                          entityType === 'examination_batch' ? 'examination_batches' :
                          entityType === 'customer' ? 'customers' :
@@ -92,12 +68,9 @@ const auditCrudMiddleware = (entityType) => {
       }
     }
 
-    // Capture response to log after operation completes
     const originalSend = res.send;
     res.send = function(body) {
-      // After operation, capture new state and log event
       if (req.auditContext && entityId) {
-        const { auditService } = require('./auditService.cjs');
         const actionMap = {
           'POST': 'CREATE',
           'PUT': 'UPDATE',
@@ -125,7 +98,6 @@ const auditCrudMiddleware = (entityType) => {
         }
       }
 
-      // Restore original send and send response
       res.send = originalSend;
       return originalSend.call(res, body);
     };
@@ -136,13 +108,10 @@ const auditCrudMiddleware = (entityType) => {
 
 // Middleware to log authentication events
 const auditAuthMiddleware = (req, res, next) => {
-  // This middleware should be placed after auth middleware
-  // It will log successful/failed auth attempts
   const originalStatus = res.statusCode;
 
   res.on('finish', async () => {
     if (req.auditContext) {
-      const { auditService } = require('./auditService.cjs');
       const isAuthRoute = req.path.startsWith('/api/auth/');
       const isLogin = req.path.endsWith('/login') || req.path.endsWith('/signin');
 
@@ -172,8 +141,6 @@ const auditAuthMiddleware = (req, res, next) => {
 // Utility to manually log an audit event from anywhere in the codebase
 const logAuditEvent = async (eventData) => {
   try {
-    // If called within request context, merge with request audit context
-    const { auditService } = require('./auditService.cjs');
     return await auditService.logEvent(eventData);
   } catch (error) {
     console.error('[AuditMiddleware] Manual audit log failed:', error);

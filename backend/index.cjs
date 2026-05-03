@@ -279,7 +279,26 @@ app.use(auditContextMiddleware);
 
 app.use('/api/auth', auditAuthMiddleware);
 
-const cors = require('cors');
+// Shared helper for pricing validation
+async function validateItemsPricing(items) {
+  if (!items || !Array.isArray(items)) return;
+  for (const item of items) {
+    if (item.price != null && item.cost != null) {
+      await validateTransactionPrice({
+        itemId: item.itemId || item.productId || item.id,
+        categoryId: item.categoryId || item.category,
+        cost: item.cost,
+        price: item.price,
+        quantity: item.quantity || 1,
+        adjustmentSnapshots: item.adjustmentSnapshots || [],
+        adjustmentTotal: item.adjustmentTotal
+      });
+    }
+  }
+}
+
+
+
 
 app.use(cors({
   origin: [
@@ -327,7 +346,7 @@ async function startServer() {
   console.log('--- STARTING SERVER ---');
 
   try {
-    await ensurePortAvailable(port);
+    await ensurePortAvailable(PORT);
   } catch (err) {
     console.error(`Startup aborted: ${err.message}`);
     process.exit(1);
@@ -479,21 +498,7 @@ async function startServer() {
     const payload = req.body || {};
     
     try {
-      if (payload.items && Array.isArray(payload.items)) {
-        for (const item of payload.items) {
-          if (item.price != null && item.cost != null) {
-            await validateTransactionPrice({
-              itemId: item.itemId || item.productId || item.id,
-              categoryId: item.categoryId || item.category,
-              cost: item.cost,
-              price: item.price,
-              quantity: item.quantity || 1,
-              adjustmentSnapshots: item.adjustmentSnapshots || [],
-              adjustmentTotal: item.adjustmentTotal
-            });
-          }
-        }
-      }
+      await validateItemsPricing(payload.items);
     } catch (validationError) {
       console.error('[Pricing Validation Failed]', validationError.message);
       return res.status(400).json({ error: validationError.message, code: 'PRICE_VALIDATION_FAILED' });
@@ -1050,19 +1055,7 @@ async function startServer() {
       }
 
       try {
-        for (const item of o.items || []) {
-          if (item.price != null && item.cost != null) {
-            await validateTransactionPrice({
-              itemId: item.itemId || item.productId || item.id,
-              categoryId: item.categoryId || item.category,
-              cost: item.cost,
-              price: item.price,
-              quantity: item.quantity || 1,
-              adjustmentSnapshots: item.adjustmentSnapshots || [],
-              adjustmentTotal: item.adjustmentTotal
-            });
-          }
-        }
+        await validateItemsPricing(o.items);
       } catch (validationError) {
         console.error('[Pricing Validation Failed]', validationError.message);
         return sendError(res, 400, validationError.message, 'PRICE_VALIDATION_FAILED');
@@ -2060,6 +2053,11 @@ app.get('/api/invoices/:id/details', (req, res) => {
     });
   });
 
+  // Catch-all for unknown API routes to ensure JSON response
+  app.use('/api', (req, res) => {
+    return sendError(res, 404, 'API endpoint not found', 'NOT_FOUND');
+  });
+
   app.use((req, res) => {
     res.status(404).json({ message: 'Route not found' });
   });
@@ -2070,7 +2068,7 @@ app.get('/api/invoices/:id/details', (req, res) => {
   });
 
 
-  console.log('Starting app.listen on port', port);
+  console.log('Starting app.listen on port', PORT);
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
     // console.log(`Rate limiting enabled: 100 requests per 15 minutes per IP`);
@@ -2090,10 +2088,7 @@ app.get('/api/invoices/:id/details', (req, res) => {
     console.log('Server closed unexpectedly');
   });
 
-  // Catch-all for unknown API routes to ensure JSON response
-  app.use('/api', (req, res) => {
-    return sendError(res, 404, 'API endpoint not found', 'NOT_FOUND');
-  });
+
 
   const shutdown = async () => {
     console.log('Shutdown signal received. Cleaning up...');

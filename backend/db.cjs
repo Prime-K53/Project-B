@@ -8,20 +8,6 @@ if (!fs.existsSync(storageDir)) {
   fs.mkdirSync(storageDir, { recursive: true });
 }
 
-const getWorkspaceDbPath = () => {
-  const configPath = path.resolve(storageDir, 'workspace.json');
-  if (fs.existsSync(configPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      if (config.workspacePath) return path.join(config.workspacePath, 'examination.db');
-    } catch (e) {}
-  }
-  return null;
-};
-
-const workspaceDbPath = getWorkspaceDbPath();
-
-// Consolidate dbPath declaration - Production & Render Ready
 const dbPath = process.env.DB_PATH || '/tmp/database.db';
 
 
