@@ -180,7 +180,8 @@ function safeEvaluate(formula, context = {}) {
 }
 
 const app = express();
-const port = process.env.PORT || 5002;
+const PORT = process.env.PORT || 3000;
+
 
 const ensurePortAvailable = (candidatePort) => {
   const normalizedPort = Number(candidatePort);
@@ -278,53 +279,21 @@ app.use(auditContextMiddleware);
 
 app.use('/api/auth', auditAuthMiddleware);
 
-// CORS configuration: allow common custom headers used by the frontend
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-const exposedDocumentHeaders = [
-  'x-correlation-id',
-  'Content-Disposition',
-  'Content-Type',
-  'Content-Length',
-  'Accept-Ranges'
-];
-const corsOptions = {
-  origin: function(origin, callback) {
-    // If no origin (e.g., curl or server-to-server) allow; otherwise check list or echo
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.length === 0) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
-    // Not allowed
-    return callback(new Error('CORS origin not allowed'));
-  },
-  methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'x-user-id',
-    'x-user-role',
-    'x-user-email',
-    'x-user-is-super-admin',
-    'x-correlation-id',
-    'x-idempotency-key',
-    'x-can-override-exam-cost',
-    'x-requested-with'
+const cors = require('cors');
+
+app.use(cors({
+  origin: [
+    'https://primemw.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3003',
+    'http://localhost:5002'
   ],
-  exposedHeaders: exposedDocumentHeaders,
-  credentials: true,
-  optionsSuccessStatus: 204
-};
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true
+}));
 
-app.use(cors(corsOptions));
+app.options('*', cors());
 
-// Ensure preflight is handled consistently
-app.options(/.*/, (req, res) => {
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(','));
-  res.setHeader('Access-Control-Allow-Methods', corsOptions.methods.join(','));
-  res.setHeader('Access-Control-Expose-Headers', exposedDocumentHeaders.join(','));
-  return res.sendStatus(204);
-});
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
@@ -2095,21 +2064,15 @@ app.get('/api/invoices/:id/details', (req, res) => {
     res.status(404).json({ message: 'Route not found' });
   });
 
-  // Global Error Handler to ensure JSON responses
   app.use((err, req, res, next) => {
-    console.error('Unhandled Server Error:', err);
-    sendError(
-      res,
-      500,
-      'An unexpected error occurred on the server.',
-      'INTERNAL_SERVER_ERROR',
-      err.message
-    );
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
   });
 
+
   console.log('Starting app.listen on port', port);
-  const server = app.listen(port, '0.0.0.0', () => {
-    console.log(`Server listening on port ${port}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
     // console.log(`Rate limiting enabled: 100 requests per 15 minutes per IP`);
     // console.log(`Security headers enabled (Helmet)`);
     // Keep-alive mechanism

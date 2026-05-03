@@ -1,5 +1,12 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { Buffer } from 'buffer';
+
+// Polyfill Buffer for browser environment
+if (typeof window !== 'undefined') {
+  window.Buffer = Buffer;
+}
+
 
 // Prevent ReferenceError: "module is not defined" in browser-run code
 // Some legacy/third-party snippets reference a global `module` identifier.

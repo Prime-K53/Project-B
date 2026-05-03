@@ -22,9 +22,9 @@ const getWorkspaceDbPath = () => {
 const workspaceDbPath = getWorkspaceDbPath();
 
 // Consolidate dbPath declaration - Production & Render Ready
-const dbPath = process.env.NODE_ENV === 'test'
-  ? ':memory:'
-  : (process.env.DB_PATH || workspaceDbPath || (process.env.RENDER ? '/tmp/examination.db' : path.resolve(storageDir, 'examination.db')));
+const dbPath = process.env.DB_PATH || '/tmp/database.db';
+
+
 
 const db = new sqlite3.Database(dbPath);
 
