@@ -309,12 +309,22 @@ const corsOptions = {
       'http://localhost:3003',
       'http://localhost:5002'
     ];
-    // Allow requests with no origin (mobile apps, curl requests) or from allowed list
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    
+    // Debug: log origin for troubleshooting
+    console.log('[CORS] Origin check:', origin);
+    
+    // Allow requests with no origin (mobile apps, curl requests)
+    if (!origin) {
+      return callback(null, true);
     }
+    
+    // Allow if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Deny but don't throw error
+    return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-user-role', 'x-correlation-id'],
