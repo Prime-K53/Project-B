@@ -362,6 +362,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global request logging (audit trail)
+app.use((req, res, next) => {
+  console.log('[REQ]', {
+    method: req.method,
+    url: req.originalUrl,
+    origin: req.headers.origin
+  });
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
@@ -2111,10 +2121,15 @@ app.get('/api/invoices/:id/details', (req, res) => {
     res.status(404).json({ message: 'Route not found' });
   });
 
-  app.use((err, req, res, next) => {
-    console.error(err);
-    res.status(500).json({ error: 'Internal Server Error' });
+app.use((err, req, res, next) => {
+  console.error('[ERROR]', {
+    message: err.message,
+    stack: err.stack,
+    method: req.method,
+    url: req.originalUrl
   });
+  res.status(500).json({ error: 'Internal Server Error', message: err.message });
+});
 
 
   console.log('Starting app.listen on port', PORT);
