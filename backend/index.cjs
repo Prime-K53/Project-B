@@ -182,6 +182,9 @@ function safeEvaluate(formula, context = {}) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy for Render/Heroku behind reverse proxy
+app.set('trust proxy', 1);
+
 
 const ensurePortAvailable = (candidatePort) => {
   const normalizedPort = Number(candidatePort);
@@ -310,8 +313,17 @@ const corsOptions = {
       'http://localhost:5002'
     ];
     
+    // Normalize origin to handle trailing slash
+    const normalizedOrigin = origin?.replace(/\/$/, '');
+    const isAllowed = allowedOrigins.some(o => o.replace(/\/$/, '') === normalizedOrigin);
+    
     // Debug: log origin for troubleshooting
-    console.log('[CORS] Origin check:', origin);
+    console.log('[CORS]', {
+      origin,
+      normalizedOrigin,
+      allowed: isAllowed,
+      method: 'CHECK'
+    });
     
     // Allow requests with no origin (mobile apps, curl requests)
     if (!origin) {
@@ -319,7 +331,7 @@ const corsOptions = {
     }
     
     // Allow if origin is in allowed list
-    if (allowedOrigins.includes(origin)) {
+    if (isAllowed) {
       return callback(null, true);
     }
     
@@ -331,7 +343,24 @@ const corsOptions = {
   credentials: true
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
+
+// Explicit credentials header (safety net)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
+
+// Handle preflight for all routes (safe global handler)
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id, x-user-role, x-correlation-id');
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
