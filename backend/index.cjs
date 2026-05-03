@@ -300,16 +300,28 @@ async function validateItemsPricing(items) {
 
 
 
-app.use(cors({
-  origin: [
-    'https://primemw.netlify.app',
-    'http://localhost:5173',
-    'http://localhost:3003',
-    'http://localhost:5002'
-  ],
+// CORS configuration - accepts frontend from environment or defaults
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      process.env.FRONTEND_URL || 'https://meek-starburst-fd4497.netlify.app',
+      'http://localhost:5173',
+      'http://localhost:3003',
+      'http://localhost:5002'
+    ];
+    // Allow requests with no origin (mobile apps, curl requests) or from allowed list
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-user-role', 'x-correlation-id'],
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
