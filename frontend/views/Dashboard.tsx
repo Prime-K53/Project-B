@@ -2091,7 +2091,7 @@ const DashboardContent: React.FC = () => {
               }}
             >
               {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={150}>
+                <ResponsiveContainer width="100%" height={isMobile ? 220 : isTablet ? 280 : 316} minWidth={0} minHeight={150}>
                   <AreaChart data={chartData} margin={{ top: 8, right: isMobile ? 4 : 16, left: isMobile ? -24 : -8, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">

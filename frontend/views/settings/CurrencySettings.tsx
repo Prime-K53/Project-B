@@ -5,6 +5,7 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Card } from '../../components/Card';
 import { logger } from '../../services/logger';
+import { OFFLINE_MODE } from '../../constants';
 
 export const CurrencySettings: React.FC = () => {
   const [settings, setSettings] = useState<CurrencySettingsData | null>(null);
@@ -75,6 +76,11 @@ export const CurrencySettings: React.FC = () => {
   };
 
   const handleFetchRates = async () => {
+    if (OFFLINE_MODE) {
+      alert('Automatic exchange-rate fetching is unavailable in the offline desktop app. Add manual rates instead.');
+      return;
+    }
+
     if (!settings?.apiKey) {
       alert('Please configure API key first');
       return;
@@ -287,6 +293,12 @@ export const CurrencySettings: React.FC = () => {
                 {saving ? 'Fetching...' : 'Fetch Latest Rates'}
               </Button>
             </div>
+          )}
+
+          {OFFLINE_MODE && (
+            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+              This desktop build is fully offline. Save manual exchange rates locally instead of using internet providers.
+            </p>
           )}
         </Card>
       )}

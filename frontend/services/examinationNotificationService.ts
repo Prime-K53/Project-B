@@ -1,5 +1,5 @@
 import { ExaminationBatchNotification, NotificationAuditLog, NotificationType, NotificationPriority } from '../types';
-import { API_BASE_URL, getUrl } from '../config/api.js';
+import { getUrl, API_BASE_URL } from '../config/api.js';
 import { dbService } from './db';
 import { getHeaders, joinPath, safeJson, toServiceError, isLikelyNetworkError } from './examinationServiceUtils';
 
@@ -9,7 +9,10 @@ const FALLBACK_CANDIDATE_TIMEOUT_MS = 12000;
 const BACKEND_RETRY_COOLDOWN_MS = 60000;
 const PASSWORD_BYPASS_USER_ID = 'USR-PASSWORD-BYPASS';
 
-const API_BASE_CANDIDATES = [`${API_BASE_URL}/examination`];
+const API_BASE_CANDIDATES = () => {
+  const base = API_BASE_URL;
+  return base ? [`${base}/examination`] : [];
+};
 let backendRetryAfter = 0;
 
 const getLocalNotificationsForUser = async (
@@ -45,10 +48,11 @@ const fetchWithTimeout = async (
   timeoutMs: number = REQUEST_TIMEOUT_MS
 ) => {
   let lastError: Error | null = null;
+  const baseCandidates = API_BASE_CANDIDATES();
 
-  for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
-    const base = API_BASE_CANDIDATES[index];
-    const isLastAttempt = index === API_BASE_CANDIDATES.length - 1;
+  for (let index = 0; index < baseCandidates.length; index += 1) {
+    const base = baseCandidates[index];
+    const isLastAttempt = index === baseCandidates.length - 1;
     const controller = new AbortController();
     const timeoutForAttempt = !isLastAttempt
       ? Math.min(timeoutMs, FALLBACK_CANDIDATE_TIMEOUT_MS)
@@ -62,7 +66,7 @@ const fetchWithTimeout = async (
 
     try {
       const url = getUrl(joinPath(base, endpoint));
-      console.debug(`[examinationNotificationService] fetch attempt ${index + 1}/${API_BASE_CANDIDATES.length} -> ${url} (timeout ${timeoutForAttempt}ms)`);
+      console.debug(`[examinationNotificationService] fetch attempt ${index + 1}/${baseCandidates.length} -> ${url} (timeout ${timeoutForAttempt}ms)`);
       const start = Date.now();
       const response = await fetch(url, {
         ...options,

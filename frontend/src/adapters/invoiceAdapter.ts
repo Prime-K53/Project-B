@@ -66,7 +66,7 @@ export const buildExaminationLogicalInvoiceNumber = (
   const date = new Date(dateValue);
   const year = Number.isFinite(date.getTime()) ? date.getUTCFullYear() : new Date().getUTCFullYear();
   const numericId = Math.max(0, Math.floor(Number(invoiceId) || 0));
-  return `EXM-${year}-${String(numericId).padStart(6, '0')}`;
+  return `EXM-${year}-${String(numericId).padStart(4, '0')}`;
 };
 
 const toNumericValue = (value: unknown): number | null => {

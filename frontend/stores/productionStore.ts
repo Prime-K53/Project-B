@@ -6,6 +6,14 @@ import { dbService } from '../services/db';
 import { generateNextId } from '../utils/helpers';
 import { MOCK_WORK_CENTERS, MOCK_RESOURCES } from '../constants';
 
+// Helper to get dynamic API base URL
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined' && (window as any).API_BASE_URL) {
+    return (window as any).API_BASE_URL;
+  }
+  return '';
+};
+
 const isProd = Boolean(import.meta.env?.PROD);
 
 interface ProductionState {
@@ -65,7 +73,7 @@ export const useProductionStore = create<ProductionState>((set, get) => ({
 
       try {
         // Try backend API first (prefer real database over mocks)
-        const apiBase = String(import.meta.env?.VITE_API_URL || 'https://prime-erp-system.onrender.com/api').replace(/\/+$/, '');
+        const apiBase = getApiBaseUrl();
         const wcResponse = await fetch(`${apiBase}/production/work-centers`);
         const resResponse = await fetch(`${apiBase}/production/resources`);
         

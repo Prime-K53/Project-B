@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "commonjs",
   "main": "index.cjs",
+  "engines": {
+    "node": ">=20.18.0"
+  },
   "scripts": {
     "start": "node index.cjs",
     "dev": "node index.cjs"

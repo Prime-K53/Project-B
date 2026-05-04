@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { examinationBatchService } from '../../services/examinationBatchService';
 import { ExaminationBatch, ExaminationClass, ExaminationSubject } from '../../types';
 import { toast } from '../../components/Toast';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { ArrowLeft, Plus, Trash2, CheckCircle, BookOpen, Users, BookText, FileText, ChevronDown, ChevronUp, Eye, EyeOff, RefreshCw, Repeat, Printer } from 'lucide-react';
 import { AddClassDialog } from './components/AddClassDialog';
 import { ManageSubjectsDialog } from './components/ManageSubjectsDialog';
@@ -28,6 +29,32 @@ const ExaminationBatchDetail: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<ExaminationClass | null>(null);
   const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
   const canOverrideExamCost = checkPermission('examination.cost.override');
+
+  // Confirmation Dialog States
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type: 'warning' | 'danger' | 'info' | 'question';
+    onConfirm: () => void;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    type: 'question',
+    onConfirm: () => {}
+  });
+
+  // Separate state for class removal confirmation
+  const [classRemoveConfirm, setClassRemoveConfirm] = useState<{
+    open: boolean;
+    classId: string | null;
+  }>({ open: false, classId: null });
+
+  // Separate state for job ticket conversion
+  const [jobTicketConfirm, setJobTicketConfirm] = useState<{
+    open: boolean;
+  }>({ open: false });
 
   const fetchBatch = async () => {
     if (!id) return;
@@ -59,110 +86,158 @@ const ExaminationBatchDetail: React.FC = () => {
 
   const handleApprove = async () => {
     if (!batch) return;
-    if (!window.confirm('Are you sure you want to approve this batch? This will deduct inventory and lock the batch.')) return;
-    setIsApproving(true);
-    try {
-      const updatedBatch = await approveBatch(batch.id);
-      setBatch(updatedBatch);
-      alert('Batch approved successfully!');
-    } catch (error) {
-      console.error('Error approving batch:', error);
-      alert('Failed to approve batch. Please check inventory levels.');
-    } finally {
-      setIsApproving(false);
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Approve Batch',
+      message: 'Are you sure you want to approve this batch? This will deduct inventory and lock the batch.',
+      type: 'warning',
+      onConfirm: async () => {
+        setIsApproving(true);
+        try {
+          const updatedBatch = await approveBatch(batch.id);
+          setBatch(updatedBatch);
+          notify('Batch approved successfully!', 'success');
+        } catch (error) {
+          console.error('Error approving batch:', error);
+          notify('Failed to approve batch. Please check inventory levels.', 'error');
+        } finally {
+          setIsApproving(false);
+        }
+      }
+    });
   };
 
   const handleGenerateInvoice = async () => {
     if (!batch) return;
-    if (!window.confirm('Generate invoice for this batch?')) return;
-    setIsGeneratingInvoice(true);
-    try {
-      const result = await generateInvoice(batch.id);
-      await fetchBatch();
-      await fetchFinanceData();
+    setConfirmDialog({
+      open: true,
+      title: 'Generate Invoice',
+      message: 'Generate invoice for this batch?',
+      type: 'question',
+      onConfirm: async () => {
+        setIsGeneratingInvoice(true);
+        try {
+          const result = await generateInvoice(batch.id);
+          await fetchBatch();
+          await fetchFinanceData();
 
-      const syncedInvoiceId = result?.sync?.invoiceId || result?.invoice?.id || null;
-      const syncFailed = Boolean(result?.invoice) && Boolean(result?.sync) && !result.sync.synced;
+          const syncedInvoiceId = result?.sync?.invoiceId || result?.invoice?.id || null;
+          const syncFailed = Boolean(result?.invoice) && Boolean(result?.sync) && !result.sync.synced;
 
-      if (syncFailed) {
-        notify(
-          result.sync?.message || 'Invoice generated in backend, but local Sales Invoice sync failed.',
-          'error'
-        );
-        return;
-      }
-
-      notify(
-        result?.idempotent
-          ? 'Invoice already existed. Opened Sales Invoices.'
-          : 'Invoice generated successfully. Opened Sales Invoices.',
-        'success'
-      );
-
-      if (syncedInvoiceId) {
-        navigate('/sales-flow/invoices', {
-          state: {
-            action: 'view',
-            type: 'Invoice',
-            id: syncedInvoiceId,
-            filterInvoiceId: syncedInvoiceId,
-            source: 'examination'
+          if (syncFailed) {
+            notify(
+              result.sync?.message || 'Invoice generated in backend, but local Sales Invoice sync failed.',
+              'error'
+            );
+            return;
           }
-        });
-      } else {
-        navigate('/sales-flow/invoices');
+
+          notify(
+            result?.idempotent
+              ? 'Invoice already existed. Opened Sales Invoices.'
+              : 'Invoice generated successfully. Opened Sales Invoices.',
+            'success'
+          );
+
+          if (syncedInvoiceId) {
+            navigate('/sales-flow/invoices', {
+              state: {
+                action: 'view',
+                type: 'Invoice',
+                id: syncedInvoiceId,
+                filterInvoiceId: syncedInvoiceId,
+                source: 'examination'
+              }
+            });
+          } else {
+            navigate('/sales-flow/invoices');
+          }
+        } catch (error) {
+          console.error('Error generating invoice:', error);
+          notify('Failed to generate invoice.', 'error');
+        } finally {
+          setIsGeneratingInvoice(false);
+        }
       }
-    } catch (error) {
-      console.error('Error generating invoice:', error);
-      alert('Failed to generate invoice.');
-    } finally {
-      setIsGeneratingInvoice(false);
-    }
+    });
   };
 
   const handleCreatePatch = async () => {
     if (!batch) return;
-    if (!window.confirm('Create a patch for this batch? This will create a new batch linked to this one.')) return;
-    try {
-      const newBatch = await createBatch({
-        school_id: batch.school_id,
-        name: `Patch for ${batch.name}`,
-        academic_year: batch.academic_year,
-        term: batch.term,
-        exam_type: batch.exam_type,
-        type: 'Patch',
-        parent_batch_id: batch.id,
-      });
-      const batchRef = String(newBatch.batch_number || newBatch.batchNumber || newBatch.id || '').trim();
-      navigate(`/examination/batches/${newBatch.id}`, { state: { name: batchRef } });
-    } catch (error) {
-      console.error('Error creating patch:', error);
-      alert('Failed to create patch.');
-    }
+    setConfirmDialog({
+      open: true,
+      title: 'Create Patch',
+      message: 'Create a patch for this batch? This will create a new batch linked to this one.',
+      type: 'info',
+      onConfirm: async () => {
+        try {
+          const newBatch = await createBatch({
+            school_id: batch.school_id,
+            name: `Patch for ${batch.name}`,
+            academic_year: batch.academic_year,
+            term: batch.term,
+            exam_type: batch.exam_type,
+            type: 'Patch',
+            parent_batch_id: batch.id,
+          });
+          const batchRef = String(newBatch.batch_number || newBatch.batchNumber || newBatch.id || '').trim();
+          navigate(`/examination/batches/${newBatch.id}`, { state: { name: batchRef } });
+        } catch (error) {
+          console.error('Error creating patch:', error);
+          notify('Failed to create patch.', 'error');
+        }
+      }
+    });
   };
 
   const handleDelete = async () => {
-    if (!batch || !window.confirm('Are you sure you want to delete this batch?')) return;
-    try {
-      await deleteBatch(batch.id);
-      navigate('/examination/batches');
-    } catch (error) {
-      console.error('Error deleting batch:', error);
-    }
+    if (!batch) return;
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Batch',
+      message: 'Are you sure you want to delete this batch?',
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteBatch(batch.id);
+          navigate('/examination/batches');
+        } catch (error) {
+          console.error('Error deleting batch:', error);
+          notify('Failed to delete batch.', 'error');
+        }
+      }
+    });
   };
 
   const handleRecalculate = async () => {
     if (!batch) return;
-    if (!window.confirm('Recalculate this batch with current material prices and adjustments?')) return;
+    setConfirmDialog({
+      open: true,
+      title: 'Recalculate Batch',
+      message: 'Recalculate this batch with current material prices and adjustments?',
+      type: 'question',
+      onConfirm: async () => {
+        try {
+          const updatedBatch = await examinationBatchService.recalculateBatch(batch.id);
+          setBatch(updatedBatch);
+          notify('Batch recalculated successfully!', 'success');
+        } catch (error) {
+          console.error('Error recalculating batch:', error);
+          notify('Failed to recalculate batch.', 'error');
+        }
+      }
+    });
+  };
+
+  const handleConvertToJobTicket = async () => {
+    if (!batch) return;
     try {
-      const updatedBatch = await examinationBatchService.recalculateBatch(batch.id);
-      setBatch(updatedBatch);
-      alert('Batch recalculated successfully!');
-    } catch (error) {
-      console.error('Error recalculating batch:', error);
-      alert('Failed to recalculate batch.');
+      await convertBatchToJobTicket(batch.id);
+      navigate('/sales-flow/job-tickets');
+    } catch (err) {
+      // Error handled in context
     }
+    setJobTicketConfirm({ open: false });
   };
 
   const handleConvertToRecurring = () => {
@@ -335,6 +410,13 @@ const ExaminationBatchDetail: React.FC = () => {
     }
   };
 
+  // Helper to ensure numeric values are valid finite numbers (not NaN or Infinity)
+  const sanitizeNumeric = (value: number | undefined | null): number => {
+    if (value === undefined || value === null) return 0;
+    if (!Number.isFinite(value)) return 0;
+    return value;
+  };
+
   const handleSaveClassPricing = async (
     classId: string,
     totals: {
@@ -348,23 +430,30 @@ const ExaminationBatchDetail: React.FC = () => {
     try {
       const classRef = batch.classes?.find(cls => cls.id === classId);
       const learnerCount = Math.max(0, Math.floor(Number(classRef?.number_of_learners) || 0));
-      const expectedFee = Number(totals.expected_fee_per_learner ?? 0) || 0;
+
+      // Sanitize all numeric values to prevent NaN/Infinity from causing 500 errors
+      const sanitizedMaterialTotalCost = sanitizeNumeric(totals.material_total_cost);
+      const sanitizedAdjustmentTotalCost = sanitizeNumeric(totals.adjustment_total_cost);
+      const sanitizedCalculatedTotalCost = sanitizeNumeric(totals.calculated_total_cost);
+      const sanitizedExpectedFeePerLearner = sanitizeNumeric(totals.expected_fee_per_learner);
+
+      const expectedFee = Number(sanitizedExpectedFeePerLearner ?? 0) || 0;
       const hasManualOverride = Boolean(Number(classRef?.is_manual_override || 0))
         && Number(classRef?.manual_cost_per_learner ?? 0) > 0;
       const manualFee = Number(classRef?.manual_cost_per_learner ?? 0);
       const finalFee = hasManualOverride ? manualFee : expectedFee;
       const liveTotalPreview = hasManualOverride
         ? Math.round(finalFee * learnerCount * 100) / 100
-        : (totals.calculated_total_cost ?? Math.round(expectedFee * learnerCount * 100) / 100);
+        : (sanitizedCalculatedTotalCost ?? Math.round(expectedFee * learnerCount * 100) / 100);
 
       const updatedClass = await examinationBatchService.updateClassFinancialMetrics(classId, {
         expected_fee_per_learner: expectedFee,
         final_fee_per_learner: finalFee,
         live_total_preview: liveTotalPreview,
         financial_metrics_source: hasManualOverride ? 'MANUAL_OVERRIDE' : 'SYSTEM_CALCULATION',
-        material_total_cost: totals.material_total_cost,
-        adjustment_total_cost: totals.adjustment_total_cost,
-        calculated_total_cost: totals.calculated_total_cost
+        material_total_cost: sanitizedMaterialTotalCost,
+        adjustment_total_cost: sanitizedAdjustmentTotalCost,
+        calculated_total_cost: sanitizedCalculatedTotalCost
       });
 
       setBatch(prev => {
@@ -389,12 +478,20 @@ const ExaminationBatchDetail: React.FC = () => {
   };
 
   const handleRemoveClass = async (classId: string) => {
-    if (!window.confirm('Are you sure you want to remove this class and all its subjects?')) return;
+    setClassRemoveConfirm({ open: true, classId });
+  };
+
+  const confirmHandleRemoveClass = async () => {
+    if (!classRemoveConfirm.classId) return;
     try {
-      await examinationBatchService.deleteClass(classId);
+      await examinationBatchService.deleteClass(classRemoveConfirm.classId);
       await fetchBatch();
+      notify('Class removed successfully.', 'success');
     } catch (error) {
       console.error('Error removing class:', error);
+      notify('Failed to remove class.', 'error');
+    } finally {
+      setClassRemoveConfirm({ open: false, classId: null });
     }
   };
 
@@ -754,16 +851,7 @@ const ExaminationBatchDetail: React.FC = () => {
           {(batch.status === 'Approved' || batch.status === 'Invoiced') && (
             <button
               type="button"
-              onClick={async () => {
-                if (window.confirm('Convert this batch to a Job Ticket for production?')) {
-                  try {
-                    await convertBatchToJobTicket(batch.id);
-                    navigate('/sales-flow/job-tickets');
-                  } catch (err) {
-                    // Error handled in context
-                  }
-                }
-              }}
+              onClick={() => setJobTicketConfirm({ open: true })}
               className={`${primaryButtonClass} bg-rose-600 hover:bg-rose-700`}
             >
               <Printer size={14} />
@@ -1016,6 +1104,33 @@ const ExaminationBatchDetail: React.FC = () => {
         onApplyOverridePricing={canOverrideExamCost ? handleApplyClassOverridePricing : undefined}
         currencySymbol={batch.currency || 'MWK'}
         isLocked={isLocked}
+      />
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+      />
+
+      <ConfirmDialog
+        open={classRemoveConfirm.open}
+        onOpenChange={(open) => setClassRemoveConfirm(prev => ({ ...prev, open }))}
+        onConfirm={confirmHandleRemoveClass}
+        title="Remove Class"
+        message="Are you sure you want to remove this class and all its subjects?"
+        type="danger"
+      />
+
+      <ConfirmDialog
+        open={jobTicketConfirm.open}
+        onOpenChange={(open) => setJobTicketConfirm(prev => ({ ...prev, open }))}
+        onConfirm={handleConvertToJobTicket}
+        title="Convert to Job Ticket"
+        message="Convert this batch to a Job Ticket for production?"
+        type="info"
       />
     </div>
   );

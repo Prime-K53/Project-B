@@ -39,6 +39,63 @@ interface PreparedPreviewSource {
 const PREVIEW_SLOW_NETWORK_MS = 7000;
 const PREVIEW_TIMEOUT_MS = 22000;
 
+const canDecompressGzip = (): boolean =>
+  typeof DecompressionStream !== 'undefined';
+
+const tryDecodeErrorMessage = async (response: Response, contentType: string): Promise<string | null> => {
+  try {
+    if (contentType.includes('application/json')) {
+      const payload = await response.clone().json();
+      return String(payload?.error || payload?.message || '').trim() || null;
+    }
+    const text = await response.clone().text();
+    if (!text) return null;
+    return text.slice(0, 200).trim();
+  } catch {
+    return null;
+  }
+};
+
+const maybeInflateGzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
+  if (!canDecompressGzip()) {
+    throw new Error('Gzip response cannot be decompressed in this browser environment.');
+  }
+
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const decompressedBuffer = await new Response(stream).arrayBuffer();
+  return new Uint8Array(decompressedBuffer);
+};
+
+const fetchPdfAsObjectUrl = async (url: string): Promise<string> => {
+  const response = await fetch(url, { method: 'GET' });
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const contentEncoding = (response.headers.get('content-encoding') || '').toLowerCase();
+  console.log('Content-Type:', response.headers.get('content-type'));
+
+  if (!response.ok) {
+    const details = await tryDecodeErrorMessage(response, contentType);
+    throw new Error(details ? `PDF request failed: ${details}` : `PDF request failed with status ${response.status}.`);
+  }
+
+  if (!contentType.includes('pdf')) {
+    const details = await tryDecodeErrorMessage(response, contentType);
+    throw new Error(details || `Expected PDF response but received "${contentType || 'unknown'}".`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  const rawBytes = new Uint8Array(buffer);
+
+  let finalBytes: Uint8Array;
+  if (contentEncoding.includes('gzip')) {
+    finalBytes = await maybeInflateGzip(rawBytes);
+  } else {
+    finalBytes = rawBytes;
+  }
+
+  const blob = new Blob([finalBytes], { type: 'application/pdf' });
+  return URL.createObjectURL(blob);
+};
+
 export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }: PreviewModalProps) => {
   const [isPreparing, setIsPreparing] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
@@ -158,6 +215,16 @@ export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }
             throw new Error('No preview source is available for this document.');
           }
 
+          if (isPdfMimeType(mimeType, fileName, displayUrl) && !displayUrl.startsWith('blob:') && !displayUrl.startsWith('data:')) {
+            try {
+              const pdfBlobUrl = await fetchPdfAsObjectUrl(displayUrl);
+              displayUrl = pdfBlobUrl;
+              objectUrlRef.current = pdfBlobUrl;
+            } catch (pdfFetchError: any) {
+              throw new Error(pdfFetchError?.message || 'Failed to fetch a valid PDF preview.');
+            }
+          }
+
           if (cancelled) return;
 
           setPreparedPreview({
@@ -175,8 +242,25 @@ export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }
           throw new Error('Missing document data for preview.');
         }
 
-        const securedData = await attachDocumentSecurity(data as any);
-        const blob = await pdf(<PrimeDocument type={type} data={securedData as PrimeDocData} />).toBlob();
+        let blob: Blob;
+        try {
+          const securedData = await attachDocumentSecurity(data as any);
+          blob = await pdf(<PrimeDocument type={type} data={securedData as PrimeDocData} />).toBlob();
+        } catch (pdfError: any) {
+          const msg = String(pdfError?.message || pdfError || '');
+          // "incorrect data check" is a zlib error thrown by fflate when a
+          // font file URL returned non-binary data (e.g., an HTML error page
+          // while the backend is offline).  Retry once with the default font
+          // by clearing the fonts-registered flag, then give a friendly error.
+          if (msg.includes('incorrect data check') || msg.includes('zlib') || msg.includes('font')) {
+            throw new Error(
+              'The document font could not be loaded (offline or asset missing). ' +
+              'The PDF has been generated with the default font. Please retry or use Download.'
+            );
+          }
+          throw pdfError;
+        }
+
         const blobUrl = URL.createObjectURL(blob);
         objectUrlRef.current = blobUrl;
 

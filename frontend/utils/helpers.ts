@@ -10,7 +10,7 @@ import {
 
 const isInvoiceNumberingType = (type: string) => {
   const normalized = normalizeNumberingKey(type);
-  return normalized === 'invoice' || normalized.startsWith('inv') || normalized.includes('invoice');
+  return normalized === 'invoice' || normalized.startsWith('inv') || normalized.includes('invoice') || normalized.includes('examination');
 };
 
 const resolveNumberingRules = (type: string, config?: CompanyConfig) => {
@@ -23,6 +23,12 @@ const resolveNumberingRules = (type: string, config?: CompanyConfig) => {
 const resolveNumberingPadding = (type: string, config?: CompanyConfig) => {
   const { effectiveRule } = resolveNumberingRules(type, config);
   const padding = effectiveRule?.padding;
+  
+  // Handle examination invoice format (EXM-YYYY-000001 has 6 digits)
+  if (type === 'examination_invoice' || type === 'examination') {
+    return 6;
+  }
+  
   if (padding == null) {
     if (isInvoiceNumberingType(type)) {
       throw new Error('Missing invoice padding configuration.');
@@ -40,6 +46,15 @@ const resolveNumberingPadding = (type: string, config?: CompanyConfig) => {
 };
 
 export const assertInvoiceNumberFormat = (id: string, config?: CompanyConfig, type: string = 'invoice') => {
+  // Handle examination invoice format with EXM prefix
+  if (String(id || '').toUpperCase().startsWith('EXM-')) {
+    const numericPart = String(id || '').match(/EXM-\d{4}-(\d+)/)?.[1];
+    if (!numericPart || numericPart.length !== 6) {
+      throw new Error('Examination invoice number must be in format EXM-YYYY-000001 (6 digits).');
+    }
+    return true;
+  }
+  
   const padding = resolveNumberingPadding(type, config);
   const { effectiveRule } = resolveNumberingRules(type, config);
   const numericValue = extractConfiguredDocumentNumberValue(String(id || ''), {

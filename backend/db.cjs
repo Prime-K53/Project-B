@@ -1,29 +1,56 @@
 const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-const fs = require('fs');
+const { dbPath, ensureRuntimeDirs } = require('./runtimePaths.cjs');
 
-// Ensure storage directory exists
-const storageDir = path.resolve(__dirname, 'storage');
-if (!fs.existsSync(storageDir)) {
-  fs.mkdirSync(storageDir, { recursive: true });
+ensureRuntimeDirs();
+
+// Singleton pattern: prevent multiple DB instances
+let dbInstance = null;
+let instanceId = 0;
+
+/**
+ * Get or create the singleton database instance.
+ * This ensures only a single DB connection exists in the application.
+ * @returns {sqlite3.Database} The singleton database instance
+ */
+function getDatabase() {
+  if (dbInstance === null) {
+    instanceId++;
+    if (instanceId > 1) {
+      throw new Error('Multiple database connection attempts detected. Use getDatabase() to access the singleton instance.');
+    }
+    dbInstance = new sqlite3.Database(dbPath);
+    
+    // Enable WAL mode for concurrent read/write performance
+    // WAL allows concurrent reads while writes are in progress
+    dbInstance.run('PRAGMA journal_mode=WAL');
+    
+    // NORMAL synchronous provides good durability with better performance
+    // than FULL, while still being safer than OFF
+    dbInstance.run('PRAGMA synchronous=NORMAL');
+    
+    // Enable foreign key constraints for data integrity
+    dbInstance.run('PRAGMA foreign_keys=ON');
+    
+    // Give SQLite up to 10 seconds to retry if it hits a lock before giving up
+    dbInstance.run('PRAGMA busy_timeout=10000');
+  }
+  return dbInstance;
 }
 
-const dbPath = process.env.DB_PATH || '/tmp/database.db';
-
-
-
-const db = new sqlite3.Database(dbPath);
-
-// Enable WAL mode so that concurrent reads are not blocked by ongoing writes.
-// This fixes the SQLITE_BUSY hang on GET /batches when a write transaction
-// (e.g. syncMarketAdjustments) is in progress at the same time.
-db.run('PRAGMA journal_mode=WAL');
-// Give SQLite up to 10 seconds to retry if it hits a lock before giving up.
-db.run('PRAGMA busy_timeout=10000');
+// Export the singleton instance directly
+const db = getDatabase();
 
 const initDb = () => {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
+      // Tasks Table
+      db.run(`CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        completed INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+
       // Customers Table
       db.run(`CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY,
@@ -66,7 +93,9 @@ const initDb = () => {
         max_stock_level INTEGER DEFAULT 0,
         reorder_point INTEGER DEFAULT 0,
         warehouse_id TEXT,
-        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_synced_at DATETIME,
+        sync_checksum TEXT
       )`);
 
       // Examinations Table
@@ -171,14 +200,47 @@ const initDb = () => {
         date DATETIME NOT NULL,
         customer_id TEXT,
         customer_name TEXT,
+        sub_account_name TEXT,
         total_amount REAL DEFAULT 0,
+        material_total REAL DEFAULT 0,
+        adjustment_total REAL DEFAULT 0,
+        profit_margin_total REAL DEFAULT 0,
+        rounding_total REAL DEFAULT 0,
+        adjustment_snapshots_json TEXT,
         status TEXT DEFAULT 'Paid',
         payment_method TEXT,
         source TEXT,
         items_json TEXT,
         payments_json TEXT,
+        last_synced_at DATETIME,
+        sync_checksum TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )`);
+      )`, (err) => {
+        if (!err) {
+          db.all("PRAGMA table_info(sales)", (err, rows) => {
+            if (!err && rows) {
+              const existingColumns = new Set(rows.map(r => r.name));
+              const columnsToAdd = [
+                { name: 'sub_account_name', type: 'TEXT' },
+                { name: 'material_total', type: 'REAL DEFAULT 0' },
+                { name: 'adjustment_total', type: 'REAL DEFAULT 0' },
+                { name: 'profit_margin_total', type: 'REAL DEFAULT 0' },
+                { name: 'rounding_total', type: 'REAL DEFAULT 0' },
+                { name: 'adjustment_snapshots_json', type: 'TEXT' }
+              ];
+
+              columnsToAdd.forEach(col => {
+                if (!existingColumns.has(col.name)) {
+                  db.run(`ALTER TABLE sales ADD COLUMN ${col.name} ${col.type}`, (err) => {
+                    if (err) console.error(`Error adding ${col.name} column to sales:`, err);
+                    else console.log(`Added ${col.name} column to sales table`);
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
 
 
       // Classes Table
@@ -368,7 +430,9 @@ const initDb = () => {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_applied_at DATETIME,
         total_applied_amount REAL DEFAULT 0,
-        application_count INTEGER DEFAULT 0
+        application_count INTEGER DEFAULT 0,
+        last_synced_at DATETIME,
+        sync_checksum TEXT
       )`);
 
       db.run(`CREATE TABLE IF NOT EXISTS examination_batch_notifications (
@@ -783,27 +847,10 @@ const initDb = () => {
       )`);
 
       Promise.all(migrationPromises).then(() => {
-        // Seed initial data
-        db.get("SELECT COUNT(*) as count FROM inventory", (err, row) => {
-          if (row && row.count === 0) {
-            // Insert default inventory items with required name and id fields
-            db.run("INSERT INTO inventory (id, name, material, quantity, cost_per_unit) VALUES (?, ?, ?, ?, ?)", ['INV-PAPER-DEFAULT', 'Paper', 'Paper', 10000, 35]);
-            db.run("INSERT INTO inventory (id, name, material, quantity, cost_per_unit) VALUES (?, ?, ?, ?, ?)", ['INV-TONER-DEFAULT', 'Toner', 'Toner', 1000000, 0.25]);
-            console.log('Inventory seeded.');
-          }
-        });
-
-        db.get("SELECT COUNT(*) as count FROM schools", (err, row) => {
-          if (row && row.count === 0) {
-            db.run("INSERT INTO schools (name, pricing_type, pricing_value) VALUES (?, ?, ?)", ['Demo School', 'margin-based', 0.3]);
-            console.log('Schools seeded.');
-          }
-        });
-
         resolve();
       });
     });
   });
 };
 
-module.exports = { db, initDb };
+module.exports = { db, initDb, dbPath, getDatabase };

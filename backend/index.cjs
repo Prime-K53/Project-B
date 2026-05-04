@@ -180,7 +180,7 @@ function safeEvaluate(formula, context = {}) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+let PORT = process.env.PORT || 3000;
 
 // Trust proxy for Render/Heroku behind reverse proxy
 app.set('trust proxy', 1);
@@ -528,7 +528,12 @@ async function startServer() {
 
   app.get('/api/sales', (req, res) => {
     db.all(
-      `SELECT id, date, customer_id as customerId, customer_name as customerName, total_amount as totalAmount, status, payment_method as paymentMethod, source, items_json, payments_json
+      `SELECT 
+        id, date, customer_id as customerId, customer_name as customerName, sub_account_name as subAccountName,
+        total_amount as totalAmount, material_total as materialTotal, adjustment_total as adjustmentTotal,
+        profit_margin_total as profitMarginTotal, rounding_total as roundingTotal,
+        adjustment_snapshots_json as adjustmentSnapshots,
+        status, payment_method as paymentMethod, source, items_json, payments_json
        FROM sales
        ORDER BY date DESC`,
       [],
@@ -541,12 +546,18 @@ async function startServer() {
           date: row.date,
           customerId: row.customerId,
           customerName: row.customerName,
+          subAccountName: row.subAccountName,
           totalAmount: Number(row.totalAmount || 0),
+          materialTotal: Number(row.materialTotal || 0),
+          adjustmentTotal: Number(row.adjustmentTotal || 0),
+          profitMarginTotal: Number(row.profitMarginTotal || 0),
+          roundingTotal: Number(row.roundingTotal || 0),
           status: row.status,
           paymentMethod: row.paymentMethod,
           source: row.source,
           items: parseJsonArray(row.items_json),
-          payments: parseJsonArray(row.payments_json)
+          payments: parseJsonArray(row.payments_json),
+          adjustmentSnapshots: parseJsonArray(row.adjustmentSnapshots)
         }));
         res.json(sales);
       }
@@ -559,28 +570,45 @@ async function startServer() {
     try {
       await validateItemsPricing(payload.items);
     } catch (validationError) {
-      console.error('[Pricing Validation Failed]', validationError.message);
+      console.error('[BACKEND] [Pricing Validation Failed]', validationError.message);
       return res.status(400).json({ error: validationError.message, code: 'PRICE_VALIDATION_FAILED' });
     }
 
     const id = payload.id || randomUUID();
     const date = payload.date || new Date().toISOString();
     const totalAmount = Number(payload.totalAmount ?? payload.total ?? 0);
+    const materialTotal = Number(payload.materialTotal ?? payload.material_total ?? 0);
+    const adjustmentTotal = Number(payload.adjustmentTotal ?? payload.adjustment_total ?? 0);
+    const profitMarginTotal = Number(payload.profitMarginTotal ?? payload.profit_margin_total ?? 0);
+    const roundingTotal = Number(payload.roundingTotal ?? payload.rounding_total ?? payload.roundingDifference ?? 0);
+    const subAccountName = payload.subAccountName || payload.sub_account_name || 'Main';
+    
     const customerId = payload.customerId || payload.customer_id || 'walk-in';
     const customerName = payload.customerName || payload.customer_name || 'Walk-in';
     const status = payload.status || 'Paid';
     const paymentMethod = payload.paymentMethod || payload.payment_method || null;
     const source = payload.source || null;
+    
     const itemsJson = JSON.stringify(payload.items || []);
     const paymentsJson = JSON.stringify(payload.payments || []);
+    const snapshotsJson = JSON.stringify(payload.adjustmentSnapshots || []);
+
+    console.log(`[BACKEND] Creating POS sale #${id} for ${customerName}. Revenue: ${totalAmount}, Margin: ${profitMarginTotal}`);
 
     db.run(
       `INSERT INTO sales (
-        id, date, customer_id, customer_name, total_amount, status, payment_method, source, items_json, payments_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, date, customerId, customerName, totalAmount, status, paymentMethod, source, itemsJson, paymentsJson],
+        id, date, customer_id, customer_name, sub_account_name, 
+        total_amount, material_total, adjustment_total, profit_margin_total, rounding_total,
+        adjustment_snapshots_json, status, payment_method, source, items_json, payments_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, date, customerId, customerName, subAccountName,
+        totalAmount, materialTotal, adjustmentTotal, profitMarginTotal, roundingTotal,
+        snapshotsJson, status, paymentMethod, source, itemsJson, paymentsJson
+      ],
       (error) => {
         if (error) {
+          console.error(`[BACKEND] Error creating sale #${id}:`, error.message);
           return res.status(500).json({ error: error.message });
         }
         res.json({
@@ -588,12 +616,18 @@ async function startServer() {
           date,
           customerId,
           customerName,
+          subAccountName,
           totalAmount,
+          materialTotal,
+          adjustmentTotal,
+          profitMarginTotal,
+          roundingTotal,
           status,
           paymentMethod,
           source,
           items: payload.items || [],
-          payments: payload.payments || []
+          payments: payload.payments || [],
+          adjustmentSnapshots: payload.adjustmentSnapshots || []
         });
       }
     );
@@ -2132,25 +2166,68 @@ app.use((err, req, res, next) => {
 });
 
 
-  console.log('Starting app.listen on port', PORT);
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-    // console.log(`Rate limiting enabled: 100 requests per 15 minutes per IP`);
-    // console.log(`Security headers enabled (Helmet)`);
-    // Keep-alive mechanism
-    setInterval(() => {
-      // Just to keep the event loop busy
-    }, 60000);
-  });
+  let server;
+  let attempts = 0;
+  const maxAttempts = 10;
 
-  server.on('error', (err) => {
-    console.error('SERVER ERROR:', err);
-    closeDbAndExit(1);
-  });
+  while (attempts < maxAttempts) {
+    try {
+      console.log(`[BACKEND] Attempting to start server on port ${PORT} (Attempt ${attempts + 1}/${maxAttempts})...`);
+      server = await new Promise((resolve, reject) => {
+        const s = app.listen(PORT, '0.0.0.0', () => {
+          console.log(`[BACKEND] Server successfully bound to port ${PORT}`);
+          resolve(s);
+        });
+        
+        s.on('error', (err) => {
+          if (err.code === 'EADDRINUSE') {
+            console.warn(`[BACKEND] Port ${PORT} is already in use.`);
+            reject(err);
+          } else {
+            console.error(`[BACKEND] Failed to listen on port ${PORT}:`, err.message);
+            reject(err);
+          }
+        });
+      });
+      break; 
+    } catch (err) {
+      if (err.code === 'EADDRINUSE') {
+        PORT++;
+        attempts++;
+      } else {
+        console.error('[BACKEND] Fatal startup error:', err.message);
+        throw err;
+      }
+    }
+  }
 
-  server.on('close', () => {
-    console.log('Server closed unexpectedly');
-  });
+  if (!server) {
+    throw new Error(`[BACKEND] Failed to start server after ${maxAttempts} attempts.`);
+  }
+
+  // Keep-alive mechanism
+  const keepAliveId = setInterval(() => {
+    // Just to keep the event loop busy
+  }, 60000);
+
+  const shutdown = async () => {
+    console.log('[BACKEND] Shutdown signal received. Cleaning up...');
+    clearInterval(keepAliveId);
+    server.close(() => {
+      console.log('[BACKEND] Server closed.');
+      process.exit(0);
+    });
+    
+    // Force exit if server.close hangs
+    setTimeout(() => {
+      console.error('[BACKEND] Shutdown timed out, forcing exit.');
+      process.exit(1);
+    }, 5000);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
 
 
 

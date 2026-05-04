@@ -64,28 +64,79 @@ const normalizeAccentColor = (value?: string) => {
 
 const normalizeFontFamily = (value?: string): PrimePdfFontFamily => {
   const normalized = String(value || '').trim();
-  return PRIME_PDF_FONT_OPTIONS.some((option) => option.value === normalized)
-    ? (normalized as PrimePdfFontFamily)
-    : DEFAULT_PRIME_TEMPLATE_SETTINGS.fontFamily;
+  const isKnown = PRIME_PDF_FONT_OPTIONS.some((option) => option.value === normalized);
+  if (!isKnown) return DEFAULT_PRIME_TEMPLATE_SETTINGS.fontFamily;
+
+  // If the custom font wasn't registered (e.g. offline), fall back to a
+  // built-in PDF font so the renderer never encounters an unregistered family.
+  if (normalized === 'Comic Sans MS' && !fontsRegistered) {
+    return 'Helvetica';
+  }
+
+  return normalized as PrimePdfFontFamily;
+};
+
+
+/**
+ * Checks whether a resolved font asset URL is safe to pass to @react-pdf/renderer.
+ *
+ * In packaged Electron builds the URL is a file:// path (always safe).
+ * In dev mode it may be an http://127.0.0.1:5173/… URL – safe as long as
+ * the Vite dev server is running.
+ * We explicitly reject any URL that resolves to the backend port (3000 by
+ * default) because the backend does NOT serve frontend assets, and a failed
+ * fetch there returns an HTML error page that fflate cannot decompress.
+ */
+const isFontUrlSafe = (url: string): boolean => {
+  try {
+    if (!url) return false;
+    // file:// URLs are always local and always safe
+    if (url.startsWith('file://') || url.startsWith('blob:') || url.startsWith('data:')) return true;
+    const parsed = new URL(url);
+    // Only allow http(s) on loopback – and only if it's NOT on port 3000
+    // (the Express backend port that doesn't serve static font files).
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+      if (port === '3000') return false; // backend – not a static file server
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 };
 
 export const ensurePrimePdfFontsRegistered = () => {
   if (fontsRegistered) return;
 
   try {
+    const srcNormal = resolvePrimePdfAssetUrl('fonts/comic.ttf');
+    const srcBold = resolvePrimePdfAssetUrl('fonts/comicbd.ttf');
+    const srcItalic = resolvePrimePdfAssetUrl('fonts/comici.ttf');
+    const srcBoldItalic = resolvePrimePdfAssetUrl('fonts/comicz.ttf');
+
+    // Only register if ALL font URLs are safe to fetch – avoids the
+    // "incorrect data check" zlib crash when the dev server is offline.
+    if (!isFontUrlSafe(srcNormal) || !isFontUrlSafe(srcBold) || !isFontUrlSafe(srcItalic) || !isFontUrlSafe(srcBoldItalic)) {
+      console.warn('[PDF] Custom font URLs are not reachable in the current environment – falling back to built-in fonts.');
+      fontsRegistered = false;
+      return;
+    }
+
     Font.register({
       family: 'Comic Sans MS',
       fonts: [
-        { src: resolvePrimePdfAssetUrl('fonts/comic.ttf'), fontWeight: 'normal', fontStyle: 'normal' },
-        { src: resolvePrimePdfAssetUrl('fonts/comicbd.ttf'), fontWeight: 'bold', fontStyle: 'normal' },
-        { src: resolvePrimePdfAssetUrl('fonts/comici.ttf'), fontWeight: 'normal', fontStyle: 'italic' },
-        { src: resolvePrimePdfAssetUrl('fonts/comicz.ttf'), fontWeight: 'bold', fontStyle: 'italic' },
+        { src: srcNormal, fontWeight: 'normal', fontStyle: 'normal' },
+        { src: srcBold, fontWeight: 'bold', fontStyle: 'normal' },
+        { src: srcItalic, fontWeight: 'normal', fontStyle: 'italic' },
+        { src: srcBoldItalic, fontWeight: 'bold', fontStyle: 'italic' },
       ],
     });
     fontsRegistered = true;
   } catch (error) {
+    // Non-fatal – the PDF engine will use the built-in Helvetica fallback.
     fontsRegistered = false;
-    console.error('Failed to register Prime PDF fonts', error);
+    console.warn('[PDF] Custom font registration skipped (offline or asset missing):', error);
   }
 };
 

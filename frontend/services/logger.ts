@@ -13,6 +13,10 @@ interface LogEntry {
 class Logger {
   private logs: LogEntry[] = [];
   private maxLogs = 1000;
+  private readonly electronLogger =
+    typeof window !== 'undefined' && typeof (window as any).electronAPI?.log === 'function'
+      ? (window as any).electronAPI.log
+      : null;
 
   log(level: LogLevel, message: string, context?: Record<string, any>, error?: Error) {
     const entry: LogEntry = {
@@ -34,8 +38,19 @@ class Logger {
       console[logMethod](`[${level.toUpperCase()}] ${message}`, context || '', error || '');
     }
     
-    // Could send to server in production
-    if (level === 'error' && import.meta.env.PROD) {
+    if (this.electronLogger) {
+      this.electronLogger({
+        timestamp: entry.timestamp.toISOString(),
+        level,
+        message,
+        context,
+        error: error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : undefined
+      });
+    } else if (level === 'error' && import.meta.env.PROD) {
       this.sendToServer(entry);
     }
   }

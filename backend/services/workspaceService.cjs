@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { workspaceConfigPath, dbPath, ensureRuntimeDirs } = require('../runtimePaths.cjs');
 
 class WorkspaceService {
   constructor() {
-    this.workspaceConfigPath = path.join(__dirname, '..', 'storage', 'workspace.json');
+    this.workspaceConfigPath = workspaceConfigPath;
   }
 
   async initializeWorkspace(companyName) {
@@ -39,17 +40,14 @@ class WorkspaceService {
     };
 
     // Ensure storage dir exists
-    const storageDir = path.dirname(this.workspaceConfigPath);
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
+    ensureRuntimeDirs();
 
     fs.writeFileSync(this.workspaceConfigPath, JSON.stringify(config, null, 2));
 
     // Copy existing database to the workspace if it exists
     try {
-      const sourceDb = path.join(__dirname, '..', 'storage', 'examination.db');
-      const targetDb = path.join(workspacePath, 'examination.db');
+      const sourceDb = dbPath;
+      const targetDb = path.join(workspacePath, path.basename(dbPath));
       if (fs.existsSync(sourceDb) && !fs.existsSync(targetDb)) {
         fs.copyFileSync(sourceDb, targetDb);
         console.log('[Workspace] Existing database migrated to workspace.');

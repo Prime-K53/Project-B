@@ -17,7 +17,7 @@ import {
 } from '../types/currency';
 import { logger } from './logger';
 import { dbService } from './db';
-import { getUrl } from '../config/api.js';
+import { OFFLINE_MODE } from '../constants';
 
 // Storage keys
 const CURRENCY_SETTINGS_KEY = 'nexus_currency_settings';
@@ -72,6 +72,11 @@ class CurrencyService {
       if (saved) {
         const parsed = JSON.parse(saved);
         this.settings = { ...DEFAULT_CURRENCY_SETTINGS, ...parsed };
+      }
+
+      if (OFFLINE_MODE) {
+        this.settings.autoUpdateRates = false;
+        this.settings.apiProvider = 'manual';
       }
       
       // Mark base currency
@@ -174,6 +179,12 @@ class CurrencyService {
    */
   async updateSettings(updates: Partial<CurrencySettings>): Promise<void> {
     this.settings = { ...this.settings, ...updates };
+
+    if (OFFLINE_MODE) {
+      this.settings.autoUpdateRates = false;
+      this.settings.apiProvider = 'manual';
+    }
+
     await this.saveSettings();
     logger.info('Currency settings updated', updates);
   }
@@ -222,7 +233,7 @@ class CurrencyService {
     }
 
     // Try to fetch from API if configured
-    if (this.settings.autoUpdateRates && this.settings.apiKey) {
+    if (!OFFLINE_MODE && this.settings.autoUpdateRates && this.settings.apiKey) {
       return await this.fetchExchangeRate(from, to);
     }
 
@@ -256,6 +267,10 @@ class CurrencyService {
    * Fetch exchange rate from API
    */
   async fetchExchangeRate(from: string, to: string): Promise<number> {
+    if (OFFLINE_MODE) {
+      throw new Error('Automatic exchange-rate updates are disabled in offline desktop mode. Save a manual rate instead.');
+    }
+
     try {
       let rate: number;
 
@@ -295,7 +310,7 @@ class CurrencyService {
    * Fetch from ExchangeRate-API (free tier available)
    */
   private async fetchFromExchangeRateApi(from: string, to: string): Promise<number> {
-    const response = await fetch(getUrl(`https://api.exchangerate-api.com/v4/latest/${from}`));
+    const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${from}`);
     const data = await response.json();
     
     if (!data.rates || !data.rates[to]) {
@@ -311,7 +326,7 @@ class CurrencyService {
   private async fetchFromOpenExchangeRates(from: string, to: string): Promise<number> {
     const appId = this.settings.apiKey;
     const response = await fetch(
-      getUrl(`https://openexchangerates.org/api/latest.json?app_id=${appId}&symbols=${to}`)
+      `https://openexchangerates.org/api/latest.json?app_id=${appId}&symbols=${to}`
     );
     const data = await response.json();
     
@@ -325,7 +340,7 @@ class CurrencyService {
       return data.rates[to];
     } else {
       const fromResponse = await fetch(
-        getUrl(`https://openexchangerates.org/api/latest.json?app_id=${appId}&symbols=${from}`)
+        `https://openexchangerates.org/api/latest.json?app_id=${appId}&symbols=${from}`
       );
       const fromData = await fromResponse.json();
       const fromRate = fromData.rates[from];
@@ -339,7 +354,7 @@ class CurrencyService {
   private async fetchFromFixer(from: string, to: string): Promise<number> {
     const apiKey = this.settings.apiKey;
     const response = await fetch(
-      getUrl(`http://data.fixer.io/api/latest?access_key=${apiKey}&symbols=${to}`)
+      `http://data.fixer.io/api/latest?access_key=${apiKey}&symbols=${to}`
     );
     const data = await response.json();
     
@@ -352,7 +367,7 @@ class CurrencyService {
       return data.rates[to];
     } else {
       const fromResponse = await fetch(
-        getUrl(`http://data.fixer.io/api/latest?access_key=${apiKey}&symbols=${from}`)
+        `http://data.fixer.io/api/latest?access_key=${apiKey}&symbols=${from}`
       );
       const fromData = await fromResponse.json();
       const fromRate = fromData.rates[from];

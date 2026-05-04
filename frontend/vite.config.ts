@@ -10,24 +10,27 @@ export default defineConfig(({ mode }) => {
     const apiProxyTarget =
       stripApiSuffix(env.VITE_API_PROXY_TARGET || '') ||
       stripApiSuffix(env.VITE_API_URL || '') ||
-      'https://prime-printing-service.onrender.com';
+      'http://localhost:3000';
     return {
       server: {
-        port: 3005,
+        port: 5173,
         host: '0.0.0.0',
-        proxy: {
+        headers: {
+          // Override CSP to allow inline scripts and WebAssembly in dev mode
+          'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://127.0.0.1:* http://localhost:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* data: blob:; frame-src 'self' blob: data: http://127.0.0.1:* http://localhost:*; object-src 'self' blob: data:; worker-src 'self' blob:;"
+        },
+        proxy: mode === 'development' ? {
           '/api': {
             target: apiProxyTarget,
             changeOrigin: true,
             secure: apiProxyTarget.startsWith('https://'),
-            // Prevent SPA HTML fallback for /api requests
-            bypass: (req, res, options) => {
+            bypass: (req) => {
               if (req.headers.accept?.includes('text/html')) {
-                return null; // Let Vite handle it if they explicitly want HTML
+                return null;
               }
             }
           }
-        }
+        } : {}
       },
       plugins: [react()],
       optimizeDeps: {
@@ -36,13 +39,20 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY),
-        'process.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL || 'https://prime-printing-service.onrender.com'),
-        'process.env.API_BASE_URL': JSON.stringify(env.VITE_API_URL || 'https://prime-printing-service.onrender.com'),
+        // Don't hardcode API URL in production - let runtime config (Electron) take precedence
+        'process.env.VITE_API_URL': mode === 'development' ? JSON.stringify(env.VITE_API_URL || 'http://localhost:3000') : '""',
+        'process.env.API_BASE_URL': mode === 'development' ? JSON.stringify(env.VITE_API_URL || 'http://localhost:3000') : '""',
       },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.')
         }
+      },
+      base: './',
+      build: {
+        outDir: 'dist',
+        emptyOutDir: true,
+        sourcemap: false
       }
     };
 });

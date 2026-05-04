@@ -120,8 +120,12 @@ export const resolvePreviewMode = ({
   publicUrl?: string | null;
   sourceUrl?: string | null;
 }): PreviewMode => {
+  if (isPublicDocumentUrl(publicUrl) || isPublicDocumentUrl(sourceUrl)) {
+    return 'download';
+  }
+
   if (isImageMimeType(mimeType, fileName, sourceUrl)) return 'image';
-  if (isWordMimeType(mimeType, fileName, sourceUrl)) return publicUrl ? 'google' : 'download';
+  if (isWordMimeType(mimeType, fileName, sourceUrl)) return 'download';
 
   if (isPdfMimeType(mimeType, fileName, sourceUrl)) {
     // Prefer the browser's native PDF surface first. Google Viewer is an
@@ -130,7 +134,7 @@ export const resolvePreviewMode = ({
     return 'iframe';
   }
 
-  return publicUrl ? 'google' : 'download';
+  return publicUrl ? 'embed' : 'download';
 };
 
 export const buildIframePreviewUrl = (value: string, isPdf: boolean): string => {
@@ -139,4 +143,4 @@ export const buildIframePreviewUrl = (value: string, isPdf: boolean): string => 
 };
 
 export const buildGoogleViewerUrl = (publicUrl: string): string =>
-  `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(publicUrl)}`;
+  publicUrl;

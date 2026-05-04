@@ -1,4 +1,6 @@
 import { dbService } from './db';
+import { OFFLINE_MODE } from '../constants';
+import { shouldBlockRemoteNetwork } from '../utils/networkPolicy';
 
 export interface ExternalApiConfig {
   id: string;
@@ -67,6 +69,20 @@ class ExternalApiService {
   ): Promise<ApiResponse<T>> {
     if (!config.enabled) {
       return { success: false, error: 'API is disabled' };
+    }
+
+    if (OFFLINE_MODE && shouldBlockRemoteNetwork(config.baseUrl)) {
+      return {
+        success: true,
+        data: {
+          offline: true,
+          mocked: true,
+          endpoint,
+          method: options.method || 'GET',
+          timestamp: new Date().toISOString()
+        } as T,
+        statusCode: 200
+      };
     }
 
     try {

@@ -10,24 +10,31 @@ const path = require('path');
  * is not needed and often fails due to native compilation requirements).
  */
 
-console.log('--- Prim ERP Workspace Post-Install ---');
+console.log('--- Prime ERP Workspace Post-Install ---');
 
-if (process.env.NETLIFY === 'true' || process.env.IS_NETLIFY === 'true') {
+const runInstall = (targetDir, label) => {
+  console.log(`Installing ${label} dependencies via --prefix ${targetDir}...`);
+
+  const result = spawnSync('npm', ['install'], {
+    stdio: 'inherit',
+    shell: true,
+    cwd: path.resolve(__dirname, '..', targetDir)
+  });
+
+  if (result.status !== 0) {
+    console.error(`${label} installation failed with status:`, result.status);
+    process.exit(result.status || 1);
+  }
+
+  console.log(`${label} dependencies installed successfully.`);
+};
+
+const isNetlify = process.env.NETLIFY === 'true' || process.env.IS_NETLIFY === 'true';
+
+if (isNetlify) {
   console.log('Netlify environment detected. Skipping backend dependency installation.');
-  process.exit(0);
+} else {
+  runInstall('backend', 'backend');
 }
 
-console.log('Installing backend dependencies via --prefix backend...');
-
-const result = spawnSync('npm', ['install'], {
-  stdio: 'inherit',
-  shell: true,
-  cwd: path.resolve(__dirname, '..', 'backend')
-});
-
-if (result.status !== 0) {
-  console.error('Backend installation failed with status:', result.status);
-  process.exit(result.status || 1);
-}
-
-console.log('Backend dependencies installed successfully.');
+runInstall('frontend', 'frontend');

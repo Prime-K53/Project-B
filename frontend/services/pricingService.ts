@@ -5,6 +5,8 @@ import { calculateItemFinancials } from '../utils/pricing';
 import { SafeFormulaEngine } from './formulaEngine';
 import { applyProductPriceRounding } from './pricingRoundingService';
 import { dbService } from './db';
+import { API_BASE_URL } from '../config/api.js';
+import { safeFetch } from './safeFetch';
 
 export interface PricingResult {
     price: number;
@@ -718,36 +720,119 @@ export const pricingService = {
     }
 }
 
+// Centralized API_BASE_URL is imported from config
+
+/** LocalStorage key where the Settings page persists profit-margin records offline. */
+const OFFLINE_MARGIN_STORE_KEY = 'nexus_profit_margin_settings';
+
 /**
- * Get the Global Default Margin settings from the backend API
+ * Read the global default margin directly from localStorage.
+ * The Settings page writes margin records here so they survive without a live backend.
+ */
+const getGlobalDefaultMarginFromLocalStorage = (): { margin_type: 'percentage' | 'fixed_amount'; margin_value: number; apply_volume_margins?: boolean } | null => {
+    try {
+        // Primary: dedicated offline margin store written by the Settings page
+        const raw = localStorage.getItem(OFFLINE_MARGIN_STORE_KEY);
+        if (raw) {
+            const records = JSON.parse(raw);
+            if (Array.isArray(records)) {
+                const globalMargin = records.find((m: any) => m.scope === 'global' && !m.deleted_at);
+                if (globalMargin && Number(globalMargin.margin_value) > 0) {
+                    return {
+                        margin_type: globalMargin.margin_type || 'percentage',
+                        margin_value: Number(globalMargin.margin_value),
+                        apply_volume_margins: !!globalMargin.apply_volume_margins,
+                    };
+                }
+            }
+        }
+
+        // Secondary: fall back to the company config's pricingSettings field
+        const configRaw = localStorage.getItem('nexus_company_config');
+        if (configRaw) {
+            const config = JSON.parse(configRaw);
+            const gdm = config?.pricingSettings?.globalDefaultMargin;
+            if (gdm && Number(gdm.margin_value) > 0) {
+                return {
+                    margin_type: gdm.margin_type || 'percentage',
+                    margin_value: Number(gdm.margin_value),
+                    apply_volume_margins: !!gdm.apply_volume_margins,
+                };
+            }
+            // Also check a flat margin_value on pricingSettings itself
+            const flatValue = Number(config?.pricingSettings?.defaultMarginValue ?? config?.pricingSettings?.marginValue ?? 0);
+            if (flatValue > 0) {
+                return {
+                    margin_type: (config?.pricingSettings?.marginType as any) || 'percentage',
+                    margin_value: flatValue,
+                    apply_volume_margins: false,
+                };
+            }
+        }
+    } catch {
+        // localStorage parse errors are non-fatal
+    }
+    return null;
+};
+
+/**
+ * Get the Global Default Margin settings.
+ *
+ * Offline-first: always checks localStorage first so the function works when
+ * the backend is unreachable (Electron offline mode). Falls back to the
+ * backend API only when a valid API base URL is available.
  */
 export const getGlobalDefaultMargin = async (): Promise<{ margin_type: 'percentage' | 'fixed_amount'; margin_value: number; apply_volume_margins?: boolean } | null> => {
+    // 1. Try localStorage – works 100% offline, no network required
+    const localMargin = getGlobalDefaultMarginFromLocalStorage();
+    if (localMargin) return localMargin;
+
+    // 2. Try the live backend (only when a valid API origin is available)
     try {
-        const API_BASE_URL = (await import('../config/api.js')).API_BASE_URL;
+        const apiBase = API_BASE_URL;
+        if (!apiBase) return null;
+
         const userId = localStorage.getItem('prime_user_id') || 'unknown';
         const userRole = localStorage.getItem('prime_user_role') || 'Admin';
 
-        const res = await fetch(`${API_BASE_URL}/settings/profit-margins?scope=global`, {
+        const { data: marginSettings, ok, error } = await safeFetch<any[]>(`${apiBase}/settings/profit-margins?scope=global`, {
             headers: {
                 'x-user-id': userId,
                 'x-user-role': userRole,
-            }
+            },
+            timeoutMs: 5000 // don't hang indefinitely offline
         });
-        if (!res.ok) return null;
 
-        const marginSettings = await res.json();
-        if (!marginSettings || !Array.isArray(marginSettings) || marginSettings.length === 0) return null;
+        if (!ok || error || !marginSettings || !Array.isArray(marginSettings) || marginSettings.length === 0) {
+            return null;
+        }
 
         const globalMargin = marginSettings.find((m: any) => m.scope === 'global' && !m.deleted_at);
         if (!globalMargin) return null;
 
-        return {
+        const result = {
             margin_type: globalMargin.margin_type || 'percentage',
             margin_value: Number(globalMargin.margin_value) || 0,
-            apply_volume_margins: !!globalMargin.apply_volume_margins
+            apply_volume_margins: !!globalMargin.apply_volume_margins,
         };
+
+        // Cache the result in localStorage for next offline session
+        try {
+            const existing = JSON.parse(localStorage.getItem(OFFLINE_MARGIN_STORE_KEY) || '[]');
+            const idx = existing.findIndex((m: any) => m.scope === 'global');
+            if (idx >= 0) {
+                existing[idx] = { ...existing[idx], ...globalMargin };
+            } else {
+                existing.push(globalMargin);
+            }
+            localStorage.setItem(OFFLINE_MARGIN_STORE_KEY, JSON.stringify(existing));
+        } catch {
+            // non-fatal cache write failure
+        }
+
+        return result;
     } catch (error) {
-        console.error('[PricingService] Failed to get global default margin:', error);
+        console.warn('[PricingService] Could not reach backend for global margin (offline?):', (error as Error).message);
         return null;
     }
 };
