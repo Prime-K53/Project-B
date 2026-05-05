@@ -303,24 +303,45 @@ async function validateItemsPricing(items) {
 
 
 
+const normalizeCorsOrigin = (value) => String(value || '').trim().replace(/\/$/, '');
+
+const isDesktopLocalOrigin = (origin) => {
+  const normalized = normalizeCorsOrigin(origin);
+  if (!normalized) return true;
+  if (normalized === 'null') return true;
+  if (/^file:\/\//i.test(normalized)) return true;
+
+  try {
+    const parsed = new URL(normalized);
+    return ['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
 // CORS configuration - accepts frontend from environment or defaults
 const corsOptions = {
   origin: function (origin, callback) {
     const allowedOrigins = [
       process.env.FRONTEND_URL || 'https://meek-starburst-fd4497.netlify.app',
+      'http://127.0.0.1:5173',
       'http://localhost:5173',
+      'http://127.0.0.1:3003',
       'http://localhost:3003',
+      'http://127.0.0.1:5002',
       'http://localhost:5002'
-    ];
+    ].map(normalizeCorsOrigin).filter(Boolean);
     
     // Normalize origin to handle trailing slash
-    const normalizedOrigin = origin?.replace(/\/$/, '');
-    const isAllowed = allowedOrigins.some(o => o.replace(/\/$/, '') === normalizedOrigin);
+    const normalizedOrigin = normalizeCorsOrigin(origin);
+    const isAllowed = allowedOrigins.includes(normalizedOrigin);
+    const isDesktopOrigin = isDesktopLocalOrigin(normalizedOrigin);
     
     // Debug: log origin for troubleshooting
     console.log('[CORS]', {
       origin,
       normalizedOrigin,
+      desktopLocal: isDesktopOrigin,
       allowed: isAllowed,
       method: 'CHECK'
     });
@@ -330,8 +351,8 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Allow if origin is in allowed list
-    if (isAllowed) {
+    // Allow Electron/file origins and local loopback frontends used by the desktop app.
+    if (isAllowed || isDesktopOrigin) {
       return callback(null, true);
     }
     
@@ -339,7 +360,7 @@ const corsOptions = {
     return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-user-role', 'x-correlation-id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id', 'x-user-role', 'x-user-is-super-admin', 'x-correlation-id', 'x-dev-bypass'],
   credentials: true
 };
 
@@ -356,7 +377,7 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id, x-user-role, x-correlation-id');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id, x-user-role, x-user-is-super-admin, x-correlation-id, x-dev-bypass');
     return res.sendStatus(204);
   }
   next();
@@ -399,6 +420,11 @@ const parseJsonArray = (value) => {
 // Root route for Render health checks
 app.get('/', (req, res) => {
   res.status(200).send('Backend Running');
+});
+
+// Explicit health check for Electron startup
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 async function startServer() {
@@ -2213,6 +2239,18 @@ app.use((err, req, res, next) => {
   const shutdown = async () => {
     console.log('[BACKEND] Shutdown signal received. Cleaning up...');
     clearInterval(keepAliveId);
+    
+    // Close the database connection
+    try {
+      console.log('[BACKEND] Closing database connection...');
+      db.close((err) => {
+        if (err) console.error('[BACKEND] Error closing database:', err.message);
+        else console.log('[BACKEND] Database connection closed.');
+      });
+    } catch (dbErr) {
+      console.error('[BACKEND] Failed to close database:', dbErr.message);
+    }
+
     server.close(() => {
       console.log('[BACKEND] Server closed.');
       process.exit(0);
@@ -2229,29 +2267,8 @@ app.use((err, req, res, next) => {
   process.on('SIGTERM', shutdown);
 }
 
-
-
-  const shutdown = async () => {
-    console.log('Shutdown signal received. Cleaning up...');
-    server.close(() => {
-      console.log('Server closed.');
-      process.exit(0);
-    });
-    
-    // Force exit if server.close hangs
-    setTimeout(() => {
-      console.error('Shutdown timed out, forcing exit.');
-      process.exit(1);
-    }, 5000);
-  };
-
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
 process.on('exit', (code) => {
   console.log(`Process about to exit with code: ${code}`);
-  console.trace('Exit trace:');
 });
 
 process.on('uncaughtException', (err) => {

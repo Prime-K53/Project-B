@@ -154,7 +154,7 @@ const findAvailablePort = (startPort = 39300, maxPort = 39450) =>
   });
 
 const waitForBackend = async (origin) => {
-  const MAX_RETRIES = 20; // 20 attempts * 500ms = ~10 seconds
+  const MAX_RETRIES = 60; // 60 attempts * 500ms = 30 seconds
   const RETRY_DELAY_MS = 500;
   const healthUrl = `${origin}/health`;
 
@@ -185,7 +185,7 @@ const waitForBackend = async (origin) => {
     }
   }
 
-  throw new Error(`Failed to connect to backend after ${MAX_RETRIES} attempts (~10 seconds)`);
+  throw new Error(`Failed to connect to backend after ${MAX_RETRIES} attempts (~30 seconds)`);
 };
 
 const stopBackend = (reason = 'explicit') => {
@@ -397,6 +397,7 @@ const createWindow = async () => {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      plugins: true,
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,

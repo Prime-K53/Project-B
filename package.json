@@ -8,6 +8,7 @@
   },
   "description": "Prime ERP System - Enterprise Resource Management",
   "scripts": {
+    "start": "npm run electron:dev",
     "postinstall": "node scripts/postinstall.cjs",
     "dev": "concurrently -n \"backend,frontend\" -c \"magenta,cyan\" \"npm run backend\" \"npm run frontend\"",
     "backend": "npm --prefix backend run dev",
