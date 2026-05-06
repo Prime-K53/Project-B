@@ -47,19 +47,39 @@ const buildLineItems = (batch) => {
 
   return classes.map((cls, index) => {
     const learners = Math.max(0, Math.floor(toNumericValue(cls?.number_of_learners) ?? 0));
-    const finalFeePerLearner = toNumericValue(cls?.final_fee_per_learner);
-    const liveTotalPreview = toNumericValue(cls?.live_total_preview);
+    const hasManualOverride = Boolean(Number(cls?.is_manual_override) || 0);
+    const manualCostPerLearner = toNumericValue(cls?.manual_cost_per_learner);
+    const fallbackFeePerLearner = hasManualOverride && manualCostPerLearner !== null && manualCostPerLearner > 0
+      ? manualCostPerLearner
+      : null;
+    const finalFeePerLearner = pickPositiveNumber(
+      cls?.final_fee_per_learner,
+      cls?.price_per_learner,
+      cls?.expected_fee_per_learner,
+      fallbackFeePerLearner
+    );
 
-    if (finalFeePerLearner === null || finalFeePerLearner === undefined) {
-      throw new Error(`Class "${cls?.class_name || cls?.id}": final_fee_per_learner is not populated. Please sync pricing settings before generating invoice.`);
-    }
-    if (liveTotalPreview === null || liveTotalPreview === undefined) {
-      throw new Error(`Class "${cls?.class_name || cls?.id}": live_total_preview is not populated. Please sync pricing settings before generating invoice.`);
+    const computedTotalFromFee = finalFeePerLearner !== null && learners > 0
+      ? roundMoney(finalFeePerLearner * learners)
+      : null;
+    const liveTotalPreview = toNumericValue(cls?.live_total_preview);
+    const resolvedLineTotal = pickPositiveNumber(
+      liveTotalPreview,
+      computedTotalFromFee,
+      cls?.calculated_total_cost,
+      cls?.total_price
+    );
+
+    if (resolvedLineTotal === null) {
+      throw new Error(`Class "${cls?.class_name || cls?.id}": no invoiceable total was found. Please recalculate pricing before generating invoice.`);
     }
 
     const className = String(cls?.class_name || `Class ${index + 1}`).trim() || `Class ${index + 1}`;
     const subjectCount = Array.isArray(cls?.subjects) ? cls.subjects.length : 0;
     const lineId = `EXM-LINE-${String(batch?.id || 'batch')}-${String(cls?.id || index + 1)}`;
+    const resolvedUnitPrice = finalFeePerLearner !== null
+      ? roundMoney(finalFeePerLearner)
+      : (learners > 0 ? roundMoney(resolvedLineTotal / learners) : roundMoney(resolvedLineTotal));
 
     return {
       id: lineId,
@@ -73,10 +93,10 @@ const buildLineItems = (batch) => {
       minStockLevel: 0,
       stock: 0,
       reserved: 0,
-      price: finalFeePerLearner,
-      cost: finalFeePerLearner,
+      price: resolvedUnitPrice,
+      cost: resolvedUnitPrice,
       quantity: Math.max(1, learners),
-      total: liveTotalPreview
+      total: roundMoney(resolvedLineTotal)
     };
   });
 };

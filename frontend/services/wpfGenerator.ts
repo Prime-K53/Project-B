@@ -1,10 +1,15 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { OFFLINE_MODE } from '../constants';
 
 /**
  * Generates production-ready C# code for the WPF Native Port.
  * Uses gemini-3-pro-preview for advanced architectural reasoning.
  */
 export const generateWpfFile = async (filePath: string, context: string): Promise<string> => {
+  if (OFFLINE_MODE) {
+    return `// Offline desktop mode: AI-assisted WPF synthesis is unavailable.\n// Requested file: ${filePath}\n// Context snapshot:\n// ${String(context || '').split('\n').join('\n// ')}`;
+  }
+
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     

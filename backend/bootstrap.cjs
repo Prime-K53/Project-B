@@ -3,42 +3,57 @@ const path = require('path');
 const { initDb, db } = require('./db.cjs');
 const BackupService = require('./services/backupService.cjs');
 const licenseService = require('./services/licenseService.cjs');
+const {
+  storageDir,
+  backupDir,
+  tempDir,
+  secureKeysDir,
+  dbPath,
+  licensePath,
+  ensureDir,
+} = require('./runtimePaths.cjs');
 
 async function bootstrap() {
   console.log('--- PRIME ERP OFFLINE BOOTSTRAP START ---');
 
   // 1. Ensure required directories exist
   const dirs = [
-    path.join(__dirname, 'storage'),
-    path.join(__dirname, 'storage/backups'),
-    path.join(__dirname, 'storage/temp'),
-    path.join(__dirname, 'secure/keys')
+    storageDir,
+    backupDir,
+    tempDir,
+    secureKeysDir,
   ];
 
   dirs.forEach(dir => {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      console.log(`Created directory: ${dir}`);
-    }
+    const existed = fs.existsSync(dir);
+    ensureDir(dir);
+    if (!existed) console.log(`Created directory: ${dir}`);
   });
 
   // 2. Machine Fingerprint & Licensing
   const fingerprint = licenseService.getFingerprint();
   console.log(`Machine Fingerprint: ${fingerprint}`);
   const license = licenseService.validateLicense();
-  console.log(`License Status: ${license.mode} ${license.valid ? '(Valid)' : '(Limited Access)'}`);
+  console.log(`[LICENSE STATUS] ${license.mode} ${license.valid ? '(Valid)' : '(Limited Access - Offline Trial)'}`);
 
-  if (!license.valid && !fs.existsSync(path.join(process.cwd(), 'license.json'))) {
+  if (!license.valid && !fs.existsSync(licensePath)) {
     console.log('Generating auto-trial license for first run...');
     licenseService.generateTrialLicense(365); // 1 year trial for offline deployment
   }
 
   // 3. Database Initialization & Schema Verification
-  const dbPath = path.join(__dirname, 'storage', 'examination.db');
   try {
     console.log('Initializing database...');
     await initDb();
     console.log('Database initialized successfully.');
+    
+    // Initialize examination module schemas to ensure they're ready
+    console.log('Initializing examination module schemas...');
+    const examinationService = require('./services/examinationService.cjs');
+    await examinationService.ensureCoreExaminationSchema();
+    await examinationService.ensureExaminationSyncSchema();
+    await examinationService.ensureExaminationPricingSchema();
+    console.log('Examination module schemas initialized.');
     
     console.log('Schema verification passed.');
   } catch (err) {
@@ -46,7 +61,6 @@ async function bootstrap() {
     console.error(err);
     
     // Recovery Logic: Attempt to restore from latest backup
-    const backupDir = path.join(__dirname, 'storage/backups');
     if (fs.existsSync(backupDir)) {
       const backups = fs.readdirSync(backupDir)
         .filter(f => f.endsWith('.sqlite'))
@@ -82,7 +96,7 @@ async function bootstrap() {
 
 
   // 4. Data Safety - Initial Backup
-  const backupService = new BackupService(path.join(__dirname, 'storage', 'examination.db'), path.join(__dirname, 'storage/backups'));
+  const backupService = new BackupService(dbPath, backupDir);
   await backupService.createBackup().catch(err => console.warn('Initial backup failed:', err));
 
   // 6. First-Run Seeding
@@ -135,11 +149,13 @@ function seedDefaultData() {
 
     // Seed Inventory
     const materials = [
-      ['Paper', 5000, 35.0],
-      ['Toner', 1000, 0.25]
+      ['INV-PAPER', 'Paper', 'Paper', 5000, 35.0],
+      ['INV-TONER', 'Toner', 'Toner', 1000, 0.25]
     ];
-    const invStmt = db.prepare("INSERT INTO inventory (material, quantity, cost_per_unit) VALUES (?, ?, ?)");
-    materials.forEach(m => invStmt.run(m));
+    const invStmt = db.prepare("INSERT OR IGNORE INTO inventory (id, name, material, quantity, cost_per_unit) VALUES (?, ?, ?, ?, ?)");
+    materials.forEach(m => {
+      invStmt.run(m[0], m[1], m[2], m[3], m[4]);
+    });
     invStmt.finalize();
 
     // Seed Work Centers

@@ -1,4 +1,6 @@
 import { dbService } from './db';
+import { OFFLINE_MODE } from '../constants';
+import { shouldBlockRemoteNetwork } from '../utils/networkPolicy';
 
 export type WebhookEvent = 
   | 'order.created'
@@ -42,6 +44,10 @@ export interface WebhookLog {
 }
 
 class WebhookService {
+  private createLogId(): string {
+    return `log_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  }
+
   async getConfigs(): Promise<WebhookConfig[]> {
     try {
       const configs = await dbService.getAll<WebhookConfig>(WEBHOOK_CONFIG_STORE);
@@ -74,6 +80,20 @@ class WebhookService {
     event: WebhookEvent,
     data: any
   ): Promise<void> {
+    if (OFFLINE_MODE && shouldBlockRemoteNetwork(webhook.url)) {
+      await this.logWebhook({
+        id: this.createLogId(),
+        webhookId: webhook.id,
+        event,
+        payload: data as any,
+        responseStatus: 200,
+        responseBody: 'Offline simulation only',
+        success: true,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+
     const payload: WebhookPayload = {
       event,
       timestamp: new Date().toISOString(),
@@ -106,13 +126,13 @@ class WebhookService {
         
         if (response.ok) {
           await this.logWebhook({
-            id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            id: this.createLogId(),
             webhookId: webhook.id,
             event,
             payload: data as any,
             responseStatus: response.status,
             success: true,
-            timestamp: new Date().toString()
+            timestamp: new Date().toISOString()
           });
           return;
         }
@@ -128,13 +148,13 @@ class WebhookService {
     }
 
     await this.logWebhook({
-      id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      id: this.createLogId(),
       webhookId: webhook.id,
       event,
       payload: data as any,
       responseStatus: lastStatus,
       success: false,
-      timestamp: new Date().toString(),
+      timestamp: new Date().toISOString(),
       error: lastError
     });
   }
@@ -186,6 +206,10 @@ class WebhookService {
   }
 
   async testWebhook(config: WebhookConfig): Promise<{ success: boolean; message: string }> {
+    if (OFFLINE_MODE && shouldBlockRemoteNetwork(config.url)) {
+      return { success: true, message: 'Offline desktop mode simulated the webhook locally without network access.' };
+    }
+
     const testPayload: WebhookPayload = {
       event: 'order.created' as WebhookEvent,
       timestamp: new Date().toISOString(),

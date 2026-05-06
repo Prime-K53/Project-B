@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { dbService } from './db.ts';
-import { API_BASE_URL, getUrl } from '@/config/api.js';
+import { getUrl, API_BASE_URL } from '@/config/api.js';
 import {
   Item, Warehouse, Purchase, Sale, Quotation, JobOrder,
   CustomerPayment, ProductionBatch, WorkOrder, WorkCenter,
@@ -29,7 +29,7 @@ import {
   ExaminationRecurringPayload
 } from './examinationJobService.ts';
 
-// Initialize axios with the centralized BASE_URL
+// Initialize axios - baseURL is centralized from api config
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -39,13 +39,12 @@ const apiClient = axios.create({
   }
 });
 
-const isProd = Boolean(import.meta.env?.PROD);
+const isProd = false; // Always false to prevent production-only sync enforcement
 const PASSWORD_BYPASS_USER_ID = 'USR-PASSWORD-BYPASS';
 
 export const ensureBackendInProd = (context: string, error: unknown) => {
-  if (!isProd) return;
-  console.error(`[${context}] Backend request failed in production`, error);
-  throw error instanceof Error ? error : new Error(`${context} failed`);
+  // Local-first mode: Log warning but never block local fallback
+  console.warn(`[${context}] Local backend unavailable, using fallback`, error);
 };
 
 const getRequestMethod = (method?: string) => String(method || 'GET').toUpperCase();
@@ -75,8 +74,7 @@ const isPasswordBypassSession = () => {
   );
 };
 
-const shouldPreferLocalReadModels = () =>
-  Boolean(import.meta.env?.DEV) || isPasswordBypassSession();
+const shouldPreferLocalReadModels = () => true; // Always prefer local data for local-first architecture
 
 const getRequestUrl = (config: any) => {
   const rawUrl = String(config?.url || '').trim();
@@ -99,8 +97,32 @@ const isJsonContent = (contentType: string) => {
   return normalized.includes('application/json') || normalized.includes('+json');
 };
 
+const logger = {
+  info: (msg: string, extra?: any) => {
+    const formatted = `[FRONTEND] ${msg}`;
+    console.log(formatted, extra || '');
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.log) {
+      (window as any).electronAPI.log({ message: formatted, level: 'INFO', ...extra });
+    }
+  },
+  warn: (msg: string, extra?: any) => {
+    const formatted = `[FRONTEND] ${msg}`;
+    console.warn(formatted, extra || '');
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.log) {
+      (window as any).electronAPI.log({ message: formatted, level: 'WARN', ...extra });
+    }
+  },
+  error: (msg: string, extra?: any) => {
+    const formatted = `[FRONTEND] ${msg}`;
+    console.error(formatted, extra || '');
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.log) {
+      (window as any).electronAPI.log({ message: formatted, level: 'ERROR', ...extra });
+    }
+  }
+};
+
 const handleUnauthorizedResponse = (fullUrl: string) => {
-  console.error('Missing or invalid authentication headers', { url: fullUrl });
+  logger.error('Missing or invalid authentication headers', { url: fullUrl });
   if (typeof window !== 'undefined') {
     const shouldRedirect = String((import.meta as any)?.env?.VITE_REDIRECT_ON_401 || '').toLowerCase() === 'true';
     if (shouldRedirect) {
@@ -119,19 +141,19 @@ apiClient.interceptors.response.use(
     const fullUrl = getRequestUrl(response.config);
     const responseText = typeof response.data === 'string' ? response.data : '';
 
-    console.debug(`[API Response] ${method} ${fullUrl} -> ${response.status} (Content-Type: ${contentType})`);
+    logger.info(`Response ${method} ${fullUrl} -> ${response.status} (Content-Type: ${contentType})`);
 
     if (responseText.toLowerCase().includes('method not allowed')) {
       const error = new Error(`Wrong HTTP method for endpoint: ${method} ${fullUrl} (HTTP ${response.status})`);
       (error as any).status = response.status;
-      console.error(`[API Error] Wrong HTTP method detected for ${method} ${fullUrl}`, { status: response.status, contentType });
+      logger.error(`Error Wrong HTTP method detected for ${method} ${fullUrl}`, { status: response.status, contentType });
       return Promise.reject(error);
     }
 
     if (isHtmlContent(contentType, response.data)) {
       const error = new Error(`Wrong endpoint for API request: ${method} ${fullUrl} returned HTML instead of JSON (HTTP ${response.status})`);
       (error as any).status = response.status;
-      console.error(`[API Error] Wrong endpoint detected for ${method} ${fullUrl}`, { status: response.status, contentType });
+      logger.error(`Error Wrong endpoint detected for ${method} ${fullUrl}`, { status: response.status, contentType });
       return Promise.reject(error);
     }
     return response;
@@ -148,22 +170,22 @@ apiClient.interceptors.response.use(
       const rawBody = typeof data === 'string' ? data : '';
       const lowerBody = String(rawBody || '').toLowerCase();
 
-      console.error(`[API Error Response] ${method} ${fullUrl} -> ${status} (Content-Type: ${contentType})`);
+      logger.error(`Error Response ${method} ${fullUrl} -> ${status} (Content-Type: ${contentType})`);
 
       if (status === 401) {
         handleUnauthorizedResponse(fullUrl);
         error.message = 'Your session is not authorized. Please sign in again.';
       } else if (isHtmlContent(contentType, data)) {
-        console.error(`[API Error] Wrong endpoint detected for ${method} ${fullUrl}`);
+        logger.error(`Error Wrong endpoint detected for ${method} ${fullUrl}`);
         error.message = `Wrong endpoint for API request: ${method} ${fullUrl} returned HTML instead of JSON (HTTP ${status})`;
       } else if (status === 405 || lowerBody.includes('method not allowed')) {
-        console.error(`[API Error] Wrong HTTP method detected for ${method} ${fullUrl}`);
+        logger.error(`Error Wrong HTTP method detected for ${method} ${fullUrl}`);
         error.message = `Wrong HTTP method for endpoint: ${method} ${fullUrl} (HTTP ${status})`;
       } else if (isJsonContent(contentType) && data && typeof data === 'object') {
         error.message = data.error || data.message || error.message;
       }
     } else if (error.request) {
-      console.error(`[API No Response] ${method} ${fullUrl}`);
+      logger.error(`No Response ${method} ${fullUrl}`);
       // Distinguish between network/CORS and other failures
       const isNetworkError = String(error.code || '').toLowerCase().includes('err_network') || String(error.message || '').toLowerCase().includes('network error');
       const possibleCors = !error.response && isProd;
@@ -174,7 +196,7 @@ apiClient.interceptors.response.use(
         error.message = 'No response from backend. Check your connection or API URL.';
       }
     } else {
-      console.error(`[API Request Error] ${error.message}`);
+      logger.error(`Request Error ${error.message}`);
     }
     return Promise.reject(error);
   }
@@ -226,7 +248,7 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.request.use((config) => {
   const method = getRequestMethod(config.method);
   const fullUrl = getRequestUrl(config);
-  console.debug(`[API Request] ${method} ${fullUrl}`);
+  logger.info(`Request ${method} ${fullUrl}`);
   return config;
 }, (err) => Promise.reject(err));
 

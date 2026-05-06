@@ -4,9 +4,9 @@
  * for offline-first ERP document generation.
  */
 
-// High-resolution SVG placeholder for the company logo (Base64 encoded)
-// In a production environment, this would be replaced with the actual company logo.
-export const COMPANY_LOGO_BASE64 = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjUwIiB2aWV3Qm94PSIwIDAgMjAwIDUwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjUwIiByeD0iOCIgZmlsbD0iIzI1NjNFRiIvPgo8cGF0aCBkPSJNMjUgMTVMNDAgMjVMMjUgMzVWMTVaIiBmaWxsPSJ3aGl0ZSIvPgo8dGV4dCB4PSI1MCIgeT0iMzIiIGZpbGw9IndoaXRlIiBmb250LWZhbWlseT0iQXJpYWwsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjQiIGZvbnQtd2VpZ2h0PSJib2xkIj5QUklNRSBFUlA8L3RleHQ+Cjwvc3ZnPg==`;
+// Use a tiny PNG placeholder instead of SVG because the PDF/image preview stack
+// rejects the inline SVG data URI as an invalid base64 image in desktop preview mode.
+export const COMPANY_LOGO_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s6lGtQAAAAASUVORK5CYII=';
 
 export const DocumentStyles = {
   colors: {

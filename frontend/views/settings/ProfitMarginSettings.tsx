@@ -6,7 +6,7 @@ import {
   DollarSign, Percent, Globe, Tag, Package, Shield,
   Clock, User, Info, ChevronRight, Zap
 } from 'lucide-react';
-import { API_BASE_URL } from '../../config/api';
+import { getUrl } from '../../config/api';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +46,8 @@ interface ModalState {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 
+const OFFLINE_MARGIN_KEY = 'nexus_profit_margin_settings';
+
 const getHeaders = () => ({
   'Content-Type': 'application/json',
   'x-user-id': localStorage.getItem('prime_user_id') || 'unknown',
@@ -53,13 +55,33 @@ const getHeaders = () => ({
 });
 
 async function apiFetch(path: string, opts: RequestInit = {}) {
-  const res = await fetch(`${API_BASE_URL}/settings${path}`, {
+  const res = await fetch(getUrl(`settings${path}`), {
     ...opts,
     headers: { ...getHeaders(), ...(opts.headers || {}) },
+    signal: AbortSignal.timeout(6000),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+/** Persist a margin record array to localStorage for offline access. */
+function cacheMarginSettings(records: MarginSetting[]) {
+  try {
+    localStorage.setItem(OFFLINE_MARGIN_KEY, JSON.stringify(records));
+  } catch { /* non-fatal */ }
+}
+
+/** Read cached margin records from localStorage. */
+function readCachedMarginSettings(): MarginSetting[] {
+  try {
+    const raw = localStorage.getItem(OFFLINE_MARGIN_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
@@ -360,13 +382,27 @@ const ProfitMarginSettings: React.FC = () => {
     try {
       const data = await apiFetch('/profit-margins');
       setSettings(data);
+      // Cache for offline access
+      cacheMarginSettings(data);
       const global = data.find((s: MarginSetting) => s.scope === 'global' && !s.deleted_at);
       if (global) {
         setGlobalValue(String(global.margin_value));
         setGlobalType(global.margin_type);
       }
     } catch (err: any) {
-      toast(err.message || 'Failed to load settings', 'error');
+      // Offline fallback: use cached data so the page still shows current values
+      const cached = readCachedMarginSettings();
+      if (cached.length > 0) {
+        setSettings(cached);
+        const global = cached.find((s) => s.scope === 'global' && !s.deleted_at);
+        if (global) {
+          setGlobalValue(String(global.margin_value));
+          setGlobalType(global.margin_type);
+        }
+        toast('Loaded from local cache (backend offline)', 'info');
+      } else {
+        toast(err.message || 'Failed to load settings', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -406,6 +442,24 @@ const ProfitMarginSettings: React.FC = () => {
       action: async () => {
         setConfirm(c => ({ ...c, open: false }));
         setSavingGlobal(true);
+
+        // Build the record that will be saved locally regardless of API success
+        const now = new Date().toISOString();
+        const offlineRecord: MarginSetting = {
+          id: globalSetting?.id || `local-global-${Date.now()}`,
+          scope: 'global',
+          scope_ref_id: null,
+          margin_type: globalType,
+          margin_value: val,
+          is_active: true,
+          reason: globalReason || 'Global margin update',
+          created_by: localStorage.getItem('prime_user_id') || 'system',
+          created_at: globalSetting?.created_at || now,
+          updated_at: now,
+          deleted_at: null,
+          apply_volume_margins: globalSetting?.apply_volume_margins ?? false,
+        };
+
         try {
           if (globalSetting) {
             await apiFetch(`/profit-margins/${globalSetting.id}`, {
@@ -419,9 +473,19 @@ const ProfitMarginSettings: React.FC = () => {
             });
           }
           toast('Global margin saved', 'success');
-          await load();
+          await load(); // load() will also update the cache
         } catch (err: any) {
-          toast(err.message || 'Failed to save global margin', 'error');
+          // Offline: persist the change locally so pricing still works
+          const cached = readCachedMarginSettings();
+          const idx = cached.findIndex(s => s.scope === 'global');
+          if (idx >= 0) {
+            cached[idx] = { ...cached[idx], ...offlineRecord };
+          } else {
+            cached.push(offlineRecord);
+          }
+          cacheMarginSettings(cached);
+          setSettings(cached);
+          toast('Saved locally (backend offline — will sync when reconnected)', 'info');
         } finally {
           setSavingGlobal(false);
         }

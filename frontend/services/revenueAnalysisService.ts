@@ -243,6 +243,7 @@ const createNormalizedLine = ({
   const normalizedItem = attachPricingBreakdown(item);
   const breakdown = normalizedItem.pricingBreakdown;
   const quantity = toQuantity(normalizedItem?.quantity);
+  
   const directRevenue = normalizedItem?.subtotal ?? normalizedItem?.total;
   const unitRevenue = breakdown?.sellingPrice ?? toNumber(normalizedItem?.price ?? normalizedItem?.unitPrice, 0);
   const revenue = roundMoney(
@@ -250,24 +251,54 @@ const createNormalizedLine = ({
       ? toNumber(directRevenue, unitRevenue * quantity)
       : unitRevenue * quantity
   );
+
+  // --- Robust Metric Extraction with Root Fallbacks ---
+  const invoiceItems = Array.isArray(transaction?.items) ? transaction.items : [];
+  const rootRevenue = invoiceItems.reduce((sum: number, it: any) => {
+    const q = Math.max(1, toNumber(it?.quantity, 1));
+    const p = toNumber(it?.price ?? it?.unitPrice, 0);
+    return sum + p * q;
+  }, 0);
+  const revenueShare = rootRevenue > 0 ? revenue / rootRevenue : (1 / Math.max(1, invoiceItems.length));
+
+  const rootMaterialTotal = toNumber(transaction?.materialTotal ?? transaction?.material_total, 0);
+  const rootAdjustmentTotal = toNumber(transaction?.adjustmentTotal ?? transaction?.adjustment_total, 0);
+  const rootProfitMargin = toNumber(transaction?.profitMarginTotal ?? transaction?.profit_margin_total ?? transaction?.profitAdjustment, 0);
+  const rootRoundingTotal = toNumber(transaction?.roundingTotal ?? transaction?.rounding_total ?? transaction?.roundingDifference, 0);
+
   const materialCost = roundMoney(
-    (breakdown?.baseMaterialCost ?? toNumber(normalizedItem?.cost_price ?? normalizedItem?.cost, 0)) * quantity
+    (breakdown?.baseMaterialCost !== undefined && breakdown.baseMaterialCost > 0)
+      ? breakdown.baseMaterialCost * quantity
+      : rootMaterialTotal > 0
+        ? rootMaterialTotal * revenueShare
+        : toNumber(normalizedItem?.cost_price ?? normalizedItem?.cost, 0) * quantity
   );
+
   const adjustmentTotal = roundMoney(
-    (breakdown?.adjustmentTotal ?? toNumber(normalizedItem?.adjustmentTotal ?? normalizedItem?.adjustment_total, 0)) * quantity
+    (breakdown?.adjustmentTotal !== undefined && breakdown.adjustmentTotal > 0)
+      ? breakdown.adjustmentTotal * quantity
+      : rootAdjustmentTotal > 0
+        ? rootAdjustmentTotal * revenueShare
+        : toNumber(normalizedItem?.adjustmentTotal ?? normalizedItem?.adjustment_total, 0) * quantity
   );
+
   const roundingTotal = roundMoney(
-    (breakdown?.roundingDifference ?? toNumber(normalizedItem?.roundingDifference ?? normalizedItem?.rounding_difference, 0)) * quantity
+    (breakdown?.roundingDifference !== undefined)
+      ? breakdown.roundingDifference * quantity
+      : rootRoundingTotal !== 0
+        ? rootRoundingTotal * revenueShare
+        : toNumber(normalizedItem?.roundingDifference ?? normalizedItem?.rounding_difference, 0) * quantity
   );
-  const explicitMargin = toNumber(
-    breakdown?.profitMarginAmount ?? normalizedItem?.profitMarginAmount,
-    Number.NaN
-  );
+
+  const explicitMargin = toNumber(breakdown?.profitMarginAmount ?? normalizedItem?.profitMarginAmount, Number.NaN);
   const profitMargin = roundMoney(
     Number.isFinite(explicitMargin)
       ? explicitMargin * quantity
-      : (revenue - materialCost - adjustmentTotal - (Number.isFinite(roundingTotal) ? roundingTotal : 0))
+      : rootProfitMargin > 0
+        ? rootProfitMargin * revenueShare
+        : (revenue - materialCost - adjustmentTotal - roundingTotal)
   );
+
   const reconciliationDelta = roundMoney(
     revenue - materialCost - adjustmentTotal - profitMargin - roundingTotal
   );

@@ -1,6 +1,6 @@
 
 import { dbService } from './db';
-import { CompanyConfig, Customer } from '../types';
+import { CompanyConfig } from '../types';
 
 export type NotificationActivityType =
   | 'QUOTATION'
@@ -20,6 +20,7 @@ export interface NotificationLog {
   message: string;
   timestamp: string;
   status: 'sent' | 'failed' | 'cancelled';
+  deliveryMode?: 'offline-draft' | 'external';
 }
 
 const getCompanyConfig = (): CompanyConfig | null => {
@@ -151,27 +152,10 @@ export const customerNotificationService = {
     try {
       await dbService.put('customerNotificationLogs', {
         ...logEntryBase,
-        status: 'sent'
+        status: 'sent',
+        deliveryMode: 'offline-draft'
       });
-
-      // Open messaging app
-      const encodedMsg = encodeURIComponent(message);
-      const phone = sanitizePhoneNumber(data.phoneNumber);
-
-      // WhatsApp priority, fallback to SMS
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      let url = `https://wa.me/${phone}?text=${encodedMsg}`;
-
-      if (!isMobile) {
-        // For web, use WA Web
-        url = `https://web.whatsapp.com/send?phone=${phone}&text=${encodedMsg}`;
-      }
-      
-      // Fallback mechanism: if WA fails, user can try SMS
-      // Since we can't reliably detect if WA is installed, we provide a clean way to trigger.
-      window.open(url, '_blank');
-      
-      console.log(`[Notification] Triggered ${type} for ${data.customerName}`);
+      console.log(`[Notification] Saved offline draft for ${type} ${sanitizePhoneNumber(data.phoneNumber)} (${data.customerName})`);
     } catch (error) {
       console.error(`[Notification] Failed to process ${type}:`, error);
       await dbService.put('customerNotificationLogs', { ...logEntryBase, status: 'failed' });

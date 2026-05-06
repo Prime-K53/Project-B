@@ -7,6 +7,7 @@ import { DocType, FilePreviewDescriptor } from '../../../../stores/documentStore
 import { PrimeDocData } from './schemas.ts';
 import { localFileStorage } from '../../../../services/localFileStorage.ts';
 import { attachDocumentSecurity } from '../../../../utils/documentSecurity.ts';
+import { getStoredCompanyConfig } from './templateSettings.ts';
 import {
   buildGoogleViewerUrl,
   buildIframePreviewUrl,
@@ -38,6 +39,144 @@ interface PreparedPreviewSource {
 
 const PREVIEW_SLOW_NETWORK_MS = 7000;
 const PREVIEW_TIMEOUT_MS = 22000;
+const PREVIEW_PREPARE_TIMEOUT_MS = 15000;
+
+const canDecompressGzip = (): boolean =>
+  typeof DecompressionStream !== 'undefined';
+
+const tryDecodeErrorMessage = async (response: Response, contentType: string): Promise<string | null> => {
+  try {
+    if (contentType.includes('application/json')) {
+      const payload = await response.clone().json();
+      return String(payload?.error || payload?.message || '').trim() || null;
+    }
+    const text = await response.clone().text();
+    if (!text) return null;
+    return text.slice(0, 200).trim();
+  } catch {
+    return null;
+  }
+};
+
+const maybeInflateGzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
+  if (!canDecompressGzip()) {
+    throw new Error('Gzip response cannot be decompressed in this browser environment.');
+  }
+
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const decompressedBuffer = await new Response(stream).arrayBuffer();
+  return new Uint8Array(decompressedBuffer);
+};
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timerId: number | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timerId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId);
+    }
+  }
+};
+
+const fetchPdfAsObjectUrl = async (url: string): Promise<string> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), PREVIEW_PREPARE_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { method: 'GET', signal: controller.signal });
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Timed out loading the document preview file.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const contentEncoding = (response.headers.get('content-encoding') || '').toLowerCase();
+  console.log('Content-Type:', response.headers.get('content-type'));
+
+  if (!response.ok) {
+    const details = await tryDecodeErrorMessage(response, contentType);
+    throw new Error(details ? `PDF request failed: ${details}` : `PDF request failed with status ${response.status}.`);
+  }
+
+  if (!contentType.includes('pdf')) {
+    const details = await tryDecodeErrorMessage(response, contentType);
+    throw new Error(details || `Expected PDF response but received "${contentType || 'unknown'}".`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  const rawBytes = new Uint8Array(buffer);
+
+  let finalBytes: Uint8Array;
+  if (contentEncoding.includes('gzip')) {
+    finalBytes = await maybeInflateGzip(rawBytes);
+  } else {
+    finalBytes = rawBytes;
+  }
+
+  const blob = new Blob([finalBytes], { type: 'application/pdf' });
+  return URL.createObjectURL(blob);
+};
+
+const generatePreviewPdfBlob = (type: DocType, data: PrimeDocData, configOverride?: any) =>
+  withTimeout(
+    pdf(<PrimeDocument type={type} data={data} configOverride={configOverride} />).toBlob(),
+    PREVIEW_PREPARE_TIMEOUT_MS,
+    'Timed out generating the document preview. This can happen offline when document assets are unavailable. Retry or use Download.'
+  );
+
+const shouldRetryWithSafeAssets = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes('timed out')
+    || normalized.includes('incorrect data check')
+    || normalized.includes('zlib')
+    || normalized.includes('font')
+    || normalized.includes('image')
+    || normalized.includes('asset');
+};
+
+const buildSafePreviewConfig = () => {
+  const config = getStoredCompanyConfig();
+  return {
+    ...(config || {}),
+    logo: '',
+    logoBase64: '',
+    invoiceTemplates: {
+      ...((config as any)?.invoiceTemplates || {}),
+      fontFamily: 'Helvetica',
+      showCompanyLogo: false,
+    },
+  };
+};
+
+const stripPreviewMediaData = (value: PrimeDocData): PrimeDocData => {
+  const next: any = { ...value };
+
+  if ('signatureDataUrl' in next) {
+    next.signatureDataUrl = '';
+  }
+
+  if (next.proofOfDelivery && typeof next.proofOfDelivery === 'object') {
+    next.proofOfDelivery = {
+      ...next.proofOfDelivery,
+      signatureDataUrl: '',
+      signature: '',
+    };
+  }
+
+  return next as PrimeDocData;
+};
 
 export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }: PreviewModalProps) => {
   const [isPreparing, setIsPreparing] = useState(false);
@@ -51,6 +190,7 @@ export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }
   const objectUrlRef = useRef<string | null>(null);
   const viewerLoadedRef = useRef(false);
   const autoFallbackAttemptedRef = useRef(false);
+  const isElectronDesktop = typeof window !== 'undefined' && Boolean((window as any).electronAPI);
 
   const releaseObjectUrl = () => {
     if (objectUrlRef.current) {
@@ -158,6 +298,16 @@ export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }
             throw new Error('No preview source is available for this document.');
           }
 
+          if (isPdfMimeType(mimeType, fileName, displayUrl) && !displayUrl.startsWith('blob:') && !displayUrl.startsWith('data:')) {
+            try {
+              const pdfBlobUrl = await fetchPdfAsObjectUrl(displayUrl);
+              displayUrl = pdfBlobUrl;
+              objectUrlRef.current = pdfBlobUrl;
+            } catch (pdfFetchError: any) {
+              throw new Error(pdfFetchError?.message || 'Failed to fetch a valid PDF preview.');
+            }
+          }
+
           if (cancelled) return;
 
           setPreparedPreview({
@@ -175,8 +325,40 @@ export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }
           throw new Error('Missing document data for preview.');
         }
 
-        const securedData = await attachDocumentSecurity(data as any);
-        const blob = await pdf(<PrimeDocument type={type} data={securedData as PrimeDocData} />).toBlob();
+        let blob: Blob;
+        try {
+          const securedData = await attachDocumentSecurity(data as any);
+          try {
+            blob = await generatePreviewPdfBlob(type, securedData as PrimeDocData);
+          } catch (pdfError: any) {
+            const renderMessage = String(pdfError?.message || pdfError || '');
+
+            if (shouldRetryWithSafeAssets(renderMessage)) {
+              console.warn('[PreviewModal] Retrying preview with safe offline assets.', { type, renderMessage });
+              blob = await generatePreviewPdfBlob(
+                type,
+                stripPreviewMediaData(securedData as PrimeDocData),
+                buildSafePreviewConfig()
+              );
+            } else {
+              throw pdfError;
+            }
+          }
+        } catch (pdfError: any) {
+          const msg = String(pdfError?.message || pdfError || '');
+          // "incorrect data check" is a zlib error thrown by fflate when a
+          // font file URL returned non-binary data (e.g., an HTML error page
+          // while the backend is offline).  Retry once with the default font
+          // by clearing the fonts-registered flag, then give a friendly error.
+          if (msg.includes('incorrect data check') || msg.includes('zlib') || msg.includes('font')) {
+            throw new Error(
+              'The document font could not be loaded (offline or asset missing). ' +
+              'The PDF has been generated with the default font. Please retry or use Download.'
+            );
+          }
+          throw pdfError;
+        }
+
         const blobUrl = URL.createObjectURL(blob);
         objectUrlRef.current = blobUrl;
 
@@ -222,11 +404,14 @@ export const PreviewModal = ({ isOpen, onClose, type, data = null, file = null }
       sourceUrl: preparedPreview.displayUrl,
     })
     : 'download';
-  const viewerMode = modeOverride || resolvedMode;
-  const canUseGoogleViewer = Boolean(preparedPreview?.publicUrl);
   const isPdfPreview = preparedPreview
     ? isPdfMimeType(preparedPreview.mimeType, preparedPreview.fileName, preparedPreview.displayUrl)
     : false;
+  const effectiveResolvedMode = isElectronDesktop && isPdfPreview && resolvedMode === 'iframe'
+    ? 'embed'
+    : resolvedMode;
+  const viewerMode = modeOverride || effectiveResolvedMode;
+  const canUseGoogleViewer = Boolean(preparedPreview?.publicUrl);
 
   useEffect(() => {
     if (!isOpen || !preparedPreview || viewerMode === 'download') return;

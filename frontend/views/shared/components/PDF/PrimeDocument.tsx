@@ -5,7 +5,6 @@ import { docStyles as s } from './styles.ts';
 import { PrimeDocData } from './schemas.ts';
 import { CompanyConfig } from '../../../../types.ts';
 import {
-  ensurePrimePdfFontsRegistered,
   getDefaultPaymentTermsLabel,
   getStoredCompanyConfig,
   resolvePrimeTemplateSettings,
@@ -907,7 +906,6 @@ const ProfessionalInvoiceTemplate = ({
 };
 
 export const PrimeDocument = ({ type, data, configOverride = null }: DocProps) => {
-  ensurePrimePdfFontsRegistered();
   const isFinancial = type === 'INVOICE' || type === 'PO' || type === 'QUOTATION' || type === 'ORDER' || (type as string) === 'SALES_ORDER' || type === 'SUBSCRIPTION';
   const dataAny = data as any;
   const config = configOverride || getStoredCompanyConfig();

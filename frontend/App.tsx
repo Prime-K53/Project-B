@@ -17,7 +17,7 @@ import { OrdersProvider } from './context/OrdersContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useDocumentStore } from './stores/documentStore.ts';
 import { PreviewModal } from './views/shared/components/PDF/PreviewModal.tsx';
-import { WifiOff, Bell, Loader2, Coins, X, Calculator, Menu } from 'lucide-react';
+import { Bell, Loader2, Coins, X, Calculator, Menu } from 'lucide-react';
 import { dbService } from './services/db';
 import Login from './views/auth/Login';
 import SetupWizard from './views/auth/SetupWizard';
@@ -325,12 +325,7 @@ const AppLayout: React.FC = () => {
         toggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       <div className="app-content-shell flex-1 flex flex-col h-full min-w-0 transition-all duration-300">
-        {!isOnline && (
-          <div className="bg-amber-50 text-white px-6 py-1.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] shrink-0 animate-in fade-in slide-in-from-top-1">
-            <WifiOff size={14} />
-            Working Locally (Offline Mode) — All changes saved to browser database
-          </div>
-        )}
+        {/* Offline banner removed - this is an offline desktop app with embedded backend */}
         <div className="px-3 sm:px-6 pb-2 pt-3 sm:pt-6 shrink-0">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button

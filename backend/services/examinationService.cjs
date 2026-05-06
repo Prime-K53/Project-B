@@ -410,6 +410,53 @@ const mapBackendInvoiceToFrontendPayload = ({ invoiceRow, batch, customerName, l
   };
 };
 
+const ensureExaminationInvoiceDocumentLink = async ({ invoiceRow, batch, customerName, lineItems, userId }) => {
+  const logicalNumber = String(invoiceRow?.invoice_number || '').trim();
+  if (!logicalNumber) {
+    return null;
+  }
+
+  const existingDocument = await runGet(
+    'SELECT id, logical_number FROM documents WHERE logical_number = ? LIMIT 1',
+    [logicalNumber]
+  );
+  if (existingDocument?.logical_number) {
+    return String(existingDocument.logical_number);
+  }
+
+  const payload = {
+    id: logicalNumber,
+    backendInvoiceId: String(invoiceRow?.id || ''),
+    customerId: String(invoiceRow?.customer_id || batch?.customer_id || batch?.school_id || ''),
+    customerName: String(invoiceRow?.customer_name || customerName || `School ${batch?.school_id || ''}`),
+    totalAmount: toNumericValue(invoiceRow?.total_amount) ?? 0,
+    subtotal: toNumericValue(invoiceRow?.subtotal) ?? toNumericValue(invoiceRow?.total_amount) ?? 0,
+    dueDate: toIsoOrFallback(invoiceRow?.due_date, new Date().toISOString()),
+    date: toIsoOrFallback(invoiceRow?.created_at, new Date().toISOString()),
+    currency: String(invoiceRow?.currency || batch?.currency || 'MWK'),
+    status: frontendInvoiceStatus(invoiceRow?.status),
+    items: Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : parseJsonArray(invoiceRow?.line_items_json),
+    reference: `EXM-BATCH-${String(batch?.id || '')}`,
+    origin_module: INVOICE_ORIGIN_EXAMINATION,
+    origin_batch_id: String(batch?.id || '')
+  };
+
+  await runRun(
+    `INSERT INTO documents (id, logical_number, type, status, payload, created_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      randomUUID(),
+      logicalNumber,
+      'invoice',
+      'draft',
+      JSON.stringify(payload),
+      userId || 'System'
+    ]
+  );
+
+  return logicalNumber;
+};
+
 const tableColumnCache = new Map();
 const tableExistsCache = new Map();
 
@@ -4023,14 +4070,22 @@ const examinationService = {
     });
     const idempotencyKey = invoiceDraft.idempotencyKey;
 
-    const school = await runGet('SELECT * FROM schools WHERE id = ?', [batch.school_id]);
+    const schoolLookupId = toNumericValue(batch.school_id);
+    const school = schoolLookupId !== null
+      ? await runGet('SELECT * FROM schools WHERE id = ?', [schoolLookupId])
+      : null;
     let customer = null;
     try {
-      customer = await runGet('SELECT * FROM customers WHERE id = ?', [batch.school_id]);
+      const customerLookupId = String(batch.customer_id || batch.school_id || '').trim();
+      customer = customerLookupId
+        ? await runGet('SELECT * FROM customers WHERE id = ?', [customerLookupId])
+        : null;
     } catch {
       customer = null;
     }
     const customerName = String(school?.name || customer?.name || `School ${batch.school_id || ''}`);
+    const persistedSchoolId = school?.id ?? null;
+    const persistedCustomerId = customer?.id ?? (String(batch.customer_id || batch.school_id || '').trim() || null);
     const lineItems = invoiceDraft.lineItems;
     const batchTotalAmount = invoiceDraft.batchTotalAmount;
     const persistedBatchTotalAmount = toNumericValue(batch.total_amount) ?? 0;
@@ -4057,7 +4112,10 @@ const examinationService = {
       if (byOrigin) return byOrigin;
 
       if (batch.invoice_id) {
-        const byBatchRef = await runGet('SELECT * FROM invoices WHERE id = ?', [batch.invoice_id]);
+        const byBatchRef = await runGet(
+          'SELECT * FROM invoices WHERE invoice_number = ? OR id = ? ORDER BY id DESC LIMIT 1',
+          [batch.invoice_id, batch.invoice_id]
+        );
         if (byBatchRef) return byBatchRef;
       }
 
@@ -4067,9 +4125,21 @@ const examinationService = {
     let existingInvoice = await findExistingInvoice();
     if (existingInvoice) {
       const existingInvoiceTotal = toNumericValue(existingInvoice.total_amount) ?? batchTotalAmount;
+      const linkedLogicalInvoiceId = await ensureExaminationInvoiceDocumentLink({
+        invoiceRow: existingInvoice,
+        batch,
+        customerName,
+        lineItems,
+        userId
+      });
       await runRun(
         'UPDATE examination_batches SET status = ?, invoice_id = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        ['Invoiced', String(existingInvoice.id), existingInvoiceTotal, batchId]
+        [
+          String(existingInvoice.status || '').toLowerCase() === 'paid' ? 'Paid' : 'Invoiced',
+          String(linkedLogicalInvoiceId || existingInvoice.invoice_number || existingInvoice.id),
+          existingInvoiceTotal,
+          batchId
+        ]
       );
 
       return {
@@ -4107,8 +4177,8 @@ const examinationService = {
           created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
-          batch.school_id,
-          batch.school_id,
+          persistedSchoolId,
+          persistedCustomerId,
           customerName,
           batch.sub_account_name || null,
           batchTotalAmount,
@@ -4148,8 +4218,8 @@ const examinationService = {
             line_items_json, notes, created_at, updated_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
           [
-            batch.school_id,
-            batch.school_id,
+            persistedSchoolId,
+            persistedCustomerId,
             customerName,
             batch.sub_account_name || null,
             batchTotalAmount,
@@ -4191,10 +4261,17 @@ const examinationService = {
     if (!invoiceRow) {
       throw new Error('Invoice creation failed: invoice not found after insert');
     }
+    const linkedLogicalInvoiceId = await ensureExaminationInvoiceDocumentLink({
+      invoiceRow,
+      batch,
+      customerName,
+      lineItems,
+      userId
+    });
 
     await runRun(
       'UPDATE examination_batches SET status = ?, invoice_id = ?, total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      ['Invoiced', String(invoiceId), batchTotalAmount, batchId]
+      ['Invoiced', String(linkedLogicalInvoiceId || invoiceRow.invoice_number || invoiceId), batchTotalAmount, batchId]
     );
 
     // Audit Log
@@ -4575,4 +4652,9 @@ const examinationService = {
   }
 };
 
-module.exports = examinationService;
+module.exports = {
+  ...examinationService,
+  ensureCoreExaminationSchema,
+  ensureExaminationSyncSchema,
+  ensureExaminationPricingSchema
+};

@@ -75,7 +75,8 @@ router.post('/sync/inventory-items', async (req, res) => {
     res.json(result);
   } catch (err) {
     if (res.headersSent) return;
-    res.status(500).json({ error: err.message });
+    console.error('[ERROR] sync/inventory-items failed:', err.message, err.stack);
+    res.status(500).json({ error: err.message, details: err.stack });
   }
 });
 
@@ -234,7 +235,8 @@ router.put('/settings/pricing', async (req, res) => {
     const result = await examinationService.updateExamPricingSettings(req.body || {}, { userId });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[ERROR] settings/pricing failed:', err.message, err.stack);
+    res.status(500).json({ error: err.message, details: err.stack });
   }
 });
 
@@ -615,7 +617,8 @@ router.post('/batches/:id/invoice', async (req, res) => {
     const result = await examinationService.generateInvoice(req.params.id, userId, { idempotencyKey });
     res.json(result);
   } catch (err) {
-    res.status(resolveWorkflowErrorStatus(err)).json({ error: err.message });
+    console.error('[ERROR] batches/:id/invoice failed:', err.message, err.stack);
+    res.status(resolveWorkflowErrorStatus(err)).json({ error: err.message, details: err.stack });
   }
 });
 

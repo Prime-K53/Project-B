@@ -5,7 +5,6 @@ import { docStyles as s } from './styles.ts';
 import { CompanyConfig } from '../../../../types.ts';
 import { COMPANY_LOGO_BASE64 } from '../../../../utils/brandAssets.ts';
 import {
-  ensurePrimePdfFontsRegistered,
   getStoredCompanyConfig,
   resolvePrimeTemplateSettings,
 } from './templateSettings.ts';
@@ -19,7 +18,6 @@ const formatAmount = (amount: number) => {
 };
 
 export const StatementSummaryTemplate: React.FC<{ data: StatementDoc; configOverride?: CompanyConfig | null }> = ({ data, configOverride = null }) => {
-  ensurePrimePdfFontsRegistered();
   const currency = data.currency || 'MWK';
   const config = configOverride || getStoredCompanyConfig();
   const templateSettings = resolvePrimeTemplateSettings(config);

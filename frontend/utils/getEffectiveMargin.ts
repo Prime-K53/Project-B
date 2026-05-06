@@ -9,7 +9,16 @@
  *   line_item  →  category  →  global  →  system default (0%)
  */
 
-import { API_BASE_URL } from '../config/api';
+// Helper to get dynamic API base URL
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const apiUrl = (window as any).API_BASE_URL;
+    if (apiUrl && apiUrl.trim()) {
+      return apiUrl;
+    }
+  }
+  return '';
+};
 
 export interface EffectiveMargin {
   margin_value: number;
@@ -48,7 +57,7 @@ export async function getEffectiveMargin(
     const userRole = localStorage.getItem('prime_user_role') || 'Viewer';
 
     const res = await fetch(
-      `${API_BASE_URL}/settings/profit-margins/resolve?${params.toString()}`,
+      `${getApiBaseUrl()}/settings/profit-margins/resolve?${params.toString()}`,
       {
         headers: {
           'x-user-id':   userId,

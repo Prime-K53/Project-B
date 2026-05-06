@@ -26,6 +26,10 @@ yarn-error.log*
 node-v20.19.0-win-x64.zip
 null
 
+# Release executables (exceeds GitHub 100MB limit)
+release/
+.tools/
+
 # Internal tooling
 .kilocode/
 skills-lock.json

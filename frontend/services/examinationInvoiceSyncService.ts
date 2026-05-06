@@ -277,6 +277,21 @@ export const persistExaminationInvoiceToFinance = async (
         message: error?.message || 'Finance API save failed; invoice saved locally and ledger posted.'
       };
     } catch (txError: any) {
+      // Clean up idempotency key on failure so retry can work
+      const idempotencyKey = (invoice as any)?.idempotencyKey || `invoice:${invoice.id}`;
+      try {
+        await dbService.executeAtomicOperation(
+          ['idempotencyKeys'],
+          async (tx) => {
+            const store = tx.objectStore('idempotencyKeys');
+            await store.delete(idempotencyKey);
+          }
+        );
+      } catch (cleanupError) {
+        // Ignore cleanup errors - non-critical
+        console.warn('[ExaminationInvoice] Failed to cleanup idempotency key:', cleanupError);
+      }
+
       // Ledger posting failed, but invoice is saved locally
       return {
         synced: true,

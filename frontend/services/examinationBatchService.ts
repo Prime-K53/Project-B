@@ -1,5 +1,5 @@
 import { ExaminationBatch, ExaminationClass, ExaminationPricingSettings, ExaminationSubject, Item, MarketAdjustment } from '../types';
-import { getUrl } from '../config/api.js';
+import { getUrl, API_BASE_URL } from '../config/api.js';
 import { dbService } from './db';
 import { generateNextExaminationBatchNumber } from './documentNumberService';
 import { getHeaders, joinPath, safeJson, toServiceError, isLikelyNetworkError } from './examinationServiceUtils';
@@ -85,7 +85,11 @@ const LOCAL_BATCH_STORE = 'examinationBatches';
 const OUTBOX_STORE = 'syncOutbox';
 const FALLBACK_BATCHES_KEY = 'nexus_examination_batches_fallback';
 const FALLBACK_OUTBOX_KEY = 'nexus_examination_batches_outbox_fallback';
-const API_BASE_CANDIDATES = ['api/examination'];
+
+const API_BASE_CANDIDATES = () => {
+  const base = API_BASE_URL;
+  return base ? [`${base}/examination`] : ['api/examination'];
+};
 
 const isProd = Boolean((import.meta as any)?.env?.PROD);
 
@@ -336,10 +340,11 @@ const fetchWithTimeout = async (
   timeoutMs: number = REQUEST_TIMEOUT_MS
 ) => {
   let lastError: Error | null = null;
+  const baseCandidates = API_BASE_CANDIDATES();
 
-  for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
-    const base = API_BASE_CANDIDATES[index];
-    const isLastAttempt = index === API_BASE_CANDIDATES.length - 1;
+  for (let index = 0; index < baseCandidates.length; index += 1) {
+    const base = baseCandidates[index];
+    const isLastAttempt = index === baseCandidates.length - 1;
     const controller = new AbortController();
     const timeoutForAttempt = !isLastAttempt
       ? Math.min(timeoutMs, FALLBACK_CANDIDATE_TIMEOUT_MS)
@@ -353,7 +358,7 @@ const fetchWithTimeout = async (
 
     try {
       const url = getUrl(joinPath(base, endpoint));
-      console.debug(`[examinationBatchService] fetch attempt ${index + 1}/${API_BASE_CANDIDATES.length} -> ${url} (timeout ${timeoutForAttempt}ms)`);
+      console.debug(`[examinationBatchService] fetch attempt ${index + 1}/${baseCandidates.length} -> ${url} (timeout ${timeoutForAttempt}ms)`);
       const start = Date.now();
       const response = await fetch(url, {
         ...options,
@@ -1083,28 +1088,61 @@ export const examinationBatchService = {
       throw new Error('Number of learners must be greater than 0');
     }
 
-    // Fallback: if batch not found, try to find by batch number or re-create
+    // Fallback: if batch not found (especially for local batch IDs), try to find by batch number or re-create
     let actualBatchId = batchId;
-    if (!isLocalBatchId(batchId)) {
+    
+    // Check if this is a local batch ID that needs resolution to backend ID
+    const localBatch = isLocalBatchId(batchId) 
+      ? (await getLocalBatches()).find(b => String(b.id) === String(batchId))
+      : null;
+    
+    if (localBatch?.batch_number) {
+      // This is a local batch - try to find the corresponding backend batch by number
+      console.log('[DEBUG] examinationBatchService.addClass - Resolving local batch ID to backend:', { batchId, batchNumber: localBatch.batch_number });
+      try {
+        const foundByNumber = await this.getBatchByNumber(localBatch.batch_number);
+        if (foundByNumber?.id) {
+          actualBatchId = String(foundByNumber.id);
+          console.log('[DEBUG] examinationBatchService.addClass - Found backend batch by number:', { oldBatchId: batchId, newBatchId: actualBatchId });
+        } else {
+          // Batch not in backend, re-create it
+          console.log('[DEBUG] examinationBatchService.addClass - Batch not in backend, attempting to re-create:', { batchId, batchNumber: localBatch.batch_number });
+          try {
+            const recreated = await this.createBatch({
+              ...localBatch,
+              batch_number: localBatch.batch_number,
+              status: localBatch.status || 'Draft'
+            });
+            actualBatchId = String(recreated.id);
+            console.log('[DEBUG] examinationBatchService.addClass - Re-created batch:', { oldBatchId: batchId, newBatchId: actualBatchId });
+          } catch (recreateError) {
+            console.error('[DEBUG] examinationBatchService.addClass - Failed to re-create batch:', recreateError);
+          }
+        }
+      } catch (lookupError) {
+        console.error('[DEBUG] examinationBatchService.addClass - Error looking up batch:', lookupError);
+      }
+    } else if (!isLocalBatchId(batchId)) {
+      // Non-local batch ID - check if it exists in backend
       try {
         const testResponse = await fetchWithTimeout(`/batches/${batchId}`, {
           headers: getHeaders()
         }, 5000);
         if (!testResponse.ok && testResponse.status === 404) {
-          const localBatch = (await getLocalBatches()).find(b => String(b.id) === String(batchId));
-          if (localBatch?.batch_number) {
-            console.log('[DEBUG] examinationBatchService.addClass - Batch ID not found, trying batch number lookup:', { batchId, batchNumber: localBatch.batch_number });
-            const foundByNumber = await this.getBatchByNumber(localBatch.batch_number);
+          const localBatchFromId = (await getLocalBatches()).find(b => String(b.id) === String(batchId));
+          if (localBatchFromId?.batch_number) {
+            console.log('[DEBUG] examinationBatchService.addClass - Batch ID not found, trying batch number lookup:', { batchId, batchNumber: localBatchFromId.batch_number });
+            const foundByNumber = await this.getBatchByNumber(localBatchFromId.batch_number);
             if (foundByNumber?.id) {
               actualBatchId = String(foundByNumber.id);
               console.log('[DEBUG] examinationBatchService.addClass - Found batch by number:', { oldBatchId: batchId, newBatchId: actualBatchId });
             } else {
-              console.log('[DEBUG] examinationBatchService.addClass - Batch not in backend either, attempting to re-create:', { batchId, batchNumber: localBatch.batch_number });
+              console.log('[DEBUG] examinationBatchService.addClass - Batch not in backend either, attempting to re-create:', { batchId, batchNumber: localBatchFromId.batch_number });
               try {
                 const recreated = await this.createBatch({
-                  ...localBatch,
-                  batch_number: localBatch.batch_number,
-                  status: localBatch.status || 'Draft'
+                  ...localBatchFromId,
+                  batch_number: localBatchFromId.batch_number,
+                  status: localBatchFromId.status || 'Draft'
                 });
                 actualBatchId = String(recreated.id);
                 console.log('[DEBUG] examinationBatchService.addClass - Re-created batch:', { oldBatchId: batchId, newBatchId: actualBatchId });
